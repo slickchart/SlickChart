@@ -278,6 +278,10 @@ saved anywhere", not "does this always call that".
 | `_editClientDetails` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_editPhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_evictableFileCache` | `/api/guide-file` | direct |
+| `_fbMonitorCard` | `/api/feedback` | via `_fbMonitorPost` |
+| `_fbMonitorKey` | `/api/feedback` | via `_fbMonitorPost` |
+| `_fbMonitorOff` | `/api/feedback` | via `_fbMonitorPost` |
+| `_fbMonitorPost` | `/api/feedback` | direct |
 | `_fcOpenAction` | `/api/clients` | via `syncClientEvents` |
 | `_fcOpenAction` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_fetchSquareDirectory` | `/api/square/customers` | direct |

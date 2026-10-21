@@ -8167,3 +8167,23 @@ reports from Aug 27 to Oct 5 that she had never been told about. Nothing alerted
   (`test-bizname`), forms Edit/Delete on every card, deleted products leaving clients' shop, Square
   customers auto-importing (Jaimie's search report; Ashley believes the iPhone storage fixes covered it).
 - `sweep-crossdevice.mjs` / `freshaudit.mjs` are not in this repo's scratchpad, so they were not run.
+
+## 2026-10-21 — Daily feedback brief in Claude (build `2026-10-21d`, PREVIEW)
+
+Ashley asked for a pinned Claude thread ("Daily feedback monitor") that watches the Feedback Inbox,
+looks into every provider report, prepares fixes on the preview and briefs her daily. She chose to have
+it read **straight from the app**, not her Gmail.
+
+- **Read-only monitor key** (`api/feedback.js`): owner-only `POST {action:'monitor-key'}` makes a signed
+  token scoped `k:'fbmon'` carrying the OWNER email and a nonce stored in `feedback_monitor` (one row,
+  new table, `CREATE TABLE IF NOT EXISTS`). `GET /api/feedback?since=<ms>` with `Authorization: Monitor
+  <key>` returns the inbox (now with provider `name` and row `id`, additive). A new key or
+  `{action:'monitor-off'}` kills the old one at once. Scoped, so `verifyToken` refuses it as a session
+  everywhere else and `sessionFromReq` refuses any `k` token. A monitor read that fails is a 500, never
+  an empty list, so the brief can't report "nothing new" over an outage.
+- **Feedback Inbox card** "Daily brief in Claude": status (on / last checked), Copy key, Switch off.
+- Tests: `scratchpad/test-feedback-monitor-key.mjs` (server, 18 checks incl. provider/forged/revoked
+  keys), `scratchpad/test-feedback-monitor-ui.mjs` (Chromium; WebKit not installed in that container,
+  UI-only change, no storage or sync touched).
+- The scheduled run's instructions live in `/mnt/project-files/feedback-monitor/routine-prompt.md`. It
+  needs `slickchart.app` allowed in the cloud environment's network settings (the proxy blocked it).

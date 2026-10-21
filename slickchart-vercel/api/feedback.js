@@ -2,14 +2,20 @@
 //   kind:'pulse' + timeSaved come from the recurring pulse survey; the plain
 //   feedback button sends neither and is stored as kind='adhoc'.
 // GET  /api/feedback                          → owner-only: recent feedback { items }
+// GET  /api/feedback?since=<ms>  Authorization: Monitor <key>
+//                                             → the same list, read-only, for Ashley's daily brief in
+//                                               Claude (a scheduled run cannot sign in). See monitorKeyOk.
+// POST /api/feedback { action:'monitor-key' }  → owner-only: make that key (replaces any earlier one)
+// POST /api/feedback { action:'monitor-off' }  → owner-only: switch the key off
 //
 // Every new piece of written feedback is EMAILED (and pushed) to the founder the moment it lands.
 // Until 2026-10-21 it only went into the table behind the in-app Feedback Inbox, with no alert of
 // any kind, and Ashley found a month of provider reports (broken forms, missing clients) she had
 // never been told about. Same pattern as the signup ping: awaited, never blocks the save, and a
 // notify_log row either way so a missed alert can be traced.
+import crypto from 'crypto';
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
-import { verifyToken, sessionOk } from '../lib/auth.js';
+import { verifyToken, signToken, sessionOk } from '../lib/auth.js';
 import { sendEmail } from '../lib/email.js';
 import { pushFoundersReport, founderPushConfigured } from '../lib/fcm.js';
 import { recordNotify } from '../lib/notify-log.js';
@@ -81,20 +87,81 @@ async function resolveEmail(req, q) {
   } catch (e) { return null; }
 }
 
+// The daily feedback brief in Claude reads the inbox with a key Ashley copies once from the Feedback
+// Inbox screen. It is a signed token scoped k:'fbmon' (verifyToken rejects it everywhere else, and
+// sessionFromReq refuses any scoped token), it carries the OWNER's email, and its nonce must match the
+// one row in feedback_monitor, so making a new key or switching it off kills the old one at once. It
+// reads this one list and nothing else: no client data, no other endpoint.
+async function ensureMonitorTable(q) {
+  await q`CREATE TABLE IF NOT EXISTS feedback_monitor (owner_email text PRIMARY KEY, nonce text NOT NULL, created_at timestamptz DEFAULT now(), last_used timestamptz)`;
+}
+async function monitorKeyOk(req, q, owner) {
+  const s = process.env.SESSION_SECRET || '';
+  const h = req.headers['authorization'] || '';
+  const t = h.startsWith('Monitor ') ? h.slice(8) : '';
+  const p = s && t ? verifyToken(t, s, { scope: 'fbmon' }) : null;
+  if (!p || p.k !== 'fbmon' || !p.n || !owner || String(p.e || '').toLowerCase() !== owner) return false;
+  await ensureMonitorTable(q);
+  const r = await q`SELECT nonce, last_used FROM feedback_monitor WHERE owner_email = ${owner}`;
+  if (!r.length || r[0].nonce !== p.n) return false;
+  try { await q`UPDATE feedback_monitor SET last_used = now() WHERE owner_email = ${owner}`; } catch (e) {}
+  return true;
+}
+function isMonitorReq(req) { return String(req.headers['authorization'] || '').startsWith('Monitor '); }
+
 export default async function handler(req, res) {
   if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
-  if (!dbEnabled()) { res.status(200).json(req.method === 'GET' ? { items: [] } : { ok: true, skipped: true }); return; }
+  if (!dbEnabled()) {
+    if (isMonitorReq(req)) { res.status(503).json({ error: 'database not configured' }); return; }
+    res.status(200).json(req.method === 'GET' ? { items: [] } : { ok: true, skipped: true }); return;
+  }
 
+  const owner = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
   if (req.method === 'GET') {
-    const owner = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
+    const mon = isMonitorReq(req);
     try {
       await ensureProvidersTable();
       const q = sql();
+      if (mon) {
+        if (!(await monitorKeyOk(req, q, owner))) { res.status(403).json({ error: 'This key is switched off. Copy a new one from Feedback Inbox.' }); return; }
+      } else {
+        const you = await resolveEmail(req, q);
+        if (!owner || you !== owner) { res.status(403).json({ error: 'Owner only' }); return; }
+      }
+      // The owner screen also reads whether the brief's key is on, and when it last read the inbox.
+      let monitor;
+      if (!mon) { try { await ensureMonitorTable(q); const m = await q`SELECT extract(epoch from created_at) * 1000 AS c, extract(epoch from last_used) * 1000 AS u FROM feedback_monitor WHERE owner_email = ${owner}`; monitor = m.length ? { on: true, created: Math.round(Number(m[0].c)), lastUsed: m[0].u ? Math.round(Number(m[0].u)) : 0 } : { on: false }; } catch (e) {} }
+      const since = Math.max(0, Number((req.query && req.query.since) || 0) || 0);
+      const rows = await q`SELECT f.id, f.rating, f.message, f.email, f.kind, f.time_saved, extract(epoch from f.ts) * 1000 AS ts, p.name
+        FROM feedback f LEFT JOIN providers p ON p.id = f.provider_id
+        WHERE f.ts > to_timestamp(${since / 1000}) ORDER BY f.ts DESC LIMIT 200`;
+      res.status(200).json({ items: rows.map(r => ({ id: String(r.id), rating: r.rating, message: r.message, email: r.email, name: r.name || '', kind: r.kind, timeSaved: r.time_saved, ts: Math.round(Number(r.ts)) })), monitor });
+    } catch (e) {
+      // The brief must SAY it could not read, never report "no new feedback" over a failure.
+      if (mon) res.status(500).json({ error: 'read failed' }); else res.status(200).json({ items: [] });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && req.body && (req.body.action === 'monitor-key' || req.body.action === 'monitor-off')) {
+    try {
+      await ensureProvidersTable();
+      const q = sql();
+      const p = claims(req);
       const you = await resolveEmail(req, q);
-      if (!owner || you !== owner) { res.status(403).json({ error: 'Owner only' }); return; }
-      const rows = await q`SELECT rating, message, email, kind, time_saved, extract(epoch from ts) * 1000 AS ts FROM feedback ORDER BY ts DESC LIMIT 200`;
-      res.status(200).json({ items: rows.map(r => ({ rating: r.rating, message: r.message, email: r.email, kind: r.kind, timeSaved: r.time_saved, ts: Math.round(Number(r.ts)) })) });
-    } catch (e) { res.status(200).json({ items: [] }); }
+      if (!p.u || !owner || you !== owner) { res.status(403).json({ error: 'Owner only' }); return; }
+      await ensureMonitorTable(q);
+      if (req.body.action === 'monitor-off') {
+        await q`DELETE FROM feedback_monitor WHERE owner_email = ${owner}`;
+        res.status(200).json({ ok: true, off: true });
+        return;
+      }
+      const nonce = crypto.randomBytes(18).toString('base64url');
+      await q`INSERT INTO feedback_monitor (owner_email, nonce) VALUES (${owner}, ${nonce})
+        ON CONFLICT (owner_email) DO UPDATE SET nonce = EXCLUDED.nonce, created_at = now(), last_used = NULL`;
+      const key = signToken({ k: 'fbmon', e: owner, n: nonce }, process.env.SESSION_SECRET || '', 60 * 60 * 24 * 365 * 3);
+      res.status(200).json({ ok: true, key });
+    } catch (e) { res.status(500).json({ error: 'Could not make a key just now. Please try again.' }); }
     return;
   }
 

@@ -305,7 +305,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-21c';
+const APP_BUILD='2026-10-21d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -28718,7 +28718,7 @@ async function _loadBetaStats(){
 
 function renderFeedbackInbox(){
   setNav('more');document.getElementById('tt').textContent='Feedback Inbox';
-  S.innerHTML=`<div style="padding:14px 16px 4px;"><div style="font-size:16px;color:var(--p-mut);line-height:1.5;">What your clients submitted \u2014 newest first.</div></div><div id="fbin" style="padding:12px 16px;color:var(--p-mut);font-size:16px;">Loading feedback\u2026</div>`;
+  S.innerHTML=`<div style="padding:14px 16px 4px;"><div style="font-size:16px;color:var(--p-mut);line-height:1.5;">What your clients submitted \u2014 newest first.</div></div><div id="fbmon" style="padding:0 16px;"></div><div id="fbin" style="padding:12px 16px;color:var(--p-mut);font-size:16px;">Loading feedback\u2026</div>`;
   _loadFeedbackInbox();
 }
 async function _loadFeedbackInbox(){
@@ -28728,11 +28728,41 @@ async function _loadFeedbackInbox(){
     const r=await fetch('/api/feedback',{headers:tok?{'Authorization':'Bearer '+tok}:{}});
     if(r.status===403){el.innerHTML='<div style="color:var(--p-amber);font-size:16px;">This inbox is owner-only.</div>';return;}
     const j=await r.json();const items=j.items||[];
+    _fbMonitorCard(j.monitor);
     if(!items.length){el.innerHTML='<div style="text-align:center;color:var(--p-mut);font-size:16px;padding:26px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;">No feedback yet.</div>';return;}
     const emo=['','\ud83d\ude15','\ud83d\ude10','\ud83d\ude42','\ud83d\ude03','\ud83e\udd29'];
     const fmt=ts=>{try{return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return '';}};
     el.innerHTML='<div style="font-size:16px;color:var(--p-mut);margin-bottom:10px;">'+items.length+' response'+(items.length===1?'':'s')+'</div>'+items.map(f=>'<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;margin-bottom:10px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:18px;">'+(emo[f.rating]||'\ud83d\udcac')+'</span><span style="font-size:14px;color:var(--p-mut);">'+fmt(f.ts)+'</span></div>'+(f.message?'<div style="font-size:16px;color:var(--p-ink);line-height:1.6;white-space:pre-wrap;">'+String(f.message).replace(/</g,'&lt;')+'</div>':'<div style="font-size:16px;color:var(--p-mut);font-style:italic;">(rating only)</div>')+(f.email?'<div style="font-size:14px;color:var(--p-mut);margin-top:6px;">'+String(f.email).replace(/</g,'&lt;')+'</div>':'')+'</div>').join('');
   }catch(e){el.innerHTML='<div style="color:var(--p-amber);font-size:16px;">Could not load feedback right now.</div>';}
+}
+
+// Daily feedback brief in Claude. A scheduled Claude run cannot sign in, so the owner makes a read-only
+// key here once (it reads this inbox and nothing else) and pastes it into Claude. Making a new key or
+// switching it off stops the old one at once. Shown only when the server says this is the owner.
+function _fbMonitorCard(m){
+  const el=document.getElementById('fbmon');if(!el)return;
+  if(!m){el.innerHTML='';return;}
+  const when=ts=>{try{return new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}catch(e){return '';}};
+  const status=m.on?(m.lastUsed?'On. Last checked '+when(m.lastUsed)+'.':'On. Waiting for its first check.'):'Off.';
+  el.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:14px;margin-bottom:6px;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;"><i class="ti ti-sparkles"></i> Daily brief in Claude</div><div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:10px;">Claude reads this inbox every morning, looks into each problem and briefs you. '+status+'</div><div id="fbmon-key"></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btnp" style="flex:1;min-width:150px;border-radius:8px;" onclick="_fbMonitorKey()"><i class="ti ti-key"></i> '+(m.on?'Copy a new key':'Copy key for Claude')+'</button>'+(m.on?'<button class="btng" style="border-radius:8px;" onclick="_fbMonitorOff()">Switch off</button>':'')+'</div></div>';
+}
+async function _fbMonitorPost(action){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  const r=await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({action})});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Failed');return j;
+}
+async function _fbMonitorKey(){
+  try{
+    const j=await _fbMonitorPost('monitor-key');
+    let copied=false;try{await navigator.clipboard.writeText(j.key);copied=true;}catch(e){}
+    _fbMonitorCard({on:true,lastUsed:0});
+    const k=document.getElementById('fbmon-key');
+    if(k)k.innerHTML='<div style="font-size:16px;color:var(--p-ink);line-height:1.5;margin-bottom:8px;">'+(copied?'Copied. Paste it into your Claude feedback thread.':'Copy this and paste it into your Claude feedback thread.')+'</div><textarea class="fi" readonly style="height:70px;font-size:13px;margin-bottom:10px;" onclick="this.select()">'+String(j.key).replace(/</g,'&lt;')+'</textarea>';
+    proToast(copied?'Key copied ✓':'Key ready');
+  }catch(e){proToast('Could not make a key. Check your connection and try again');}
+}
+async function _fbMonitorOff(){
+  try{await _fbMonitorPost('monitor-off');_fbMonitorCard({on:false});proToast('Daily brief key switched off');}catch(e){proToast('Could not switch it off. Try again');}
 }
 
 function renderWhatsNew(){
