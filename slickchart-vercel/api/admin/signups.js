@@ -8,6 +8,7 @@
 // client or provider data is ever exposed here.
 import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
+import { rememberFounderAccount } from '../../lib/fcm.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
@@ -25,6 +26,8 @@ export default async function handler(req, res) {
   const founders = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || '')
     .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
   if (!email || !founders.includes(email)) { res.status(403).json({ error: 'Owner-only.', code: 'notowner' }); return; }
+  // This verified founder session's account gets founder alerts on its devices too (see lib/fcm.js).
+  if (payload.u) await rememberFounderAccount(payload.u, email);
 
   try {
     const q = sql();

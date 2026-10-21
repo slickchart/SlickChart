@@ -11,7 +11,7 @@
 // report both counts so a mismatch is visible instead of mysterious.
 import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
-import { pushReport, pushFoundersReport, founderPushConfigured } from '../../lib/fcm.js';
+import { pushReport, pushFoundersReport, founderPushConfigured, rememberFounderAccount } from '../../lib/fcm.js';
 import { apnsConfigured, apnsTarget } from '../../lib/apns.js';
 import { recentNotifies } from '../../lib/notify-log.js';
 
@@ -30,6 +30,9 @@ export default async function handler(req, res) {
   const founders = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || '')
     .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
   if (!email || !founders.includes(email)) { res.status(403).json({ error: 'Owner-only.', code: 'notowner' }); return; }
+
+  // The account she is testing from is a founder account: its devices get founder alerts from now on.
+  if (payload.u) await rememberFounderAccount(payload.u, email);
 
   try {
     const q = sql();
@@ -134,9 +137,10 @@ export default async function handler(req, res) {
     // Google accepts the push for but never shows it is usually an OLD install still holding a valid
     // token, and "last opened 3 weeks ago" on the only device says so at a glance (2026-10-21).
     let deviceList = [];
+    const allIds = Array.from(new Set(providerIds.concat(founder.providerIds || [])));
     try {
       const rows = await q`SELECT platform, updated_at, created_at FROM native_push_tokens
-        WHERE owner_kind = 'provider' AND owner_id = ANY(${providerIds}::text[]) ORDER BY updated_at DESC NULLS LAST LIMIT 10`;
+        WHERE owner_kind = 'provider' AND owner_id = ANY(${allIds}::text[]) ORDER BY updated_at DESC NULLS LAST LIMIT 10`;
       const fmt = (ms) => { const n = Number(ms) || 0; if (!n) return 'unknown'; try { return new Date(n).toLocaleString('en-US', { timeZone: process.env.FOUNDER_TZ || 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return 'unknown'; } };
       deviceList = (rows || []).map(r => {
         const pl = String(r.platform || '').toLowerCase();
@@ -145,7 +149,7 @@ export default async function handler(req, res) {
       });
     } catch (e) {}
     try {
-      const w = await q`SELECT count(*)::int AS n FROM provider_push_subscriptions WHERE provider_id = ANY(${providerIds}::text[])`;
+      const w = await q`SELECT count(*)::int AS n FROM provider_push_subscriptions WHERE provider_id = ANY(${allIds}::text[])`;
       const n = (w[0] && w[0].n) || 0;
       for (let i = 0; i < n; i++) deviceList.push({ name: 'browser / home-screen app', lastOpened: '' });
     } catch (e) {}

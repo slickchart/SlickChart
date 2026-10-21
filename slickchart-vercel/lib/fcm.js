@@ -203,6 +203,37 @@ async function sendToOwner(ownerKind, ownerId, payload) {
 // Her follow-up reminders already went to both; the founder alerts used to reach only the native
 // app, so a phone that gets her reminders could still stay silent for a paid signup (2026-10-20).
 // Every id here comes from FOUNDER_EMAILS, never from a request, so nothing reaches another account.
+// Founder ACCOUNTS seen by verified session, not only by providers.email. The email lookup misses
+// the account her phone is actually signed in to whenever that row's stored email differs from the
+// founder address (an account email changed later, a second account, a re-signup): form alerts,
+// which go to the signed-in account's own id, kept reaching her phone while every founder alert went
+// to one stale device under the email-matched row (2026-10-21). /api/admin/signups records the
+// session's provider id here, and only after its verified token email passed the FOUNDER_EMAILS
+// gate, so nothing a request says can add an account to this list.
+let _faReady = false;
+async function ensureFounderAccounts(q) {
+  if (_faReady) return;
+  await q`CREATE TABLE IF NOT EXISTS founder_accounts (provider_id text PRIMARY KEY, email text, seen_at timestamptz NOT NULL DEFAULT now())`;
+  _faReady = true;
+}
+export async function rememberFounderAccount(providerId, email) {
+  if (!providerId) return;
+  try {
+    const q = sql();
+    await ensureFounderAccounts(q);
+    await q`INSERT INTO founder_accounts (provider_id, email, seen_at) VALUES (${String(providerId)}, ${String(email || '').toLowerCase()}, now())
+      ON CONFLICT (provider_id) DO UPDATE SET email = EXCLUDED.email, seen_at = now()`;
+  } catch (e) {}
+}
+async function seenFounderAccounts(emails) {
+  try {
+    const q = sql();
+    await ensureFounderAccounts(q);
+    const rows = await q`SELECT provider_id FROM founder_accounts WHERE email = ANY(${emails}::text[]) AND seen_at > now() - interval '120 days'`;
+    return (rows || []).map(r => String(r.provider_id));
+  } catch (e) { return []; }
+}
+
 export function founderPushConfigured() { return nativePushConfigured() || webPushConfigured(); }
 
 export async function pushFoundersReport(payload) {
@@ -223,6 +254,8 @@ export async function pushFoundersReport(payload) {
       for (const pr of (provs || [])) out.providerIds.push(String(pr.id));
     } catch (e) { out.error = 'db'; }
   }
+  // Plus every account a founder has actually been signed in to (still only founder emails).
+  for (const id of await seenFounderAccounts(out.emails)) if (!out.providerIds.includes(id)) out.providerIds.push(id);
   if (nativeOn) {
     for (const pid of out.providerIds) {
       try {
