@@ -561,6 +561,13 @@ which she authorized: "if you want to read my own provider app notification dire
 The preview is behind Vercel login, so push-state is readable only on slickchart.app. Tests:
 `scratchpad/founder-push/*.mjs` (server + Chromium UI, incl. `ui-native-coldlaunch`).
 
+Outcome (read via push-state, 2026-10-21): after `695d83e` went live, her main phone (build 21j) linked
+itself at 1:40 PM PT, Google accepted it (`…lkPIbE`), and a `send=1` test was delivered to it. The same
+send got 404 NotRegistered for the old `…Dhg78g` address (the "work phone" every earlier alert was
+"sent" to), and it was pruned. Why the main phone did not link at 1:07 on build 21h is unrecorded
+(native_push_log did not exist yet); from now on every link attempt and refusal is in `phoneHistory`.
+Rule: CLAUDE.md §0b. Daily check: feedback-monitor routine step 1b.
+
 **Free-starter signups deliberately do NOT push.** Ashley wants her phone to buzz for provider
 signups and roadmap sales only. A push was added and then removed at her request; the `free_signups`
 row is the record. Don't add it back.
