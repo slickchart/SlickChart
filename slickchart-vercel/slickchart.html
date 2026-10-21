@@ -5962,7 +5962,10 @@ async function _cloudInit(){
     if(!localStorage.getItem('sc_onboarded'))localStorage.setItem('sc_onboarded','1');
     nav('home');return;
   }
-  if(!Cloud.token){try{Cloud.bootDone();}catch(e){}renderEntry();return;}      // database is on but no session — unified front door
+  // Push registration starts on the sign-in screen too: it holds the phone's address until a session
+  // exists. It used to start only when the app OPENED already signed in, so a phone that signed in on
+  // the front door never linked for alerts until its next cold launch (2026-10-21).
+  if(!Cloud.token){try{Cloud.bootDone();}catch(e){}try{_initNativeProvider();}catch(e){}renderEntry();return;}      // database is on but no session — unified front door
   try{_initNativeProvider();}catch(e){}         // native App Store / Play build: status bar + push registration
   // Before the pull, because the merge weighs timestamps and this device may still be carrying the
   // fake ones an old boot wrote. Local write only.
@@ -6424,6 +6427,10 @@ async function _doLogout(){
   try{var _tp=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||localStorage.getItem('sc_token')||'';
     if(_tp&&'serviceWorker' in navigator){await Promise.race([(async function(){const reg=await navigator.serviceWorker.getRegistration();const sub=reg&&reg.pushManager?await reg.pushManager.getSubscription():null;
       if(sub){try{await fetch('/api/provider-push',{method:'DELETE',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tp},body:JSON.stringify({endpoint:sub.endpoint})});}catch(e){}try{await sub.unsubscribe();}catch(e){}}})(),new Promise(r=>setTimeout(r,2000))]);}}catch(e){}
+  // Same for the phone app: a signed-out phone must stop getting this account's alerts. Signing in
+  // again re-links it (the registration listener holds the address until a session exists).
+  try{var _tn=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||localStorage.getItem('sc_token')||'';var _pl=window._nativePushLast;
+    if(_tn&&_pl&&_pl.value){await Promise.race([fetch('/api/native-push',{method:'DELETE',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tn},body:JSON.stringify({platform:_pl.platform,token:_pl.value})}).catch(function(){}),new Promise(r=>setTimeout(r,2000))]);}}catch(e){}
   try{var _t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||localStorage.getItem('sc_token')||'';if(_t)fetch('/api/logout',{method:'POST',keepalive:true,headers:{'Authorization':'Bearer '+_t}}).catch(function(){});}catch(e){}
   // Stamp the photo store with the account that is leaving, so the next account on this device never reads it.
   try{const _me=(typeof _tokenOwner==='function')?_tokenOwner():'';if(_me&&typeof _idb!=='undefined'&&_idb.available&&_idb.available())await Promise.race([_idb.set('captured_photos_owner',_me),new Promise(r=>setTimeout(r,1500))]);}catch(e){}
@@ -15577,7 +15584,9 @@ function _flushNativePushTok(tries){
   tries=tries||0;
   var d=window._nativePushTok; if(!d||!d.value)return;
   var t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  if(!t){ if(tries<40)setTimeout(function(){_flushNativePushTok(tries+1);},3000); return; }
+  // No session yet: keep holding the address until she signs in, however long that takes (it used to
+  // give up after 2 minutes and drop it for the rest of the run).
+  if(!t){ setTimeout(function(){_flushNativePushTok(tries+1);},tries<40?3000:15000); return; }
   fetch('/api/native-push',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},
     body:JSON.stringify({platform:d.platform,token:d.value})})
     .then(function(r){
@@ -15607,6 +15616,7 @@ async function _initNativeProvider(){
       try{
         if(!tok||!tok.value)return;
         window._nativePushState.registered=true;
+        window._nativePushLast={platform:(window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||'',value:tok.value};
         window._nativePushTok={platform:(window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||'',value:tok.value};
         _flushNativePushTok(0);
       }catch(e){}
@@ -15629,6 +15639,15 @@ async function _initNativeProvider(){
       try{const d=(a&&a.notification&&a.notification.data)||{};_queueDeepLink(_pushLinkFromData(d));}catch(e){}
     });
     await PN.register();
+    // Every logged-in device gets every alert (her rule, 2026-10-21). An Android app can stay alive in
+    // the background for days, and it only registered once per launch: if its row was pruned, its token
+    // rotated, or it signed in to a different account meanwhile, that phone silently stopped getting
+    // alerts until a cold start. Re-register whenever the app comes back to the front (at most every
+    // 30 min) and on a 6-hour timer; the server upserts the row, so this is cheap and never duplicates.
+    window._nativePushReRegAt=Date.now();
+    const _reReg=function(force){try{if(!force&&Date.now()-(window._nativePushReRegAt||0)<1800000)return;window._nativePushReRegAt=Date.now();Promise.resolve(PN.register()).catch(function(){});}catch(e){}};
+    try{const App=window.Capacitor.Plugins&&window.Capacitor.Plugins.App;if(App&&App.addListener)App.addListener('appStateChange',function(st){if(st&&st.isActive)_reReg(false);});}catch(e){}
+    setInterval(function(){_reReg(true);},6*3600*1000);
   }catch(e){/* push is a nice-to-have; never block the app */}
 }
 // ── Push deep-linking ──────────────────────────────────────────────────────────────────────────
