@@ -530,6 +530,18 @@ setup, plus the sandbox-vs-production token trap, is in `PUSH-NATIVE-SETUP.md`.
 `InvalidProviderToken` and friends mean *we* are misconfigured, and deleting a registration over a
 wrong env var is how this whole bug started.
 
+**Paid signup emailed but never buzzed (2026-10-20, jriske412).** Ashley observed: the
+"💰 New PAID provider" email arrived at 7:07 PM Pacific on 10-20 (seen on her Mac), and no push came.
+Two gaps found in the paid path, which is the ONLY ping a paying provider gets (signup.js stays
+silent once `paid_notified_at` is stamped): (1) `notifyFounderPaid` in `api/stripe-webhook.js` had its
+own native-only copy of the founder lookup and wrote NO `notify_log` row, so a miss left no trace and
+the test tool even read the follow-up "already announced" row as a failure; (2) founder alerts went to
+the iPhone/Android app only, while her follow-up reminders also go to any browser/home-screen app
+where she turned notifications on (`provider_push_subscriptions`). Fix (`pushFoundersReport` now sends
+to both, the webhook uses it and records `paid-signup` in `notify_log`, test-push counts both and no
+longer flags "already announced"). Regression: `scratchpad/founder-push/run.mjs`. The exact link that
+failed on 10-20 is NOT known: that send left no record. Her next test push / next signup will say.
+
 **Free-starter signups deliberately do NOT push.** Ashley wants her phone to buzz for provider
 signups and roadmap sales only. A push was added and then removed at her request; the `free_signups`
 row is the record. Don't add it back.

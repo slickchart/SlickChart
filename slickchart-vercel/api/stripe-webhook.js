@@ -15,7 +15,8 @@
 import crypto from 'crypto';
 import { sql, ensureProvidersTable } from '../lib/db.js';
 import { sendEmail } from '../lib/email.js';
-import { sendNativeToProvider, nativePushConfigured } from '../lib/fcm.js';
+import { pushFoundersReport, founderPushConfigured } from '../lib/fcm.js';
+import { recordNotify } from '../lib/notify-log.js';
 import { ensureClientTables, claimReminder } from '../lib/clients.js';
 import { recordBuildSale } from '../lib/build-sales.js';
 import { liveSubForEmail } from '../lib/stripe-subs.js';
@@ -128,27 +129,32 @@ async function notifyFounderPaid(q, email) {
     });
   } catch (e) { console.error('[stripe-webhook] founder paid-notify email failed:', e && e.message || e); }
 
-  // ── Native push to the founder's phone(s) ───────────────────────────────────
+  // ── Push to the founder's phone(s) ───────────────────────────────────────────
+  // The shared founder fan-out (lib/fcm.js): her iPhone/Android app AND any browser or home-screen app
+  // where she turned notifications on. This used to be its own copy of the lookup, native-only and
+  // with no record, so when a paid signup on 2026-10-20 emailed but never buzzed her phone there was
+  // nothing to say why. Now it writes the same notify_log row a free signup and a sale do, and the
+  // founder test push reads it back.
+  let skipped = '', devices = 0, sentCount = 0, detail = '';
   try {
-    if (nativePushConfigured()) {
-      const founderEmails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || founderNotifyEmail() || '')
-        .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-      if (founderEmails.length) {
-        let paidTotal = 0;
-        try { const c = await q`SELECT count(*)::int AS n FROM subscriptions WHERE status = 'active'`; paidTotal = (c[0] && c[0].n) || 0; } catch (e) {}
-        const pushBody = (name || em) + ' just signed up' + (paidTotal ? ` — that's ${paidTotal} paying providers now 🎉` : ' 🎉');
-        const pushPayload = { title: '💰 New paid provider!', body: pushBody, url: '/slickchart', tag: 'paid-signup:' + em };
-        let pushed = 0;
-        for (const fe of founderEmails) {
-          try {
-            const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
-            for (const pr of (provs || [])) { try { pushed += (await sendNativeToProvider(pr.id, pushPayload)) || 0; } catch (e) {} }
-          } catch (e) {}
-        }
-        console.log('[stripe-webhook] paid-signup push: founders=' + founderEmails.length + ' devices=' + pushed + ' for=' + em);
-      }
+    if (!founderPushConfigured()) {
+      skipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT, APNS_KEY_P8 or VAPID keys)';
+    } else {
+      let paidTotal = 0;
+      try { const c = await q`SELECT count(*)::int AS n FROM subscriptions WHERE status = 'active'`; paidTotal = (c[0] && c[0].n) || 0; } catch (e) {}
+      const pushBody = (name || em) + ' just signed up' + (paidTotal ? ` — that's ${paidTotal} paying providers now 🎉` : ' 🎉');
+      const r = await pushFoundersReport({ title: '💰 New paid provider!', body: pushBody, url: '/slickchart', tag: 'paid-signup:' + em, renotify: true });
+      devices = r.devices || 0; sentCount = r.sent || 0;
+      if (!r.providerIds || !r.providerIds.length) detail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
+      else if (!devices) detail = 'founder provider row found, but no phone or browser registered under it';
+      else if (!sentCount) detail = ((r.results || []).find(x => x.error) || {}).error || 'device found but the send failed';
+      console.log('[stripe-webhook] paid-signup push: devices=' + devices + ' sent=' + sentCount + ' for=' + em + (detail ? ' — ' + detail : ''));
     }
-  } catch (e) { console.error('[stripe-webhook] founder paid-push failed:', e && e.message || e); }
+  } catch (e) {
+    skipped = 'threw: ' + ((e && e.message) || 'unknown');
+    console.error('[stripe-webhook] founder paid-push failed:', e && e.message || e);
+  }
+  await recordNotify({ kind: 'paid-signup', subject: em, skipped, devices, sent: sentCount, detail });
 }
 
 export default async function handler(req, res) {

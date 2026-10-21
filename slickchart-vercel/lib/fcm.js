@@ -11,6 +11,8 @@
 import crypto from 'crypto';
 import { sql } from './db.js';
 import { sendApns, apnsConfigured } from './apns.js';
+import { pushConfigured as webPushConfigured, sendPush } from './push.js';
+import { listProviderPushSubs, deleteProviderPushSubById } from './provider-push.js';
 
 let _sa = undefined; // undefined = unchecked, object = parsed, null = unusable
 function serviceAccount() {
@@ -195,9 +197,18 @@ async function sendToOwner(ownerKind, ownerId, payload) {
 // Several places announce something to Ashley's phone (a new provider signup, a Build roadmap sale,
 // a free-starter signup) and each had grown its own copy of this same lookup. Returns how many
 // devices were reached. Best-effort: never throws, and a missing config just yields 0.
+//
+// It reaches BOTH kinds of device her account has: the iPhone/Android app (native_push_tokens) and
+// any browser or home-screen app where she turned notifications on (provider_push_subscriptions).
+// Her follow-up reminders already went to both; the founder alerts used to reach only the native
+// app, so a phone that gets her reminders could still stay silent for a paid signup (2026-10-20).
+// Every id here comes from FOUNDER_EMAILS, never from a request, so nothing reaches another account.
+export function founderPushConfigured() { return nativePushConfigured() || webPushConfigured(); }
+
 export async function pushFoundersReport(payload) {
-  const out = { sent: 0, devices: 0, emails: [], providerIds: [], results: [] };
-  if (!nativePushConfigured()) { out.error = 'no push transport configured'; return out; }
+  const out = { sent: 0, devices: 0, emails: [], providerIds: [], results: [], webDevices: 0, webSent: 0 };
+  const nativeOn = nativePushConfigured(), webOn = webPushConfigured();
+  if (!nativeOn && !webOn) { out.error = 'no push transport configured'; return out; }
   out.emails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || process.env.FOUNDER_NOTIFY_EMAIL || 'botanicalaestheticsbyashley@gmail.com')
     .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
   if (!out.emails.length) { out.error = 'no founder email configured'; return out; }
@@ -207,12 +218,26 @@ export async function pushFoundersReport(payload) {
       const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
       for (const pr of (provs || [])) {
         out.providerIds.push(String(pr.id));
-        try {
-          const r = await pushReport('provider', pr.id, payload);
-          out.sent += r.sent || 0;
-          out.devices += r.devices || 0;
-          for (const one of (r.results || [])) out.results.push(one);
-        } catch (e) {}
+        if (nativeOn) {
+          try {
+            const r = await pushReport('provider', pr.id, payload);
+            out.sent += r.sent || 0;
+            out.devices += r.devices || 0;
+            for (const one of (r.results || [])) out.results.push(one);
+          } catch (e) {}
+        }
+        if (webOn) {
+          try {
+            const subs = await listProviderPushSubs(pr.id);
+            for (const row of subs) {
+              const r = await sendPush(row.sub, payload);
+              out.devices++; out.webDevices++;
+              if (r.ok) { out.sent++; out.webSent++; }
+              else if (r.gone) { try { await deleteProviderPushSubById(row.id); } catch (e) {} }
+              out.results.push({ platform: 'web', shape: 'web', ok: !!r.ok, gone: !!r.gone, error: r.error || '' });
+            }
+          } catch (e) {}
+        }
       }
     } catch (e) { out.error = 'db'; }
   }

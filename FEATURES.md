@@ -1372,7 +1372,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/cron-reminders` | — | cron | Scheduled reminder sender — invoked by Vercel Cron (see vercel.json). Walks every |
 | `/api/delete-account` | POST | provider session | POST /api/delete-account  (provider session Bearer token) |
 | `/api/device-report` | POST | **public** | POST /api/device-report — provider-authed. The app sends a small health report about the device it is |
-| `/api/feedback` | GET, POST | provider session | POST /api/feedback  { message, rating?, kind?, timeSaved? }  → logs a provider's beta feedback |
+| `/api/feedback` | GET, POST | founder, provider session | POST /api/feedback  { message, rating?, kind?, timeSaved? }  → logs a provider's beta feedback |
 | `/api/free-signup` | POST | **public** | POST /api/free-signup  { email }  → join the free starter list and get the link emailed now. |
 | `/api/google-cal-callback` | — | provider session | GET /api/google-cal-callback?code=…&state=… |
 | `/api/google-cal` | GET, PATCH, POST, DELETE | provider session | GET    /api/google-cal            → { connected, configured, lastOk, needsReconnect, authUrl } |
