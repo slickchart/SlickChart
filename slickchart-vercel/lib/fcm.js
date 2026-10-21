@@ -212,34 +212,42 @@ export async function pushFoundersReport(payload) {
   out.emails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || process.env.FOUNDER_NOTIFY_EMAIL || 'botanicalaestheticsbyashley@gmail.com')
     .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
   if (!out.emails.length) { out.error = 'no founder email configured'; return out; }
+  // Resolve every founder provider id first, then send to all of their PHONES before any browser.
+  // A browser endpoint is the slow, flaky transport (a dead one can sit until the function times
+  // out); the phone app is the one she relies on, so it must never wait behind a browser send or
+  // behind another founder record's devices (2026-10-21).
   for (const fe of out.emails) {
     try {
       const q = sql();
       const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
-      for (const pr of (provs || [])) {
-        out.providerIds.push(String(pr.id));
-        if (nativeOn) {
-          try {
-            const r = await pushReport('provider', pr.id, payload);
-            out.sent += r.sent || 0;
-            out.devices += r.devices || 0;
-            for (const one of (r.results || [])) out.results.push(one);
-          } catch (e) {}
-        }
-        if (webOn) {
-          try {
-            const subs = await listProviderPushSubs(pr.id);
-            for (const row of subs) {
-              const r = await sendPush(row.sub, payload);
-              out.devices++; out.webDevices++;
-              if (r.ok) { out.sent++; out.webSent++; }
-              else if (r.gone) { try { await deleteProviderPushSubById(row.id); } catch (e) {} }
-              out.results.push({ platform: 'web', shape: 'web', ok: !!r.ok, gone: !!r.gone, error: r.error || '' });
-            }
-          } catch (e) {}
-        }
-      }
+      for (const pr of (provs || [])) out.providerIds.push(String(pr.id));
     } catch (e) { out.error = 'db'; }
+  }
+  if (nativeOn) {
+    for (const pid of out.providerIds) {
+      try {
+        const r = await pushReport('provider', pid, payload);
+        out.sent += r.sent || 0;
+        out.devices += r.devices || 0;
+        for (const one of (r.results || [])) out.results.push(one);
+      } catch (e) {}
+    }
+  }
+  if (webOn) {
+    const sends = [];
+    for (const pid of out.providerIds) {
+      let subs = [];
+      try { subs = await listProviderPushSubs(pid); } catch (e) {}
+      for (const row of subs) {
+        out.devices++; out.webDevices++;
+        sends.push(sendPush(row.sub, payload, { timeout: 4000 }).then(async r => {
+          if (r.ok) { out.sent++; out.webSent++; }
+          else if (r.gone) { try { await deleteProviderPushSubById(row.id); } catch (e) {} }
+          out.results.push({ platform: 'web', shape: 'web', ok: !!r.ok, gone: !!r.gone, error: r.error || '' });
+        }).catch(() => {}));
+      }
+    }
+    await Promise.all(sends);
   }
   return out;
 }

@@ -569,7 +569,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-21e';
+const APP_BUILD='2026-10-21f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -33715,20 +33715,20 @@ async function _founderTestPush(rowEl,delaySec){
   try{
     const r=await fetch('/api/admin/test-push'+(delaySec?('?delay='+delaySec):''),{method:'POST',headers:{'Authorization':'Bearer '+tok}});
     const j=await r.json().catch(()=>({}));
+    // The result ALWAYS opens as a popup, on the delayed test too: it waits behind the closed app and
+    // is there when she comes back. A delayed test used to show nothing at all, so a failed push left
+    // her with "nothing happened" and no reason (2026-10-21). A server error gets a popup as well,
+    // instead of a subtitle that reset itself after 8 seconds.
+    const _show=(title,body)=>{if(typeof confirmModal==='function')confirmModal({title:title,body:body,action:'Got it',hideCancel:true},function(){});else if(typeof proToast==='function')proToast(body,9000);};
     if(r.status===403){setSub('Owner-only.');}
-    else if(!r.ok||!j.ok){setSub((j&&j.error)||'Couldn’t send the test.');}
+    else if(!r.ok||!j.ok){const em=(j&&j.error)||('The server answered '+r.status+'.');setSub(em);_show('⚠️ The test didn’t run',em+' Tell Claude exactly what this says.');}
     else{
       const msg=j.message||'Done.';
-      // On the delayed test the app is likely backgrounded/closed when the reply lands, so don't rely on
-      // a modal — the OS banner itself is the confirmation. Only pop the modal for the instant test.
-      if(!delaySec){
-        if(typeof confirmModal==='function')confirmModal({title:(j.sent>0?'✅ Test push sent':(j.devices===0?'📱 No phone registered yet':'⚠️ Couldn’t deliver')),body:msg,action:'Got it',hideCancel:true},function(){});
-        else if(typeof proToast==='function')proToast(msg,7000);
-      }
+      _show((j.sent>0?'✅ Test push sent':(j.devices===0?'📱 No phone registered yet':'⚠️ Couldn’t deliver')),msg);
       setSub(j.devices===0?'No phone registered — install the app on your phone & allow notifications':((j.sent>0?'✓ Sent to '+j.sent+' device'+(j.sent===1?'':'s'):orig)));
     }
     setTimeout(()=>setSub(orig),8000);
-  }catch(e){setSub(delaySec?orig:'Couldn’t reach the server. Try again.');}
+  }catch(e){setSub('Couldn’t reach the server. Try again.');try{if(typeof proToast==='function')proToast('⚠️ The test push couldn’t reach the server. Try again.',7000);}catch(_){}}
 }
 try{_loadFounderLastTs();}catch(e){}
 setInterval(()=>{try{syncClientEvents();}catch(e){}try{_pollFounderSignups();}catch(e){}try{if(typeof _vcSyncFollowUpNotifs==='function')_vcSyncFollowUpNotifs();}catch(e){}try{if(typeof _syncReminderNotifs==='function')_syncReminderNotifs();}catch(e){}},15000);

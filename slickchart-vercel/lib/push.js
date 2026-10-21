@@ -51,12 +51,12 @@ export function validPushEndpoint(endpoint) {
 // Send one notification to one subscription. Never throws — returns a small result the
 // caller can act on. `gone:true` means the subscription is dead (the browser unsubscribed
 // or the endpoint expired) and should be deleted so we stop trying it.
-export async function sendPush(subscription, payload) {
+export async function sendPush(subscription, payload, opts) {
   if (!ensure()) return { ok: false, skipped: true };
   if (!subscription || !subscription.endpoint) return { ok: false, error: 'bad subscription' };
   if (!validPushEndpoint(subscription.endpoint)) return { ok: false, error: 'blocked endpoint' };
   try {
-    await webpush.sendNotification(subscription, JSON.stringify(payload || {}), { TTL: 3600 });
+    await webpush.sendNotification(subscription, JSON.stringify(payload || {}), { TTL: 3600, ...(opts && opts.timeout ? { timeout: opts.timeout } : {}) });
     return { ok: true };
   } catch (e) {
     const code = e && e.statusCode;
