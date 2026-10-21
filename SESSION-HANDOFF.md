@@ -8045,7 +8045,7 @@ unread check-in card and the top of the check-in detail page showed the client's
   `THEMES=light` / `BRANDS=navy` env vars narrow a run.
 - Test: `scratchpad/test-checkin-light.mjs` 27/27 Chrome + Safari (fails 13 on the old code).
 
-## 2026-10-21 — Cooper Howard keeps getting deleted (build `2026-10-21a`, PREVIEW)
+## 2026-10-21 — Cooper Howard keeps getting deleted (build `2026-10-21b`, PREVIEW)
 
 **What Ashley OBSERVED (ground truth, §1b):**
 - Cooper Howard keeps disappearing from her client list.
