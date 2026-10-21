@@ -4607,7 +4607,14 @@ const Cloud={
       }
     }
     if(_LIB_TOMB[k]){
-      const ml=_mergeAuthoredById(data[k],_lsGet(k),_LIB_TOMB[k],{keyFn:_libKeyFn(k),keepUnkeyed:true});
+      let _loc=_lsGet(k);
+      // A device's STOCK service menu never joins an account that already has a menu. Boot seeds the
+      // profession defaults (svc_seed0..N) before the account is read, and the union below used to add
+      // every one of them to her real menu and push it back up: each new phone or sign-in "added back"
+      // services she had never offered or had deleted (Jessica, Feedback inbox, Sep 22 and Oct 5).
+      // Only untouched seeds are dropped; a seed she edited carries a _ts and is kept.
+      if(k==='sc_service_menu'&&data[k]!=null)_loc=_dropStockSvcSeeds(data[k],_loc);
+      const ml=_mergeAuthoredById(data[k],_loc,_LIB_TOMB[k],{keyFn:_libKeyFn(k),keepUnkeyed:true});
       if(ml&&ml.str!=null){
         set(k,ml.str);
         if(ml.changed){try{this.push(k,ml.str);}catch(e){}}
@@ -5425,7 +5432,9 @@ function _reloadTopLevelStores(){
     // it on the way in; this also covers a list that was stored before the cancellation synced.
     try{if(typeof _pruneDeletedAppts==='function'&&_pruneDeletedAppts())_saveManualAppts();}catch(e){}
   }}catch(e){}
-  try{const a=J('sc_service_menu');if(Array.isArray(a)&&a.length)_svcMenu=a;}catch(e){}
+  // An EMPTY menu is a real menu (a Square-only provider deletes them all). Requiring a.length kept
+  // the stock seeds in memory here, and the next save wrote them straight back.
+  try{const a=J('sc_service_menu');if(Array.isArray(a)&&(a.length||_svcMenuIsCustom()))_svcMenu=a;}catch(e){}
   try{const a=J('sc_deleted_sq');if(Array.isArray(a))_deletedSquareIds=new Set(a);}catch(e){}
   try{const a=J('sc_notif_cleared');if(Array.isArray(a))_notifCleared=new Set(a);}catch(e){}
   try{const a=J('sc_notif_read');if(Array.isArray(a))_notifRead=new Set(a);}catch(e){}
@@ -11281,7 +11290,10 @@ function _hasIntakeOnFile(c){
   const byId=(c.submittedForms||[]).some(function(sf){
     const fid=String((sf&&sf.formId)||'');
     if(!fid)return false;
-    return (intakeFid&&fid===intakeFid)||/(^|-)intake$/.test(fid);
+    if((intakeFid&&fid===intakeFid)||/(^|-)intake$/.test(fid))return true;
+    // Her new-client bundle may hold no form called "intake" at all; any of its forms done counts.
+    try{const nb=(typeof _newClientBundle==='function')?_newClientBundle():null;if(nb&&nb.formIds.indexOf(fid)>=0)return true;}catch(e){}
+    return false;
   });
   if(byId)return true;
   const names=[...((c.submittedForms||[]).map(s=>s&&s.title)),...((c.signedForms||[])||[])];
@@ -19406,7 +19418,7 @@ function renderForms(){
   <div style="padding:0 16px 4px;"><div style="position:relative;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--p-mut);"></i><input id="forms-search" oninput="filterForms(this.value)" placeholder="Search forms…" style="width:100%;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:9px 11px 9px 34px;font-size:16px;color:var(--p-ink);font-family:inherit;box-sizing:border-box;outline:none;"></div></div>
   <div id="forms-extras">
   <div class="sh"><h2>Pre-visit</h2></div>
-  <div class="card" style="border-color:var(--accent-strong);" onclick="sendFirstVisitPackagePicker()"><div class="row"><div style="width:42px;height:42px;border-radius:12px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;"><i class="ti ti-rocket" style="font-size:22px;color:var(--accent-strong);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">First-visit package</div><div style="font-size:16px;color:var(--p-mut);margin-top:2px;">Invite to app + intake form, in one tap</div></div></div></div>
+  <div class="card" style="border-color:var(--accent-strong);" onclick="sendFirstVisitPackagePicker()"><div class="row"><div style="width:42px;height:42px;border-radius:12px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;"><i class="ti ti-rocket" style="font-size:22px;color:var(--accent-strong);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">First-visit package</div><div style="font-size:16px;color:var(--p-mut);margin-top:2px;">${(function(){const nb=_newClientBundle();return nb?('Invite to app + your \u201c'+_fileEsc(nb.b.name||'bundle')+'\u201d bundle, in one tap'):'Invite to app + intake form, in one tap';})()}</div><div onclick="event.stopPropagation();nav('bundles')" style="font-size:14px;color:var(--accent-strong);margin-top:4px;font-weight:600;">${_newClientBundle()?'Change what new clients get':'Send a bundle instead'} \u203a</div></div></div></div>
   <div class="card" onclick="nav('bundles')"><div class="row"><div style="width:42px;height:42px;border-radius:12px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;"><i class="ti ti-package" style="font-size:22px;color:var(--p-purple);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Bundles</div><div style="font-size:16px;color:var(--p-mut);margin-top:2px;">Group forms &amp; guides to send together</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div></div>
   <div style="background:var(--surf2);border:1px solid var(--accent-strong);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div onclick="nav('checkin-settings')" role="button" aria-label="Customize the pre-visit check-in" style="padding:12px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;">
@@ -19574,9 +19586,9 @@ function renderBundles(){
   document.getElementById('tt').textContent='Bundles';
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="const id=_newBundle();nav('edit-bundle',id);" style="border:1px solid var(--btn-edge);background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:600;"><i class="ti ti-plus" style="font-size:16px;"></i> New bundle</button></div>
-  <div style="margin:10px 16px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-blue);line-height:1.5;">Group forms and guides you often send together, like a first-visit intake + waiver + aftercare guide, into one bundle you can send in a single tap.</div>
+  <div style="margin:10px 16px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-blue);line-height:1.5;">Group forms and guides you often send together, like a first-visit intake + waiver + aftercare guide, into one bundle you can send in a single tap. Open a bundle and tick <b>Send to every new client</b> to make it your first-visit package.</div>
   ${!bundles.length?`<div style="margin:0 16px;background:var(--surf1);border:1px dashed var(--p-line);border-radius:12px;padding:20px;text-align:center;color:var(--p-mut);font-size:16px;">No bundles yet \u2014 create one to send several forms &amp; guides together.</div>`:
-  bundles.map(b=>`<div class="card" style="padding:0;overflow:hidden;">
+  bundles.map(b=>`<div class="card" style="padding:0;overflow:hidden;${b.newClient?'border-color:var(--accent-strong);':''}">${b.newClient?'<div style="padding:7px 14px 0;font-size:14px;font-weight:600;color:var(--accent-strong);"><i class="ti ti-rocket" aria-hidden="true"></i> Sent to every new client</div>':''}
     <div class="row" style="padding:12px 14px;cursor:pointer;" onclick="nav('edit-bundle','${b.id}')"><div style="width:40px;height:40px;border-radius:12px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-package" style="font-size:18px;color:var(--p-purple);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(b.name)}</div><div style="font-size:16px;color:var(--p-mut);">${_bundleItemCount(b)} item${_bundleItemCount(b)===1?'':'s'}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line2);padding:8px 14px;display:flex;gap:12px;">
       <button onclick="event.stopPropagation();nav('edit-bundle','${b.id}')" style="border:none;background:none;font-size:16px;color:var(--p-mut);cursor:pointer;"><i class="ti ti-pencil" style="font-size:16px;"></i> Edit</button>
@@ -19601,6 +19613,7 @@ function renderEditBundle(bid){
     <button onclick="nav('bundles')" style="border:1px solid var(--btn-edge);background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:600;">Done</button>
   </div>
   <div style="padding:10px 16px;"><span class="fl-lbl">Bundle name</span><input id="bnd-name" class="fi" value="${(b.name||'').replace(/"/g,'&quot;')}" oninput="_renameBundle('${bid}',this.value)"></div>
+  <label style="margin:0 16px 6px;display:flex;align-items:center;gap:10px;background:var(--surf2);border:1px solid ${b.newClient?'var(--accent-strong)':'var(--p-line-ctl)'};border-radius:12px;padding:11px 13px;cursor:pointer;"><input type="checkbox" id="bnd-newclient" ${b.newClient?'checked':''} onchange="_setNewClientBundle('${bid}',this.checked);renderEditBundle('${bid}')" style="width:18px;height:18px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="flex:1;min-width:0;"><span style="display:block;font-size:16px;font-weight:600;color:var(--p-ink);">Send to every new client</span><span style="display:block;font-size:14px;color:var(--p-mut);line-height:1.45;margin-top:2px;">Your first-visit package sends this bundle instead of the standard intake.</span></span></label>
   <div class="sh"><h2>Forms</h2></div>
   <div style="padding:0 16px 6px;">${formList.map(f=>`<label style="display:flex;align-items:center;gap:10px;padding:9px 0;cursor:pointer;border-bottom:1px solid var(--p-line2);"><input type="checkbox" ${b.formIds.includes(f.id)?'checked':''} onchange="_toggleBundleItem('${bid}','formIds','${f.id}')" style="width:17px;height:17px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-ink);">${_fileEsc(f.name)}</span></label>`).join('')}</div>
   <div class="sh"><h2>Guides &amp; resources</h2></div>
@@ -19997,6 +20010,11 @@ function loadCheckinCfg(){
   }catch(e){}
 }
 function saveCheckinCfg(){
+  // A row added and never typed into is not an option. Drop it rather than send clients a blank choice.
+  try{
+    const has=x=>String((x&&typeof x==='object')?(x.label||''):(x||'')).trim();
+    ['skinQ','drinks','music','snacks'].forEach(k=>{if(Array.isArray(checkinCfg[k]))checkinCfg[k]=checkinCfg[k].filter(has);});
+  }catch(e){}
   try{(function(_v){localStorage.setItem('sc_checkin_cfg',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_checkin_cfg',_v);return _v;})(JSON.stringify(checkinCfg));}catch(e){}
   SlickBridge.post('checkin-config',checkinCfg);
   proToast('Check-in saved, your clients see these options now');
@@ -20005,6 +20023,10 @@ function seedCheckinCfgOnce(){
   // publish the default config so the client app reflects it before the first manual save
   try{if(!localStorage.getItem('sc_checkin_cfg')){(function(_v){localStorage.setItem('sc_checkin_cfg',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_checkin_cfg',_v);return _v;})(JSON.stringify(checkinCfg));SlickBridge.post('checkin-config',checkinCfg);}}catch(e){}
 }
+// Put the cursor in the row just added. "+ Add question" used to append a fixed "New question" line
+// that could not be typed into at all (Jessica, Sep 22: "it just says new question and will not allow
+// me to edit what it says"). Every check-in option is now a text box; this lands her in the new one.
+function _ciFocusLast(kind){try{const els=document.querySelectorAll('input[data-ci-edit="'+kind+'"]');const el=els[els.length-1];if(el){el.focus();el.select();try{el.scrollIntoView({block:'center'});}catch(e){}}}catch(e){}}
 function renderCheckinSettings(){
   setNav('pro');
   document.getElementById('tt').textContent='Edit Check-in';
@@ -20017,7 +20039,7 @@ function renderCheckinSettings(){
       <button onclick="saveCheckinCfg()" style="border:1px solid var(--btn-edge);background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:500;">Save</button>
     </div>
   </div>
-  <div style="margin:10px 16px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:10px 12px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:16px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:16px;color:var(--p-blue);line-height:1.5;">Toggle options on/off or remove them. Clients only see what you enable.</span></div>
+  <div style="margin:10px 16px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:10px 12px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:16px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:16px;color:var(--p-blue);line-height:1.5;">Tap any wording to change it, switch options on or off, or remove them. Clients only see what you enable. Tap <b>Save</b> when you\u2019re done.</span></div>
 
   <div class="sh"><h2>Automatic sending</h2></div>
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 8px;overflow:hidden;">
@@ -20037,21 +20059,22 @@ function renderCheckinSettings(){
   <div class="sh"><h2>Health & skin questions</h2></div>
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     ${checkinCfg.skinQ.map((q,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--p-line2);">
-      <span style="flex:1;font-size:16px;color:var(--p-ink);">${_fileEsc(_bizFill(q.label))}</span>
+      <input data-ci-edit="skinQ" aria-label="Question" value="${_fileEsc(q.label)}" oninput="checkinCfg.skinQ[${i}].label=this.value" placeholder="Type your question" style="flex:1;background:none;border:none;border-bottom:1px dashed var(--p-line-ctl);font-size:16px;color:var(--p-ink);font-family:inherit;cursor:text;outline:none;min-width:0;padding:2px 0;">
       ${togBtn(q.on,'checkinCfg.skinQ['+i+'].on=!checkinCfg.skinQ['+i+'].on;renderCheckinSettings()','Toggle question')}
       <button onclick="checkinCfg.skinQ.splice(${i},1);renderCheckinSettings()" class="icon-btn" aria-label="Remove question" style="color:var(--p-mut);min-width:36px;min-height:36px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:16px;"></i></button>
     </div>`).join('')}
-    <div style="padding:8px 12px;border-top:1px solid var(--p-line2);"><button onclick="checkinCfg.skinQ.push({id:'sq'+Date.now(),label:'New question',on:true});renderCheckinSettings()" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;">+ Add question</button></div>
+    <div style="padding:8px 12px;border-top:1px solid var(--p-line2);"><button onclick="checkinCfg.skinQ.push({id:'sq'+Date.now(),label:'',on:true});renderCheckinSettings();_ciFocusLast('skinQ')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;">+ Add question</button></div>
   </div>
 
   <div class="sh"><h2>Drink options</h2></div>
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:10px 12px;">${checkinCfg.drinks.map((d,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--p-line2);">
-      <span aria-hidden="true" style="font-size:18px;">${_fileEsc(d.emoji)}</span>
-      <span style="flex:1;font-size:16px;color:var(--p-ink);">${_fileEsc(d.label)}${d.sub?` <span style="color:var(--p-mut);">· ${_fileEsc(d.sub)}</span>`:''}</span>
+      <input aria-label="Drink emoji" value="${_fileEsc(d.emoji)}" oninput="checkinCfg.drinks[${i}].emoji=this.value" style="width:32px;background:none;border:none;font-size:18px;text-align:center;font-family:inherit;cursor:text;outline:none;">
+      <input data-ci-edit="drinks" aria-label="Drink" value="${_fileEsc(d.label)}" oninput="checkinCfg.drinks[${i}].label=this.value" placeholder="Drink" style="flex:1;background:none;border:none;border-bottom:1px dashed var(--p-line-ctl);font-size:16px;color:var(--p-ink);font-family:inherit;cursor:text;outline:none;min-width:0;padding:2px 0;">
+      <input aria-label="Drink detail" value="${_fileEsc(d.sub||'')}" oninput="checkinCfg.drinks[${i}].sub=this.value" placeholder="detail" style="width:84px;background:none;border:none;border-bottom:1px dashed var(--p-line-ctl);font-size:16px;color:var(--p-ink);font-family:inherit;cursor:text;outline:none;min-width:0;padding:2px 0;color:var(--p-mut);">
       <button onclick="checkinCfg.drinks.splice(${i},1);renderCheckinSettings()" class="icon-btn" aria-label="Remove ${_fileEsc(d.label)}" style="color:var(--p-mut);min-width:36px;min-height:36px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:16px;"></i></button>
     </div>`).join('')}</div>
-    <div style="padding:8px 12px;border-top:1px solid var(--p-line2);"><button onclick="checkinCfg.drinks.push({id:'dr'+Date.now(),emoji:'🥤',label:'New option',sub:''});renderCheckinSettings()" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;">+ Add drink option</button></div>
+    <div style="padding:8px 12px;border-top:1px solid var(--p-line2);"><button onclick="checkinCfg.drinks.push({id:'dr'+Date.now(),emoji:'🥤',label:'',sub:''});renderCheckinSettings();_ciFocusLast('drinks')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;">+ Add drink option</button></div>
   </div>
 
   <div class="sh"><h2>Snacks</h2></div>
@@ -20059,20 +20082,20 @@ function renderCheckinSettings(){
     <div style="padding:11px 12px;display:flex;justify-content:space-between;align-items:center;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Offer snacks to clients</div>${togBtn(checkinCfg.snacksOn,'checkinCfg.snacksOn=!checkinCfg.snacksOn;renderCheckinSettings()','Offer snacks')}</div>
     ${checkinCfg.snacksOn?`<div style="border-top:1px solid var(--p-line2);padding:10px 12px;">
       ${checkinCfg.snacks.map((s,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--p-line2);">
-        <span style="flex:1;font-size:16px;color:var(--p-ink);">${_fileEsc(s)}</span>
+        <input data-ci-edit="snacks" aria-label="Snack" value="${_fileEsc(s)}" oninput="checkinCfg.snacks[${i}]=this.value" placeholder="Snack" style="flex:1;background:none;border:none;border-bottom:1px dashed var(--p-line-ctl);font-size:16px;color:var(--p-ink);font-family:inherit;cursor:text;outline:none;min-width:0;padding:2px 0;">
         <button onclick="checkinCfg.snacks.splice(${i},1);renderCheckinSettings()" class="icon-btn" aria-label="Remove snack" style="color:var(--p-mut);min-width:36px;min-height:36px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:16px;"></i></button>
       </div>`).join('')}
-      <button onclick="checkinCfg.snacks.push('🍽️ New option');renderCheckinSettings()" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;margin-top:8px;">+ Add snack</button>
+      <button onclick="checkinCfg.snacks.push('');renderCheckinSettings();_ciFocusLast('snacks')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;margin-top:8px;">+ Add snack</button>
     </div>`:''}\n  </div>
 
   <div class="sh"><h2>Music options</h2></div>
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:10px 12px;">${checkinCfg.music.map((m,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--p-line2);">
-      <span aria-hidden="true" style="font-size:16px;">${_fileEsc(m.emoji)}</span>
-      <span style="flex:1;font-size:16px;color:var(--p-ink);">${_fileEsc(m.label)}</span>
+      <input aria-label="Music emoji" value="${_fileEsc(m.emoji)}" oninput="checkinCfg.music[${i}].emoji=this.value" style="width:32px;background:none;border:none;font-size:16px;text-align:center;font-family:inherit;cursor:text;outline:none;">
+      <input data-ci-edit="music" aria-label="Music option" value="${_fileEsc(m.label)}" oninput="checkinCfg.music[${i}].label=this.value" placeholder="Music" style="flex:1;background:none;border:none;border-bottom:1px dashed var(--p-line-ctl);font-size:16px;color:var(--p-ink);font-family:inherit;cursor:text;outline:none;min-width:0;padding:2px 0;">
       <button onclick="checkinCfg.music.splice(${i},1);renderCheckinSettings()" class="icon-btn" aria-label="Remove ${_fileEsc(m.label)}" style="color:var(--p-mut);min-width:36px;min-height:36px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:16px;"></i></button>
     </div>`).join('')}</div>
-    <div style="padding:8px 12px;border-top:1px solid var(--p-line2);"><button onclick="checkinCfg.music.push({id:'m'+Date.now(),emoji:'🎵',label:'New option'});renderCheckinSettings()" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;">+ Add music option</button></div>
+    <div style="padding:8px 12px;border-top:1px solid var(--p-line2);"><button onclick="checkinCfg.music.push({id:'m'+Date.now(),emoji:'🎵',label:''});renderCheckinSettings();_ciFocusLast('music')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;">+ Add music option</button></div>
     <div style="padding:10px 12px;border-top:1px solid var(--p-line2);display:flex;align-items:center;gap:10px;">
       <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">Let clients write in their own</div><div style="font-size:14px;color:var(--p-mut);line-height:1.4;">Adds a "Something else…" choice clients can type into</div></div>
       ${togBtn(checkinCfg.musicCustom!==false,"checkinCfg.musicCustom=(checkinCfg.musicCustom===false);renderCheckinSettings()","Toggle write-in music option")}
@@ -21285,6 +21308,23 @@ function saveBundles(){_stampRows('sc_bundles',bundles);const v=JSON.stringify(b
 let bundles=loadBundles();
 function _newBundle(){const id='bnd_'+Date.now().toString(36);bundles.push({id,name:'New bundle',formIds:[],resourceIds:[]});saveBundles();return id;}
 function _bundleItemCount(b){return (b.formIds||[]).length+(b.resourceIds||[]).length;}
+// THE NEW-CLIENT BUNDLE. Jessica (Feedback inbox, Oct 5): "The forms that are automatically sent to
+// clients also do not update with the new client bundle I selected." The first-visit package always
+// sent the built-in intake for her profession, and nothing she chose could change that. Now one
+// bundle can be marked "send to every new client", and the first-visit package sends ITS forms and
+// guides. The mark lives on the bundle record itself (newClient:true), so it rides sc_bundles'
+// existing merge by id and needs no new synced key. Unmarked, or a bundle with no form that still
+// exists, falls back to the built-in intake exactly as before.
+function _newClientBundle(){
+  try{const b=(bundles||[]).find(x=>x&&x.newClient);if(!b)return null;
+    const fids=(b.formIds||[]).filter(fid=>formTmpls[fid]&&!(typeof _formHidden==='function'&&_formHidden(fid)));
+    return fids.length?{b:b,formIds:fids,guideIds:(b.resourceIds||[]).slice()}:null;}catch(e){return null;}
+}
+function _setNewClientBundle(bid,on){
+  (bundles||[]).forEach(x=>{if(!x)return;if(x.id===bid){if(on)x.newClient=true;else delete x.newClient;}else if(on&&x.newClient)delete x.newClient;});
+  saveBundles();
+  if(typeof proToast==='function')proToast(on?'New clients now get this bundle in their first-visit package':'New clients get your standard intake again');
+}
 let formGuides={
   'tattoo-intake':['g-tattoo-prep'],
   'tattoo-consent':['g-tattoo-after'],
@@ -22834,7 +22874,9 @@ async function sendFirstVisitPackage(id){
   // real intake form up front, assign it BEFORE we stamp the check-in, then push both together and
   // CONFIRM the push landed (with one retry) before telling the provider it's ready.
   const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
-  if(!intakeFid||!formTmpls[intakeFid]){
+  // Her chosen new-client bundle, when she has marked one, replaces the built-in intake.
+  const _nb=(typeof _newClientBundle==='function')?_newClientBundle():null;
+  if(!_nb&&(!intakeFid||!formTmpls[intakeFid])){
     // No intake template resolved at all — extremely unlikely (the built-in "intake" is always present),
     // but rather than quietly send a check-in with no intake, tell the provider and stop. Sending a
     // half package is worse than sending nothing, because a client who completes the lone check-in reads
@@ -22845,7 +22887,10 @@ async function sendFirstVisitPackage(id){
   // Assign the intake (+ bundled photo release) FIRST so the client record is never in a
   // check-in-without-intake state, THEN stamp the fresh check-in request. The client keys "check-in done"
   // on this nonce (plus the appointment date), so a new package always asks for a FRESH check-in.
-  _assignFormsToClient(c,_withPhotoRelease(intakeFid));
+  if(_nb){
+    _assignFormsToClient(c,_nb.formIds);
+    try{_assignGuidesToClient(c,_nb.guideIds.filter(g=>typeof _findGuide!=='function'||_findGuide(g)));}catch(e){}
+  }else _assignFormsToClient(c,_withPhotoRelease(intakeFid));
   c.checkinReqAt=Date.now();
   try{saveClients({noSync:true});}catch(e){}
   // Cancel any already-armed per-client sync whose payload may have been built BEFORE we assigned the
@@ -22868,7 +22913,7 @@ async function sendFirstVisitPackage(id){
   if(res&&res.ok){
     // Positive confirmation both reached the server, so there's no guessing whether the new-client flow
     // went out.
-    if(typeof proToast==='function')proToast('✓ '+c.name.split(' ')[0]+'’s new-client intake + pre-visit check-in are ready — they’ll see both when they open the link.');
+    if(typeof proToast==='function')proToast('✓ '+c.name.split(' ')[0]+'’s '+(_nb?'“'+(_nb.b.name||'new-client')+'” forms':'new-client intake')+' + pre-visit check-in are ready — they’ll see both when they open the link.');
   } else if(c._token){
     // Push still didn't confirm. Re-arm the durable full-roster sync so the intake self-heals to the
     // server on the next flush, and be honest that it isn't confirmed yet instead of a false "all good".
@@ -29284,6 +29329,15 @@ const _SVC_MENU_BY_PROF={
 // provider-customized menu (any service that matches no profession default) from a pristine \u2014 even
 // if wrong-profession \u2014 one, so we never reseed over real edits.
 function _svcMenuAllDefaultKeys(){const s=new Set();try{Object.keys(_SVC_MENU_BY_PROF).forEach(pr=>_SVC_MENU_BY_PROF[pr].forEach(x=>s.add(String(x[0]).toLowerCase().trim()+'|'+(+x[1]||0))));}catch(e){}return s;}
+function _dropStockSvcSeeds(serverStr,localStr){
+  try{
+    const loc=JSON.parse(localStr||'null');if(!Array.isArray(loc))return localStr;
+    let srv=[];try{srv=JSON.parse(serverStr||'[]');}catch(e){srv=[];}
+    const have={};(Array.isArray(srv)?srv:[]).forEach(r=>{if(r&&r.id)have[r.id]=1;});
+    const out=loc.filter(r=>!(r&&typeof r.id==='string'&&/^svc_seed\d+$/.test(r.id)&&!r._ts&&!have[r.id]));
+    return out.length===loc.length?localStr:JSON.stringify(out);
+  }catch(e){return localStr;}
+}
 function _svcMenuDefaults(){
   // Merge services across ALL selected professions (deduped by name). If no selected
   // profession has a menu, return EMPTY, don't fall back to esty (which would show the
@@ -29329,7 +29383,10 @@ function _apptTxOptions(){
   const add=n=>{n=String(n||'').trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=1;out.push(n);}};
   try{(_svcMenu||[]).forEach(s=>add(s&&s.name));}catch(e){}
   try{if(typeof squareCatalog!=='undefined'&&squareCatalog&&Array.isArray(squareCatalog.services))squareCatalog.services.forEach(s=>add(s&&s.name));}catch(e){}
-  if(!out.length)add('Consultation');
+  // Nothing on her menu (a Square-only provider, or Square not loaded yet): offer a neutral word, not
+  // a service. This used to be 'Consultation', which a provider read as SlickChart adding a service
+  // back that she never offered (Jessica, Feedback inbox, Sep 22).
+  if(!out.length)add('Appointment');
   return out;
 }
 function _svcSet(i,k,v){if(_svcMenu[i]){_svcMenu[i][k]=v;_svcMenu[i]._ts=Date.now();_markSvcMenuCustom();_saveSvcMenu();}}
@@ -34974,7 +35031,7 @@ function openLocalQuickAdd(prefillDate){
       <button type="button" onclick="_addClientFromBooking()" aria-label="Add a new client" style="background:var(--accent-tint);color:var(--accent-strong);border:1px solid var(--accent);border-radius:24px;padding:5px 11px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit;"><i class="ti ti-user-plus" style="font-size:14px;"></i> New client</button>
     </div>
     <span class="fl-lbl">Treatment</span>
-    <select class="fi" id="qa-tx" style="margin-bottom:12px;">${txs.map(t=>`<option>${t}</option>`).join('')}</select>
+    <select class="fi" id="qa-tx" style="margin-bottom:12px;">${txs.map(t=>`<option>${_fileEsc(t)}</option>`).join('')}</select>
     <div style="display:flex;gap:10px;margin-bottom:16px;">
       <div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="qa-date" value="${_dv}" style=""></div>
       <div style="flex:1;"><span class="fl-lbl">Time</span><input type="time" class="fi" id="qa-time" value="10:00" aria-label="Appointment time" style=""></div>
@@ -35395,8 +35452,10 @@ function _ncNextContinue(id){
   if(!invite&&!intake){ nav('client',id); return; }
   if(invite&&intake){ sendFirstVisitPackage(id); return; } // the exact same function used everywhere else in the app
   if(intake){
+    const _nb=(typeof _newClientBundle==='function')?_newClientBundle():null;
     const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
-    if(intakeFid&&formTmpls[intakeFid]){ _assignFormsToClient(c,_withPhotoRelease(intakeFid)); try{saveClients();}catch(e){} }
+    if(_nb){ _assignFormsToClient(c,_nb.formIds); try{_assignGuidesToClient(c,_nb.guideIds.filter(g=>typeof _findGuide!=='function'||_findGuide(g)));}catch(e){} try{saveClients();}catch(e){} }
+    else if(intakeFid&&formTmpls[intakeFid]){ _assignFormsToClient(c,_withPhotoRelease(intakeFid)); try{saveClients();}catch(e){} }
   }
   inviteClientToApp(id); // sending the intake still needs an invite link to deliver to, same as inviting on its own
 }

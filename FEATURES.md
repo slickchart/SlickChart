@@ -1461,7 +1461,7 @@ stale device can wipe newer data from another one (CLAUDE.md §0.6).
 `sc_photo_index`, `sc_session_summaries`
 
 **Special-cased in `Cloud.pull()`**  
-`sc_attn_seen`, `sc_availability`, `sc_bizinfo`, `sc_bookings`, `sc_brand_colors`, `sc_captured_photos`, `sc_clients`, `sc_courses`, `sc_forms`, `sc_import_batches`, `sc_manual_appts`, `sc_msgstore`, `sc_pro_vc_subs`, `sc_resources`, `sc_seen_events`, `sc_sent_routines`, `sc_suggested_forms`, `sc_summary_drafts`, `sc_threads`, `sc_workspace`
+`sc_attn_seen`, `sc_availability`, `sc_bizinfo`, `sc_bookings`, `sc_brand_colors`, `sc_captured_photos`, `sc_clients`, `sc_courses`, `sc_forms`, `sc_import_batches`, `sc_manual_appts`, `sc_msgstore`, `sc_pro_vc_subs`, `sc_resources`, `sc_seen_events`, `sc_sent_routines`, `sc_service_menu`, `sc_suggested_forms`, `sc_summary_drafts`, `sc_threads`, `sc_workspace`
 
 ## Recovery and repair paths that already exist
 
