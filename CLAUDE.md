@@ -62,6 +62,42 @@ Hard rules — never violate:
 When you add or change any endpoint, ask: *Could a different account, or an unauthenticated caller, use
 this to read or write data that isn't theirs?* If yes, it's not done.
 
+## 0b. Ashley's paid sign-up alerts must never silently stop (her rule, 2026-10-21)
+
+Her words: *"this has happened a few times over now where these notifications stop working and it is
+never straight forward to bring them back. can you please make sure this stops happening and write a
+rule to prevent us from having to do this a fifth time"* — specifically the **paid provider** push.
+It broke four times. Each time the email arrived, the bell showed it, the phone stayed silent, and it
+took a day of "push this, run the test, send a screenshot" to fix. These hold from now on:
+
+1. **Every signed-in device of hers gets every founder alert.** Never pick one, never dedupe by
+   device, never send only to the newest. Her words: *"If I am logged into slickchart on a device, I
+   want the notifications there."* All founder alerts go through `pushFoundersReport` (lib/fcm.js),
+   which resolves her accounts ONE way (`founderAccounts()`: FOUNDER_EMAILS -> providers.email plus
+   `founder_accounts` seen by a verified founder session). Do not add a second lookup anywhere.
+2. **A phone links itself, on every way in, with no tap from her:** cold launch signed in, signing in
+   on the front door, coming back to the app (30 min throttle), every 6 h while open. An address Google
+   refuses is checked on save (`validate_only`) and replaced by the phone itself. Sign-out unlinks.
+   A client link opened in the app can never take a provider's address (`api/native-push.js`).
+3. **Diagnose by READING, never by asking her.** `GET https://slickchart.app/api/admin/push-state`
+   with `Authorization: Monitor <key from /mnt/project-files/feedback-monitor/monitor.key>` (she
+   authorized this) shows her accounts, every linked phone, every device she has USED with whether it
+   is on the alert list (from its own device report), a `problems` list in words, and the masked
+   record of every recent alert. `POST ...?send=1` sends her a test. Read it FIRST. Never ask her to
+   run the test button, send a screenshot, or push a diagnostic build to learn something it shows.
+   The preview is behind Vercel login, so this only works on the live site.
+4. **CI guards the server paths** (`no-demo-data.yml`, "Founder sign-up alerts reach every one of
+   her devices"). Any change to `lib/fcm.js`, `lib/push.js`, `api/native-push.js`,
+   `api/stripe-webhook.js`, `api/signup.js`, `lib/build-sales.js`, `api/admin/test-push.js`,
+   `api/admin/signups.js`, `lib/device-report.js` or the app's `_initNativeProvider` /
+   `_flushNativePushTok` also runs the Chromium tests in `scratchpad/founder-push/ui-*.mjs`. Never
+   loosen a guard to get green.
+5. **The daily feedback brief checks it.** If push-state's `problems` is not empty, the brief says
+   so plainly and the fix is prepared the same day, before the next sign-up is missed.
+6. **When she reports a missed alert:** read push-state, then `recentAlerts` for that sign-up
+   (`devices`/`sent`), then `SESSION-HANDOFF.md` §2k. Her observations (which phone, what she saw)
+   are ground truth (§1b). Do not tell her it is her phone's settings unless push-state shows it.
+
 ## 1. Proactive fixes (standing preference from the owner)
 
 When you notice a small bug, correctness issue, or clear optimization while working — especially anything

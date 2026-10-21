@@ -13,6 +13,9 @@ globalThis.__sqlHandler = (t, v) => {
   if (/SELECT provider_id FROM founder_accounts/.test(t)) return [{ provider_id: 'prov_main' }];
   if (/SELECT token, platform, owner_id/.test(t)) return [{ token: 'abc:SECRETTOKEN123456', platform: 'android', owner_id: 'prov_old1', created_at: 1, updated_at: 2 }];
   if (/FROM provider_push_subscriptions WHERE provider_id=/.test(t)) return [{ id: 'pp', sub: JSON.stringify({ endpoint: 'https://fcm.googleapis.com/w', keys: {} }) }];
+  if (/FROM device_reports/.test(t)) { if (v[0] !== 'prov_main' && v[0] !== 'prov_old1') throw new Error('device report for a non-founder id ' + v[0]);
+    return v[0] === 'prov_main' ? [{ device_key: 'd1', updated_at: new Date().toISOString(), report: { native: true, platform: 'Android', kind: 'installed app', build: '2026-10-21i', pushPerm: 'granted', pushPost: 'ok', pushEnds: 'ZZZZZZ' } }]
+      : [{ device_key: 'd2', updated_at: new Date().toISOString(), report: { native: true, platform: 'Android', kind: 'installed app', build: '2026-10-21i', pushPerm: 'granted', pushPost: 'ok', pushEnds: '123456' } }]; }
   return [];
 };
 const { signToken } = await import(APP + 'lib/auth.js');
@@ -28,6 +31,8 @@ nonce = 'n2'; ok((await call('Monitor ' + key)).code === 403, 'a switched-off (r
 const r = await call('Monitor ' + key);
 ok(r.code === 200 && r.out.accounts.length === 2, 'live key: both founder accounts: ' + JSON.stringify(r.out.accounts));
 ok(r.out.phoneApps[0].addressEnds === '123456' && !JSON.stringify(r.out).includes('SECRETTOKEN'), 'never returns a device token');
+ok(r.out.devices.length === 2 && r.out.devices.some(d => d.pushEnds === '123456' && d.onAlertList === true), 'a phone on the list is shown as linked');
+ok(r.out.problems.length === 1 && /NOT on the alert list/.test(r.out.problems[0]) && /2026-10-21i/.test(r.out.problems[0]), 'a phone in use but missing from the list is named: ' + r.out.problems[0]);
 const s = await call('Monitor ' + key, 'POST', { send: '1' });
 ok(s.code === 200 && s.out.send && s.out.send.sent >= 1, 'send=1 runs the founder test: ' + JSON.stringify(s.out.send));
 console.log(fails ? fails + ' FAILED' : 'ALL PASS'); process.exit(fails ? 1 : 0);

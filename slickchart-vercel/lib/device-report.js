@@ -23,7 +23,9 @@ export async function ensureDeviceReportsTable() {
 const NUM = ['summaryClients', 'summaryEntries', 'summariesOpen', 'homecareClients', 'clientsSaved', 'clientsOpen', 'storageKB', 'unsent', 'memOnly'];
 const BOOL = ['logo', 'idbWorks', 'standalone', 'native'];
 // clientsGone: the last few clients this device took off her list and why, as ids (never names).
-const STR = { build: 24, kind: 24, platform: 24, offloaded: 300, reloadFails: 300, email: 120, clientsGone: 1200 };
+// pushPerm/pushPost/pushEnds: whether the phone is linked for alerts; pushEnds is the LAST 6 characters
+// of its push address only, enough to match it against native_push_tokens, never the address itself.
+const STR = { build: 24, kind: 24, platform: 24, offloaded: 300, reloadFails: 300, email: 120, clientsGone: 1200, pushPerm: 16, pushPost: 120, pushEnds: 6 };
 export function cleanReport(r) {
   const out = {};
   if (!r || typeof r !== 'object') return out;

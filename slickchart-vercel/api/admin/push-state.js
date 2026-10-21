@@ -18,6 +18,7 @@ import { dbEnabled, sql } from '../../lib/db.js';
 import { monitorKeyOk } from '../feedback.js';
 import { pushFoundersReport, founderPushConfigured, nativePushConfigured, founderAccounts } from '../../lib/fcm.js';
 import { recentNotifies } from '../../lib/notify-log.js';
+import { listDeviceReports } from '../../lib/device-report.js';
 
 function fmt(ms) {
   const n = Number(ms) || 0;
@@ -59,6 +60,27 @@ export default async function handler(req, res) {
       const w = await q`SELECT provider_id, created_at FROM provider_push_subscriptions WHERE provider_id = ANY(${idList}::text[])`;
       out.browsers = (w || []).map(r => ({ account: String(r.provider_id).slice(-4), linked: fmt(r.created_at) }));
     } catch (err) { out.browsers = []; }
+    // Every device she has actually USED, from its own health report, and whether it is on the alert
+    // list. A phone opened recently whose address is not on the list is exactly the silent failure
+    // behind four rounds of "my sign-up push stopped" (2026-10-21), so it is spelled out in `problems`.
+    out.devices = []; out.problems = [];
+    const linkedEnds = new Set((out.phoneApps || []).map(a => a.addressEnds));
+    for (const id of idList) {
+      let reps = [];
+      try { reps = await listDeviceReports(id); } catch (err) { reps = []; }
+      for (const r of reps || []) {
+        const rep = r.report || {};
+        const at = new Date(r.updated_at).getTime() || 0;
+        const d = { account: id.slice(-4), platform: rep.platform || '', kind: rep.kind || '', build: rep.build || '', lastSeen: fmt(at),
+          pushPerm: rep.pushPerm || '', pushPost: rep.pushPost || '', pushEnds: rep.pushEnds || '',
+          onAlertList: rep.native ? (rep.pushEnds ? linkedEnds.has(rep.pushEnds) : false) : null };
+        out.devices.push(d);
+        if (rep.native && Date.now() - at < 3 * 86400000 && !d.onAlertList) {
+          out.problems.push(d.platform + ' app used ' + d.lastSeen + ' is NOT on the alert list (permission ' + (d.pushPerm || '?') + ', last save ' + (d.pushPost || 'none') + ', build ' + d.build + ')');
+        }
+      }
+    }
+    if (out.nativeConfigured && !(out.phoneApps || []).length) out.problems.push('no phone app is linked for alerts at all');
     try { out.recentAlerts = await recentNotifies(20); } catch (err) { out.recentAlerts = []; }
     res.status(200).json(out);
   } catch (e) {
