@@ -22,7 +22,8 @@ export async function ensureDeviceReportsTable() {
 // Only these fields, only these shapes. Anything else is dropped, so a report can never carry text.
 const NUM = ['summaryClients', 'summaryEntries', 'summariesOpen', 'homecareClients', 'clientsSaved', 'clientsOpen', 'storageKB', 'unsent', 'memOnly'];
 const BOOL = ['logo', 'idbWorks', 'standalone', 'native'];
-const STR = { build: 24, kind: 24, platform: 24, offloaded: 300, reloadFails: 300, email: 120 };
+// clientsGone: the last few clients this device took off her list and why, as ids (never names).
+const STR = { build: 24, kind: 24, platform: 24, offloaded: 300, reloadFails: 300, email: 120, clientsGone: 1200 };
 export function cleanReport(r) {
   const out = {};
   if (!r || typeof r !== 'object') return out;

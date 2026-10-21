@@ -563,7 +563,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20k';
+const APP_BUILD='2026-10-21a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2302,6 +2302,7 @@ function _purgeRemovedClients(){
         // Removed through its Square key only: record its own id too, or the upload that drops it
         // is held back by the shrink guard forever and this device stops syncing its list.
         if(!sample&&!dOwn&&(mSq||dSq)&&typeof _deletedClientIds!=='undefined'){_deletedClientIds[id]=Date.now();tomb=true;}
+        if(!sample){try{_noteClientGone(id,dOwn?'on the delete list':mOwn?'on the merged list':dSq?'its Square copy is on the delete list':'its Square copy was merged away');}catch(e){}}
         delete CL[id];changed=true;
       }
     });
@@ -2585,7 +2586,15 @@ let _deletedClientIds={};
 function loadDeletedClients(){try{const raw=localStorage.getItem('sc_deleted_clients');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')_deletedClientIds=o;}}catch(e){}}
 function _saveDeletedClients(){try{const v=JSON.stringify(_deletedClientIds);localStorage.setItem('sc_deleted_clients',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_deleted_clients',v);}catch(e){}}
 function _serverDeleteClients(ids){try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok||!ids||!ids.length)return;fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:[],deletedIds:ids})}).catch(function(){});}catch(e){}}
-function _markClientDeleted(id){if(!id)return;_deletedClientIds[id]=Date.now();_saveDeletedClients();_serverDeleteClients([id]);}
+// Why each client left this device's list, newest last. Device-local (not an sc_ key); the device
+// report carries the last few as ids, never names, so the next "keeps getting deleted" is answered
+// from the founder screen instead of guessed at.
+function _noteClientGone(id,why){
+  try{if(!id)return;let a=JSON.parse(localStorage.getItem('scl_clients_gone')||'[]');if(!Array.isArray(a))a=[];
+    const last=a[a.length-1];if(last&&last.id===id&&last.why===why&&Date.now()-last.at<3600000)return;
+    a.push({id:String(id),why:String(why||'').slice(0,60),at:Date.now()});if(a.length>60)a=a.slice(-60);localStorage.setItem('scl_clients_gone',JSON.stringify(a));}catch(e){}
+}
+function _markClientDeleted(id){if(!id)return;try{_noteClientGone(id,'removed by hand');}catch(e){}_deletedClientIds[id]=Date.now();_saveDeletedClients();_serverDeleteClients([id]);}
 // Square products the provider removed from their SlickChart shop (services they don't retail, gift
 // cards, one-offs). Like the deleted-client set, this synced guard stops the catalog re-sync from
 // re-adding a product they intentionally deleted. Keyed by the sq_ id derived in _mergeSquareRetail.
@@ -2773,6 +2782,9 @@ function _mergeClientRecords(keepId,dropId){
   // merge, another device that had not heard yet) is routed onto the survivor instead of dropped.
   // The server moves the client's link onto the survivor (_serverMergeClients).
   try{_mergedInto[dropId]=keepId;if(drop.squareId)_mergedInto[_sqLocalId(drop.squareId)]=keepId;if(!_mergeBatch)_saveMergedInto();}catch(e){}
+  // A put-back client merged into another: the survivor is that person now, so it inherits the put-back.
+  try{const _ud=(typeof _unDeletedClientIds==='function')?_unDeletedClientIds():{};if(_ud[dropId]&&!_ud[keepId]){const u=JSON.parse(_lsGet('sc_undeleted_clients')||'{}')||{};u[keepId]=Date.now()+1;const v=JSON.stringify(u);localStorage.setItem('sc_undeleted_clients',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_undeleted_clients',v);}}catch(e){}
+  try{_noteClientGone(dropId,(_mergeBatch?'auto-merged':'merged')+' into '+keepId);}catch(e){}
   try{_deletedClientIds[dropId]=Date.now();
     if(_mergeBatch)_mergeBatch.pairs.push({from:dropId,to:keepId});
     else{_saveDeletedClients();_serverMergeClients([{from:dropId,to:keepId}]);}}catch(e){}
@@ -2819,6 +2831,14 @@ function _autoMergeSquareDuplicates(){
       // let two devices each keep a different copy and delete the other's — and the person was gone.
       // Nothing conflicts in an automatic merge, so which id survives changes no content.
       let keepId=ids.indexOf(canon)>=0?canon:ids.slice().sort()[0];
+      // A client she PUT BACK is the survivor. Folding it into the canonical copy tombstoned it with a
+      // delete newer than her put-back, so it was gone again, and the canonical copy was often on the
+      // delete list itself, so the person vanished entirely: Ashley, 2026-10-20, "for cooper i have
+      // already done this a few times. why does she keep getting deleted". Still the same pick on every
+      // device (the put-back record is synced), so two devices cannot keep different copies.
+      try{const _ud=(typeof _unDeletedClientIds==='function')?_unDeletedClientIds():{};const _back=ids.filter(function(x){return _ud[x];}).sort();
+        if(_back.length&&!_ud[keepId])keepId=_back[0];
+        else if(!_back.length&&typeof _deletedClientIds!=='undefined'&&_deletedClientIds[keepId]){const _live=ids.filter(function(x){return !_deletedClientIds[x];}).sort();if(_live.length)keepId=_live[0];}}catch(e){}
       ids.forEach(function(dropId){
         if(dropId===keepId||!CL[dropId]||!CL[keepId])return;
         // Never under her fingers: a copy open on screen (a note half-typed) waits for the next run.
@@ -6286,7 +6306,7 @@ async function _sendDeviceReport(){
     const ua=navigator.userAgent||'';
     const report={build:APP_BUILD,kind:native?'installed app':(standalone?'home-screen app':'browser'),
       platform:/iPhone/.test(ua)?'iPhone':/iPad/.test(ua)?'iPad':/Android/.test(ua)?'Android':/Windows/.test(ua)?'Windows':/Mac/.test(ua)?'Mac':'other',
-      native:!!native,standalone:standalone,idbWorks:idbWorks,
+      native:!!native,standalone:standalone,idbWorks:idbWorks,clientsGone:(function(){try{return (JSON.parse(localStorage.getItem('scl_clients_gone')||'[]')||[]).slice(-12).map(function(x){return x.id+'|'+x.why+'|'+x.at;}).join(';');}catch(e){return '';}})(),
       summaryClients:Object.keys(ss).length,summaryEntries:ent,
       summariesOpen:(typeof sessionSummaries!=='undefined'&&sessionSummaries)?Object.keys(sessionSummaries).length:0,
       homecareClients:Object.keys(hc).length,
@@ -32664,6 +32684,10 @@ function _recoverDeviceLines(j){
     if(r.unsent)L.push('    changes waiting to reach the account: '+r.unsent+' (sent automatically next time it opens with signal)');
     if(r.memOnly)L.push('    >>> phone storage FULL: '+r.memOnly+' saved items could not be kept on this device (they reload from the account each launch)');
     if(r.reloadFails)L.push('    failed to reload: '+r.reloadFails);
+    // Which clients this device took off her list, and why (newest last).
+    if(r.clientsGone){try{const nm={};(j.clients||[]).forEach(function(c){nm[c.id]=c.name;});
+      L.push('    clients this device took off the list:');
+      String(r.clientsGone).split(';').filter(Boolean).slice(-8).forEach(function(x){const a=x.split('|');L.push('      '+(nm[a[0]]||a[0])+' — '+(a[1]||'?')+' · '+ago(Number(a[2])||0));});}catch(e){}}
   });
   const ses=j.sessions||[];
   if(ses.length){L.push('SIGNED IN TO THIS ACCOUNT:');ses.forEach(function(x){L.push('  '+(x.device||'device')+(x.location?(' · '+x.location):'')+' · last seen '+ago(x.lastSeen)+(x.signedOut?' · signed out':''));});}

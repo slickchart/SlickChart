@@ -8033,6 +8033,23 @@ unread check-in card and the top of the check-in detail page showed the client's
   `THEMES=light` / `BRANDS=navy` env vars narrow a run.
 - Test: `scratchpad/test-checkin-light.mjs` 27/27 Chrome + Safari (fails 13 on the old code).
 
+## 2026-10-21 — Cooper Howard keeps getting deleted (build `2026-10-21a`, PREVIEW)
+
+**What Ashley OBSERVED (ground truth, §1b):**
+- Cooper Howard keeps disappearing from her client list.
+- She has brought Cooper back with the founder tool "a few times".
+- The tool said it brought Cooper back, but Cooper was still not on her list.
+- Her recover paste listed "DELETED AGAIN EVERY REFRESH: Cooper Howard" (a live server row whose id is on the delete record).
+
+**Causes found:**
+1. The live `_recoverUnDelete` only took the id off `sc_deleted_clients` and added it to `sc_undeleted_clients`. It never put the client back in `sc_clients`, so nothing showed. Fixed in 20j: it also calls `repairRoster onlyIds` and clears this device's own delete record.
+2. `_autoMergeSquareDuplicates` kept the canonical `sq_` copy, or the sorted-first id. When the put-back copy shared a Square id with it, the put-back copy was folded in and tombstoned with `Date.now()`, a delete newer than the put-back. The canonical copy was often on the delete list itself, so the person vanished. Since 21a the put-back copy is the survivor, or a non-deleted copy when there is no put-back, and the survivor inherits the put-back.
+3. Logging: `scl_clients_gone` records every removal with its reason (merge, purge, by hand). The device report carries the last 12 as `clientsGone`, and the founder screen prints them with names under each device. Next time the paste says exactly why.
+
+Test: `scratchpad/test-putback-survives-merge.mjs` (7/7 Chrome and Safari).
+
+Since then: 20i and the photo fixes went live in a0a04d9 at her request. 20j (one-tap Bring back that adds to the list), 20k (sort orphan photos into files by visit date) and 21a are preview only.
+
 ## 2026-10-20 — Every before photo vanished from Start session mid-appointment (build `2026-10-20d`, PREVIEW)
 
 **What Ashley observed (§1b, settled):** today, on her phone/tablet (Android), every before photo she
