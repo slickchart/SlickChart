@@ -311,7 +311,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-21k';
+const APP_BUILD='2026-10-22a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -9351,6 +9351,17 @@ function _reRenderAttn(){
 // check-ins, photo consults, check-in nudges, flagged intakes, form reviews). Rendered on Home AND
 // in the notification feed, so the bell is the one canonical activity hub and both draw from the same
 // dismissal state. Returns the concatenated tile HTML (empty string when nothing needs attention).
+// The first-visit nudges Home could show, soonest first (Home shows three; Clear all clears them all).
+function _fvpCandidates(){
+  return _shotFilterEntries(Object.entries(CL)).filter(function(e){var id=e[0],c=e[1];
+      // appInvited alone was the test, so if that flag never landed (sent from another device, or
+      // the invite went out some other way) the nudge stayed up even though the client had already
+      // filled the intake in. A completed intake is proof the package is done; trust it over the flag.
+      if(!c||!String(c.name||'').trim())return false;
+      if(typeof _hasIntakeOnFile==='function'&&_hasIntakeOnFile(c))return false;
+      return !c.lastVisit&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
+    }).sort(function(a,b){return (_clientApptSoonMs(a[0])||Infinity)-(_clientApptSoonMs(b[0])||Infinity);});
+}
 function _attnTilesHTML(){
   const newCheckins=unreadCheckins();
   return `
@@ -9397,14 +9408,7 @@ function _attnTilesHTML(){
   ${(function(){
     // Brand-new clients with a first appointment coming up who haven't been set up yet —
     // nudge to send the first-visit package (invite + intake in one tap).
-    var cands=_shotFilterEntries(Object.entries(CL)).filter(function(e){var id=e[0],c=e[1];
-      // appInvited alone was the test, so if that flag never landed (sent from another device, or
-      // the invite went out some other way) the nudge stayed up even though the client had already
-      // filled the intake in. A completed intake is proof the package is done; trust it over the flag.
-      if(!c||!String(c.name||'').trim())return false;
-      if(typeof _hasIntakeOnFile==='function'&&_hasIntakeOnFile(c))return false;
-      return !c.lastVisit&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
-    }).sort(function(a,b){return (_clientApptSoonMs(a[0])||Infinity)-(_clientApptSoonMs(b[0])||Infinity);}).slice(0,3);
+    var cands=_fvpCandidates().slice(0,3);
     return cands.map(function(e){var id=e[0],c=e[1];var na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;return _swipeTile(`
     <div onclick="sendFirstVisitPackage('${id}')" style="margin:0;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-green-line);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:40px;height:40px;border-radius:12px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-rocket" style="font-size:22px;color:var(--p-green);"></i></div>
@@ -21977,11 +21981,17 @@ function _clearAllAttn(){
     // The non-client tiles (booking requests, check-in nudges) clear the same way their own ✕ does.
     try{if(typeof _dismissReqTile==='function')_dismissReqTile();}catch(e){}
     try{if(typeof _vcPendingIds==='function')(_vcPendingIds()||[]).forEach(function(vid){try{_dismissVcTile(vid);}catch(e){}});}catch(e){}
+    // "X hasn't done their check-in", "New pre-visit check-in" and "First visit for X" were missing
+    // here, so Clear all left them standing while their own X worked. Same keys their X writes.
+    try{const ci=_shotFilterEntries(_needsCheckin());if(ci.length){ci.forEach(function(e){_ciDismissed[_ciKey(e[0],e[1])]=true;done.push(e[0]);});saveCiDismissed();}}catch(e){}
+    try{if(unreadCheckins().length){done.push('cin');_dismissCinTile();}}catch(e){}
+    try{const fv=_fvpCandidates();if(fv.length){fv.forEach(function(e){_homeDismissed.add('fvp-'+e[0]);done.push(e[0]);});_saveHomeDismissed();}}catch(e){}
   }catch(e){}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   try{_reRenderAttn();}catch(e){}
-  if(typeof proToast==='function')proToast(done.length?('Cleared '+done.length+' item'+(done.length===1?'':'s')+'. New ones will still come through.'):'Nothing left to clear.');
+  const n=new Set(done).size;
+  if(typeof proToast==='function')proToast(n?('Cleared '+n+' item'+(n===1?'':'s')+'. New ones will still come through.'):'Nothing left to clear.');
 }
 function _dismissTile(k){_homeDismissed.add(k);_saveHomeDismissed();_reRenderAttn();}
 // "Swipe to clear" on the Home banners for bookings/check-ins now genuinely marks them
