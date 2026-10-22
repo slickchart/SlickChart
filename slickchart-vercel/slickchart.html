@@ -311,7 +311,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-22a';
+const APP_BUILD='2026-10-22b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -22059,13 +22059,65 @@ function _demoPaymentSeed(){ // demo-only: the body lives in scripts/demo-seed.j
 }
 // Build the pre-visit check-in message + link for a client (shared by the picker and each send channel
 // so the text is identical no matter how it's sent).
+// The client's next appointment in words for a message to them ("Thursday, October 23 at 2:30 PM"),
+// or '' when none is known. Ashley (2026-10-22): the first-visit package and the pre-visit check-in
+// should both say when the visit is. A visit later TODAY counts (same-day check-ins are common), one
+// that has already started does not. Matches appointments to the client the same way the next-visit
+// reconciler does: Square by customer id, a booking by client id, a name only as the last resort.
+function _apptWhenForMsg(id){
+  const c=CL[id];if(!c)return '';
+  const nm=String(c.name||'').trim().toLowerCase();
+  const now=Date.now();
+  const startToday=new Date();startToday.setHours(0,0,0,0);
+  let best=null,timed=false;
+  const take=(w,hasTime)=>{
+    if(!w||isNaN(w))return;
+    // An appointment with no time on it is still upcoming all day.
+    const end=hasTime?w.getTime():(new Date(w.getFullYear(),w.getMonth(),w.getDate(),23,59).getTime());
+    if(end<now)return;
+    if(!best||w<best){best=w;timed=hasTime;}
+  };
+  try{
+    if(typeof squareAppts!=='undefined'&&Array.isArray(squareAppts))squareAppts.forEach(a=>{
+      if(!a||!a.at)return;
+      const mine=(a.sqcid&&c.squareId)?String(a.sqcid)===String(c.squareId):(!!nm&&String(a.client||'').trim().toLowerCase()===nm);
+      if(mine)take(a.at,true);
+    });
+  }catch(e){}
+  try{
+    ((typeof manualAppts!=='undefined'&&manualAppts)||[]).concat((typeof confirmedAppts!=='undefined'&&confirmedAppts)||[]).forEach(a=>{
+      if(!a)return;
+      const mine=a.clientId?a.clientId===id:(!!nm&&String(a.client||'').trim().toLowerCase()===nm);
+      if(!mine)return;
+      const hasTime=/^\d{1,2}:\d{2}/.test(String(a.time||'').trim());
+      take(typeof _apptWhen==='function'?_apptWhen(a.date,a.time):null,hasTime);
+    });
+  }catch(e){}
+  if(best){
+    const day=best.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+    return timed?(day+' at '+best.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):day;
+  }
+  // Nothing in the calendar on this device: fall back to the visit saved on the client, unless it has
+  // already passed. It is stored year-less ("Thursday, October 23 · 2:30 PM" or "Jul 17").
+  const nv=String(c.nextVisit||'').trim();
+  if(!nv||nv==='Not scheduled'||nv==='\u2014')return '';
+  const parts=nv.split('\u00b7').map(x=>x.trim()).filter(Boolean);
+  const datePart=parts[0]||'';
+  try{
+    const bare=datePart.replace(/^[A-Za-z]+,\s*/,'');
+    const d=new Date(/\d{4}/.test(bare)?bare:(bare+' '+new Date().getFullYear()));
+    if(!isNaN(d)&&d<startToday&&(startToday-d)/86400000<60)return ''; // further back = next year
+  }catch(e){}
+  return parts[1]?(datePart+' at '+parts[1]):datePart;
+}
 function _checkinMsg(id){
   const c=CL[id]||{};
   const first=(c.name||'there').split(' ')[0];
   let link='';
   try{ link=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
   if(!link&&c._token){ link=_clientLinkBase()+'/space?c='+encodeURIComponent(c._token); }
-  const visit=(c.nextVisit&&c.nextVisit!=='Not scheduled'&&c.nextVisit!=='—')?(' before your '+String(c.nextVisit).split('·')[0].trim()+' visit'):'';
+  const when=_apptWhenForMsg(id);
+  const visit=when?(' before your visit on '+when):'';
   const signoff=(typeof bizInfo!=='undefined'&&bizInfo&&(bizInfo.ownerName||bizInfo.name))?(' – '+(bizInfo.ownerName||bizInfo.name)):'';
   const msg=`Hi ${first}! Please take 2 minutes to complete your pre-visit check-in${visit} so I'm all set for you: ${link}${signoff}`;
   return {msg,link,first};
@@ -22796,8 +22848,9 @@ function inviteClientToApp(id){
   // the intake and the pre-visit check-in, so nobody stops after just one. A plain invite (no pending
   // forms) keeps the friendly general wording.
   const _hasPendingForms=Array.isArray(c.pendingForms)&&c.pendingForms.length>0;
+  const _when=_hasPendingForms?_apptWhenForMsg(id):'';
   const msg=_hasPendingForms
-    ? ('Hi '+first+'! Getting you ready for your visit'+(biz?(' at '+biz):'')+' \u2014 tap to finish your 2 quick forms (intake + check-in). Looking forward to seeing you!\n\n'+link)
+    ? ('Hi '+first+'! Getting you ready for your visit'+(biz?(' at '+biz):'')+(_when?(' on '+_when):'')+' \u2014 tap to finish your 2 quick forms (intake + check-in). Looking forward to seeing you!\n\n'+link)
     : ('Hi '+first+'! '+who+' invited you to SlickChart'+(biz?(' \u2014 '+biz):'')+'. See your session summary, aftercare, forms, and rebook anytime:\n\n'+link);
   // The message below seeds an editable textarea; the actual sms/mailto bodies are built from its live
   // value at tap time (see _inviteSendText / _inviteSendEmail), so provider edits go out as typed.

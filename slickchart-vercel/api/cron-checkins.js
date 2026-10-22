@@ -17,7 +17,21 @@ import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
 
 const HOUR = 3600 * 1000;
-const CI_TEXT = 'Hi! Just a quick reminder to complete your pre-visit check-in before your visit so I’m all set for you ✨ Tap to open it — it only takes about 2 minutes.';
+// Ashley (2026-10-22): the check-in says when the visit is. `when` is '' when we cannot be sure of the
+// time zone, and then it says "before your visit" as it always did: no time beats a wrong time.
+const ciText = (when) => 'Hi! Just a quick reminder to complete your pre-visit check-in before your visit' + (when ? ' on ' + when : '') + ' so I’m all set for you ✨ Tap to open it — it only takes about 2 minutes.';
+const ciPushBody = (when) => 'Please take 2 minutes for your check-in before your visit' + (when ? ' on ' + when : '') + ' ✨';
+
+// "Thursday, October 23 at 2:30 PM" in the appointment's own location time zone (from Square).
+function whenText(startAt, tz) {
+  if (!tz) return '';
+  try {
+    const d = new Date(startAt); if (isNaN(d.getTime())) return '';
+    const day = d.toLocaleDateString('en-US', { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric' });
+    const time = d.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+    return day + ' at ' + time;
+  } catch (e) { return ''; }
+}
 const DEAD = ['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'DECLINED', 'NO_SHOW'];
 
 function digits(s) { let d = String(s || '').replace(/\D/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d; }
@@ -66,7 +80,15 @@ export default async function handler(req, res) {
       const startMin = new Date(now).toISOString();
       const startMax = new Date(now + 26 * HOUR).toISOString();
       let bookings = [], locIds = [];
-      try { const loc = await squareFetch('/v2/locations', {}, conn.token); locIds = (loc.locations || []).map(l => l.id).filter(Boolean); } catch (e) {}
+      const tzByLoc = {};
+      try {
+        const loc = await squareFetch('/v2/locations', {}, conn.token);
+        locIds = (loc.locations || []).map(l => l.id).filter(Boolean);
+        for (const l of (loc.locations || [])) if (l && l.id && l.timezone) tzByLoc[l.id] = l.timezone;
+      } catch (e) {}
+      // A booking without a location falls back to the business's zone only when every location agrees.
+      const zones = [...new Set(Object.values(tzByLoc))];
+      const tzOf = (b) => (b.location_id && tzByLoc[b.location_id]) || (zones.length === 1 ? zones[0] : '');
       const seen = new Set();
       const pull = async (qs) => {
         try { const d = await squareFetch('/v2/bookings?' + qs.toString(), {}, conn.token); for (const b of (d.bookings || [])) { if (b && b.id && !seen.has(b.id)) { seen.add(b.id); bookings.push(b); } } } catch (e) {}
@@ -121,14 +143,15 @@ export default async function handler(req, res) {
         if (!freshB) continue;
         summary.appts++;
 
+        const when = whenText(b.start_at, tzOf(b));
         // 1) Send it through the app's messaging system (persists in the client's thread).
-        try { await logEvent(provider, cl.id, 'provider_message', { text: CI_TEXT, photos: [], auto: true, checkin: true }); summary.sent++; } catch (e) {}
+        try { await logEvent(provider, cl.id, 'provider_message', { text: ciText(when), photos: [], auto: true, checkin: true }); summary.sent++; } catch (e) {}
 
         // 2) Push so it surfaces even with the app closed. Deep-link the tap to the check-in screen.
         // Carry THIS client's own token. A tokenless link left the app with no idea whose space to
         // open, and when browser storage couldn't supply one it used to fall back to the SAMPLE space.
         const dlUrl = spaceUrl(cl.token, 'previsit');
-        const payload = { title: 'Pre-visit check-in', body: 'Please take 2 minutes for your check-in before your visit ✨', url: dlUrl, tag: 'checkin:' + b.id, renotify: true, screen: 'previsit' };
+        const payload = { title: 'Pre-visit check-in', body: ciPushBody(when), url: dlUrl, tag: 'checkin:' + b.id, renotify: true, screen: 'previsit' };
         let n = 0;
         const _wants = await wantsPush(q, cl.id);
         if (_wants && pushConfigured() && subs.length) { try { n += await sendPushToAll(subs, payload, deletePushSub); } catch (e) {} }
