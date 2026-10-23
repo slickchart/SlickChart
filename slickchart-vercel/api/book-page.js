@@ -78,6 +78,9 @@ export default async function handler(req, res) {
 
     const cfg = await getBookingConfig(prov.id);
     if (!cfg.on) { res.status(404).send(notActive()); return; }
+    // She books through her own Square page: her link forwards there. getBookingConfig has already
+    // restricted it to Square's hosts, so this can never point anywhere else.
+    if (cfg.squareUrl) { res.setHeader('Location', cfg.squareUrl); res.status(302).send(''); return; }
     const hours = await getHours(prov.id);
     if (!hours) { res.status(404).send(notActive()); return; }
     const services = await getServices(prov.id, cfg);

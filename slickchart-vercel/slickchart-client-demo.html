@@ -2354,6 +2354,7 @@ function _downloadCourseFile(fileId,fileName,fileType,btn){
     .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig;}});
 }
 function nav(screen){
+  if(screen!=='rebook'){try{_rbUseRequest=false;}catch(e){}}
   // Safari does not fire blur/change on a focused field that is simply removed from the page, so a
   // note typed less than a debounce ago was lost when the screen changed without a tap (a timer, a
   // notification). Blurring it first runs its own save, the same as tapping away does.
@@ -5249,9 +5250,23 @@ function selectRebookDate(key){
   });
   refreshRebookTimes();
 }
+let _rbUseRequest=false;
 function renderRebook(){
   setNav('home');
   document.getElementById('tt').textContent='Request Appointment';
+  // She books on her own Square page (prepayment, several services at once): send them there.
+  // A request is still one tap away for anyone who would rather ask.
+  const _sqUrl=(typeof activeProvider==='function'&&activeProvider().squareBookingUrl)||'';
+  if(_sqUrl&&!_rbUseRequest){
+    document.getElementById('tt').textContent='Book an Appointment';
+    S.innerHTML=`<div style="padding:22px 16px 10px;">
+      <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:var(--c-ink);margin-bottom:6px;">Book with ${_txt(client.providerFirst)}</div>
+      <div style="font-size:14px;color:var(--c-mut);line-height:1.6;margin-bottom:18px;">${_txt(client.providerFirst)} takes bookings on Square. Pick your services and a time there. Any payment is made there too.</div>
+      <a id="rb-square" href="${_urlAttr(_sqUrl)}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:14px;text-decoration:none;justify-content:center;align-items:center;gap:8px;"><i class="ti ti-calendar-plus"></i> Book on Square</a>
+      <button onclick="_rbUseRequest=true;renderRebook();" style="width:100%;margin-top:12px;background:none;border:none;color:var(--c-mut);font-size:14px;cursor:pointer;font-family:inherit;padding:8px;text-decoration:underline;">Or send ${_txt(client.providerFirst)} a request instead</button>
+    </div>`;
+    return;
+  }
   const _av=(typeof activeProvider==='function'&&activeProvider()._availability)||client._realAvailability;
   // A real client must NEVER see the demo availability. If their provider hasn't published hours yet,
   // fall through to normalizeAvail's generic default (Mon–Sat 9–5), not SlickBridge's sample schedule.
@@ -6879,6 +6894,8 @@ function _applyRealClientData(j){
   // published under the owner because the owner is the account holder.
   p.animals=Array.isArray(d.animals)?d.animals:[];
   p.services=Array.isArray(d.services)?d.services:[];   // provider's real service menu (for the request-appointment picker)
+  // Her own Square booking page, when she chose to take bookings there (prepayment, several services).
+  p.squareBookingUrl=(typeof d.squareBookingUrl==='string'&&/^https:\/\/([a-z0-9-]+\.)*(squareup\.com|square\.site|square\.online|squareupsandbox\.com)(\/|$)/i.test(d.squareBookingUrl))?d.squareBookingUrl:'';
   // Store availability PER PROVIDER (like services) — it used to live on one global client field that
   // whichever provider synced last overwrote, so a multi-provider client saw the wrong open days/slots
   // after switching. renderRebook reads the ACTIVE provider's copy.

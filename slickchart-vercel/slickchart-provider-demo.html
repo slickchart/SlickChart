@@ -569,7 +569,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-22c';
+const APP_BUILD='2026-10-22d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -17750,6 +17750,40 @@ function _bookToggle(){
   if(typeof proToast==='function')proToast(bookCfg.on?'Your booking link is live':'Booking link turned off');
   renderBookingLink();
 }
+// Her own Square booking page (Jaimie, 2026-10-22): she takes prepayment for every service in Square
+// and books several services at once there. Same rule as the server (lib/booking.js): https on
+// Square's own hosts only, because her /book link forwards to it.
+function _sqBookUrlNorm(u){
+  try{let v=String(u||'').trim();if(!v)return '';if(!/^https?:\/\//i.test(v))v='https://'+v;
+    const x=new URL(v);if(x.username||x.password||x.port)return '';x.protocol='https:';
+    const h=x.hostname.toLowerCase();
+    if(!['squareup.com','square.site','square.online','squareupsandbox.com'].some(d=>h===d||h.endsWith('.'+d)))return '';
+    return x.href.slice(0,500);}catch(e){return '';}
+}
+function _bookSquareUrl(){
+  _inputSheet({title:'Your Square booking page',body:'Paste the link to your Square booking page. In Square: Appointments, then Online booking, then copy your booking site link.',placeholder:'https://book.squareup.com/appointments/…',value:bookCfg.squareUrl||'',action:'Save'},function(v){
+    const raw=String(v||'').trim();const u=_sqBookUrlNorm(raw);
+    if(raw&&!u){if(typeof proToast==='function')proToast('That is not a Square booking link. It should start with book.squareup.com or end in square.site.',0);return;}
+    bookCfg.squareUrl=u;saveBookCfg();renderBookingLink();
+    if(typeof proToast==='function')proToast(u?'Clients now book on your Square page':'Back to booking in SlickChart');
+  });
+}
+function _bookSquareCardHTML(){
+  const u=bookCfg.squareUrl||'';
+  return `<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Book on Square instead</div>
+    <div style="background:var(--surf2);border:1.5px solid ${u?'var(--accent)':'var(--p-line)'};border-radius:12px;padding:13px 14px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:11px;">
+        <i class="ti ti-brand-square" aria-hidden="true" style="font-size:20px;color:var(--accent-strong);flex-shrink:0;"></i>
+        <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Use my Square booking page</div>
+        <div style="font-size:14px;color:var(--p-mut);line-height:1.45;margin-top:2px;">${u?'The Book button in your clients\u2019 app opens your Square page, and so does your booking link when it is on. Square takes any prepayment and lets them pick several services.':'For prepayment or booking several services at once. Your clients\u2019 Book button opens your Square page instead.'}</div></div>
+      </div>
+      ${u?`<div style="font-size:14px;color:var(--accent-strong);word-break:break-all;margin:9px 0 0 31px;">${_fileEsc(u)}</div>`:''}
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btng" style="flex:1;" onclick="_bookSquareUrl()"><i class="ti ti-${u?'pencil':'link'}"></i> ${u?'Change link':'Add my Square link'}</button>
+        ${u?`<button class="btng" style="flex:0 0 auto;" onclick="bookCfg.squareUrl='';saveBookCfg();renderBookingLink();"><i class="ti ti-x"></i> Stop</button>`:''}
+      </div>
+    </div>`;
+}
 function _bookNote(){
   _inputSheet({title:'Add a note to your booking page',body:'One line people see before they book. Parking, where to find you, a deposit policy.',placeholder:'Free parking behind the building.',value:bookCfg.note||'',action:'Save'},function(v){
     bookCfg.note=String(v||'').slice(0,400);saveBookCfg();renderBookingLink();
@@ -17877,7 +17911,8 @@ function renderBookingLink(){
         ${togBtn(live,'_bookToggle()','Take bookings from this link')}
       </div>
     </div>
-    ${bookCfg.on?`
+    ${_bookSquareCardHTML()}
+    ${(bookCfg.on&&!bookCfg.squareUrl)?`
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">When someone picks a time</div>
     ${modeCard('request','Ask me first','They ask for a day and time inside your hours. It lands in Booking Requests and you confirm, suggest another time, or decline — the same as when a client books from their app.','')}
     ${modeCard('instant','Book it instantly','They see your genuinely free times and the appointment is made straight away. Less back and forth for both of you.','Heads up: this shows when you’re already booked. Anyone with the link can see which times are taken, though never who with.')}

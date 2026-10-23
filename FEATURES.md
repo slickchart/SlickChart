@@ -101,6 +101,10 @@ saved anywhere", not "does this always call that".
 | `_bookOpenPreview` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_bookSet` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_bookSet` | `/api/square/connection` | via `_sqConnState` |
+| `_bookSquareCardHTML` | `/api/consult-slug` | via `_setConsultSlug` |
+| `_bookSquareCardHTML` | `/api/square/connection` | via `_sqConnState` |
+| `_bookSquareUrl` | `/api/consult-slug` | via `_setConsultSlug` |
+| `_bookSquareUrl` | `/api/square/connection` | via `_sqConnState` |
 | `_bookSvcAdd` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_bookSvcAdd` | `/api/square/connection` | via `_sqConnState` |
 | `_bookSvcDeposit` | `/api/consult-slug` | via `_setConsultSlug` |

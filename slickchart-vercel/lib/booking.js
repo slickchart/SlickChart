@@ -40,8 +40,30 @@ export const DEFAULT_CONFIG = {
   emailMe: true,        // her own copy, which carries their email and phone (a push does not)
   depositOn: false,
   depositAmount: 0,     // dollars; a service can override with its own
-  depositLabel: ''
+  depositLabel: '',
+  // Her OWN Square booking page (Jaimie, 2026-10-22: she takes prepayment for every service there
+  // and books several services at once). When set, the Book button in her clients' app and her
+  // /book/<slug> link send people there instead of SlickChart's request form.
+  squareUrl: ''
 };
+
+// Only a Square booking address is accepted, https, on Square's own hosts. Her /book/<slug> link
+// forwards to it, so an arbitrary address would turn slickchart.app into an open redirect.
+export function normalizeSquareBookingUrl(u) {
+  try {
+    let v = String(u || '').trim();
+    if (!v) return '';
+    if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+    const x = new URL(v);
+    if (x.protocol !== 'https:' && x.protocol !== 'http:') return '';
+    x.protocol = 'https:';
+    if (x.username || x.password || x.port) return '';
+    const h = x.hostname.toLowerCase();
+    const ok = ['squareup.com', 'square.site', 'square.online', 'squareupsandbox.com'].some(d => h === d || h.endsWith('.' + d));
+    if (!ok) return '';
+    return x.href.slice(0, 500);
+  } catch (e) { return ''; }
+}
 
 function clampInt(v, lo, hi, dflt) {
   const n = parseInt(v, 10);
@@ -68,6 +90,7 @@ export async function getBookingConfig(providerId) {
       cfg.depositOn = !!o.depositOn;
       cfg.depositAmount = Math.max(0, Math.min(10000, Math.round((parseFloat(o.depositAmount) || 0) * 100) / 100));
       cfg.depositLabel = String(o.depositLabel || '').slice(0, 200);
+      cfg.squareUrl = normalizeSquareBookingUrl(o.squareUrl);
       // Services were names only to begin with. Both shapes are accepted, for ever — a provider who
       // set hers up before durations existed must not have her list silently emptied.
       if (Array.isArray(o.services)) {

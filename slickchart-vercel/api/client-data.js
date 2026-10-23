@@ -68,6 +68,8 @@ export default async function handler(req, res) {
       const svcCfg = await getBookingConfig(c.provider_id);
       const svc = await listServices(c.provider_id, svcCfg);
       data.services = (svc || []).map(s => String((s && s.name) || '').trim()).filter(Boolean);
+      // Her own Square booking page, when she chose it: the client's Book button opens it there.
+      if (svcCfg.squareUrl) data.squareBookingUrl = svcCfg.squareUrl;
     } catch (e) { /* Square or the menu unreadable — the client app shows its empty state */ }
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
