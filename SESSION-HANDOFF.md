@@ -8319,3 +8319,20 @@ Ashley asked for every route of the new features to be checked. Results:
 - Two fixes from the check: (1) the past-month Square fetch now asks for days+2, so the month's last day is covered
   as far west as UTC-12; (2) the first-visit chooser defaults to the first package when there is no standard intake
   to fall back on (before, nothing was selected).
+
+### 2026-10-23 — booked appointments said "New client" instead of the service (build 2026-10-23d, preview)
+- **Observed (Ashley):** the client file's NEXT APPOINTMENT shows "New client" for everybody, and so
+  does the session summary when doing treatment notes, although the calendar shows each of them
+  booked under a real service from her service menu.
+- **Cause:** every chart starts with `treatment:'New client'` and no booking ever changes it. The cards
+  read the service off the booking only when `_nextApptForClient` matched the booking by EXACT name;
+  otherwise (Square name differs from the chart, appointment lists not loaded yet, or a summary that
+  never looked at the booking at all) they printed `c.treatment`.
+- **Fix:** `_realSvc` (placeholder filter), `_apptIsClients` (client id, then Square customer id, then
+  name, then the loose unique name match, cached 5 s), `_todayServiceFor` / `_clientSvcLabel` /
+  `_nextVisitSvc`. `_stampClientNextVisit` and the confirm flow store the booked service with the date
+  as `c.nextVisitTx` (new field, ignored by auto-merge). Edit treatment stamps `c.treatmentFor` so her
+  change for that day beats the booking. The client's own app now gets the booked service as
+  `profile.treatment` (it fed their reminders "New client · ..." too).
+- **Test:** `scratchpad/test-booked-service-labels.mjs`, 18/18 in Chromium and WebKit; `CONTROL=1` and
+  the old code both fail it.
