@@ -7,6 +7,25 @@ or bump to 1.0.1 and use the **Update** copy.)
 
 ---
 
+## iPhone 1.0.4 (October 2026), paste this one
+
+```
+• Notifications now reach your iPhone: new bookings, client messages, check-ins
+  and forms as they happen
+• Small fixes
+
+As always, your clients use SlickChart free, with no app to download and no login.
+```
+
+### Apple review note for this version (App Review Information, Notes)
+
+```
+This update fixes push notification registration on iPhone. No other changes.
+No purchases or payment screens exist in the app. Demo account details are unchanged.
+```
+
+---
+
 ## iPhone 1.0.3 / Android 1.0.5 (October 2026), paste this one
 
 ```
