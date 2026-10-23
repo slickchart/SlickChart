@@ -526,10 +526,7 @@ saved anywhere", not "does this always call that".
 | `_pollFounderSignups` | `/api/admin/signups` | direct |
 | `_postAftercareDrip` | `/api/aftercare-drip` | direct |
 | `_postAftercareDrip` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_postAnnouncement` | `/api/announcements` | direct |
-| `_postAnnouncement` | `/api/billing-status` | via `_checkBillingBanner` |
-| `_postAnnouncement` | `/api/square/catalog` | via `_autoSyncCatalog` |
-| `_postAnnouncement` | `/api/square/customers` | via `_autoSyncCustomers` |
+| `_postAnnouncement` | `/api/announcements` | via `_sendAnnouncement` |
 | `_pr_moved` | `/api/clients` | via `syncClientEvents` |
 | `_pr_moved` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_pr_open` | `/api/clients` | via `syncClientEvents` |
@@ -698,6 +695,10 @@ saved anywhere", not "does this always call that".
 | `_sendAdHocBundle` | `/api/logout` | via `_doLogout` |
 | `_sendAdHocBundle` | `/api/native-push` | via `_doLogout` |
 | `_sendAdHocBundle` | `/api/provider-push` | via `_doLogout` |
+| `_sendAnnouncement` | `/api/announcements` | direct |
+| `_sendAnnouncement` | `/api/billing-status` | via `_checkBillingBanner` |
+| `_sendAnnouncement` | `/api/square/catalog` | via `_autoSyncCatalog` |
+| `_sendAnnouncement` | `/api/square/customers` | via `_autoSyncCustomers` |
 | `_sendAutomation` | `/api/automation-claim` | via `_ssSend` |
 | `_sendAutomationMsg` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_sendBetaFeedback` | `/api/feedback` | direct |
@@ -1213,7 +1214,7 @@ saved anywhere", not "does this always call that".
 | `renderWeekClients` | `/api/clients` | via `syncClientEvents` |
 | `renderWeekClients` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderWeekClients` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `renderWhatsNew` | `/api/announcements` | via `_postAnnouncement` |
+| `renderWhatsNew` | `/api/announcements` | via `_sendAnnouncement` |
 | `renderWriteNote` | `/api/beta-event` | via `_pingChart` |
 | `renderWriteNote` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `requestCard` | `/api/clients` | via `_syncSpecificClientsToServer` |

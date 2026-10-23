@@ -1,7 +1,9 @@
 // GET  /api/announcements            → { items, canPost, you, ownerSet }
-// POST /api/announcements {title,body} → owner-only (provider email === OWNER_EMAIL) publish
+// POST /api/announcements {title,body,notify} → owner-only (provider email === OWNER_EMAIL) publish.
+//   Also pushes it to every provider's phone and browser unless notify === false (2026-10-23).
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { verifyToken, sessionOk } from '../lib/auth.js';
+import { pushAnnouncementToProviders } from '../lib/announce-push.js';
 
 // Resolve the logged-in provider's email. Prefer the token's email claim, but
 // fall back to a DB lookup by provider id so older tokens (minted before the
@@ -34,8 +36,13 @@ export default async function handler(req, res) {
       const title = String(b.title || '').slice(0, 140).trim();
       const body = String(b.body || '').slice(0, 4000).trim();
       if (!title) { res.status(400).json({ error: 'Add a title.' }); return; }
+      // A double tap must not post twice or push every provider twice.
+      const dup = await q`SELECT id FROM announcements WHERE title = ${title} AND body = ${body} AND ts > now() - interval '10 minutes' LIMIT 1`;
+      if (dup.length) { res.status(200).json({ ok: true, duplicate: true }); return; }
       await q`INSERT INTO announcements (title, body) VALUES (${title}, ${body})`;
-      res.status(200).json({ ok: true });
+      let push = null;
+      if (b.notify !== false) { try { push = await pushAnnouncementToProviders(title, body); } catch (e) { push = { error: 'push failed' }; } }
+      res.status(200).json({ ok: true, push });
       return;
     }
     const rows = await q`SELECT id, title, body, extract(epoch from ts) * 1000 AS ts FROM announcements ORDER BY ts DESC LIMIT 50`;
