@@ -311,7 +311,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-23b';
+const APP_BUILD='2026-10-23c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -5332,6 +5332,7 @@ function _reloadAll(){
   S('reminders',function(){if(typeof loadReminders==='function')loadReminders();});
   S('consult follow-ups',function(){if(typeof _vcSyncFollowUpNotifs==='function')_vcSyncFollowUpNotifs();});
   S('my reminders',function(){if(typeof _syncReminderNotifs==='function')_syncReminderNotifs();});
+  S('updates in the bell',function(){if(typeof _syncNewsNotifs==='function')_syncNewsNotifs();});
   S('needle presets',function(){if(typeof loadNeedlePresets==='function')loadNeedlePresets();});
   S('notification settings',function(){if(typeof loadNotifSettings==='function')loadNotifSettings();});
   S('protocols',function(){if(typeof loadProtocols==='function')loadProtocols();});
@@ -15742,6 +15743,8 @@ async function _initNativeProvider(){
     // backgrounded, or a native rebuild with iOS presentationOptions / LocalNotifications.
     PN.addListener('pushNotificationReceived',function(n){
       try{
+        // A "What's new" update goes into the bell, never a toast that can be missed (Ashley, 2026-10-23).
+        if(n&&n.data&&n.data.kind==='news'){if(typeof _checkNews==='function')_checkNews();return;}
         const title=(n&&n.title)||'SlickChart';
         const body=(n&&n.body)||'';
         if(typeof proToast==='function')proToast((title?title+(body?' — ':''):'')+body,6000);
@@ -27837,7 +27840,7 @@ function _notifClientId(n){
 function notifCard(n,bare){
   const _cid=_notifClientId(n);
   const _viewFile=_cid?`<button onclick="event.stopPropagation();nav('client','${_cid}')" style="margin-top:7px;background:none;border:1px solid var(--p-line-ctl);color:var(--accent-strong);border-radius:8px;padding:4px 10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-user" style="font-size:16px;"></i> View file</button>`:'';
-  return`<div onclick="markRead('${_jsAttr(n.id)}');${n.action==='client'?`nav('client','${_jsAttr(n.data)}')`:n.action==='form'?`openFormNotif('${_jsAttr(n.data)}','${_jsAttr(n.formEvId||'')}')`:n.action==='chat'?`nav('chat','${_jsAttr(n.data)}')`:n.action==='checkin'?`nav('checkin-detail','${_jsAttr(n.data)}')`:n.action==='vault'?`nav('vault')`:n.action==='inventory'?`nav('inventory')`:n.action==='requests'?`nav('requests')`:n.action==='home'?`nav('home')`:''}" style="background:var(--surf2);border:1px solid ${n.read?'var(--p-line-ctl)':'var(--accent-tint2)'};border-radius:12px;${bare?'':'margin:0 16px 8px;'}overflow:hidden;cursor:pointer;${n.read?'':'background:var(--p-amber-bg);'}">
+  return`<div onclick="markRead('${_jsAttr(n.id)}');${n.action==='client'?`nav('client','${_jsAttr(n.data)}')`:n.action==='form'?`openFormNotif('${_jsAttr(n.data)}','${_jsAttr(n.formEvId||'')}')`:n.action==='chat'?`nav('chat','${_jsAttr(n.data)}')`:n.action==='checkin'?`nav('checkin-detail','${_jsAttr(n.data)}')`:n.action==='vault'?`nav('vault')`:n.action==='inventory'?`nav('inventory')`:n.action==='requests'?`nav('requests')`:n.action==='home'?`nav('home')`:n.action==='whats-new'?`nav('whats-new')`:''}" style="background:var(--surf2);border:1px solid ${n.read?'var(--p-line-ctl)':'var(--accent-tint2)'};border-radius:12px;${bare?'':'margin:0 16px 8px;'}overflow:hidden;cursor:pointer;${n.read?'':'background:var(--p-amber-bg);'}">
     <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
       <div style="position:relative;flex-shrink:0;">
         <div style="width:40px;height:40px;border-radius:12px;background:${_fileEsc(n.col)};display:flex;align-items:center;justify-content:center;">
@@ -29043,10 +29046,35 @@ async function _checkNews(){
     const j=await r.json();_news=j.items||[];window._newsCanPost=!!j.canPost;window._newsYou=j.you||null;window._newsOwnerSet=!!j.ownerSet;
     let seen=0;try{seen=parseInt(localStorage.getItem('sc_seen_news')||'0',10);}catch(e){}
     window._newsUnread=_news.some(n=>n.ts>seen);
+    try{_syncNewsNotifs();}catch(e){}
     if(typeof _navCur!=='undefined'&&_navCur){try{if(_navCur.screen==='more')renderMore();else if(_navCur.screen==='whats-new')renderWhatsNew();}catch(e){}}
   }catch(e){}
 }
-function _newsSeen(){try{if(_news[0])localStorage.setItem('sc_seen_news',String(_news[0].ts));}catch(e){}window._newsUnread=false;}
+function _newsSeen(){try{if(_news[0])localStorage.setItem('sc_seen_news',String(_news[0].ts));}catch(e){}window._newsUnread=false;
+  // Reading What's new reads its bell entries too.
+  try{let ch=false;notifFeed.forEach(n=>{if(n&&n.type==='news'&&!n.read){n.read=true;_notifRead.add(n.id);ch=true;}});if(ch){_saveNotifState();if(typeof updateBadge==='function')updateBadge();}}catch(e){}}
+// Each update she posts (api/announcements) is a bell notification, so nobody misses it (2026-10-23).
+// Built from the fetched list with a stable id per update, like the reminder entries: never
+// duplicates, and dismissing or reading it sticks through the synced cleared/read sets.
+function _syncNewsNotifs(){
+  if(!Array.isArray(_news)||typeof notifFeed==='undefined')return 0;
+  const since=Date.now()-14*86400000;let added=0;
+  _news.slice(0,5).reverse().forEach(function(a){   // oldest first, so the newest ends up on top
+    if(!a||!a.id||!(+a.ts>since))return;
+    const nid='news:'+a.id;
+    if(_notifCleared&&_notifCleared.has(nid))return;
+    if(notifFeed.some(function(n){return n&&n.id===nid;}))return;
+    let when='';try{when=new Date(+a.ts).toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){}
+    notifFeed.unshift({id:nid,type:'news',icon:'ti-sparkles',col:'var(--accent-tint)',ic:'var(--accent-strong)',
+      title:String(a.title||'SlickChart update'),body:String(a.body||'')||'Tap to read',time:when,ts:+a.ts,
+      read:_notifRead&&_notifRead.has(nid),action:'whats-new',data:''});
+    added++;
+  });
+  if(added){try{_applyNotifState();}catch(e){}try{updateBadge();}catch(e){}try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='notifications-feed'&&typeof renderNotifFeed==='function')renderNotifFeed();}catch(e){}}
+  return added;
+}
+// Pick up an update posted while the app stays open (a foreground push also triggers this at once).
+setInterval(()=>{try{if(document.visibilityState!=='hidden')_checkNews();}catch(e){}},30*60*1000);
 
 function renderBetaStats(){
   setNav('more');document.getElementById('tt').textContent='Growth Stats';

@@ -356,6 +356,7 @@ saved anywhere", not "does this always call that".
 | `_hcStepSheet` | `/api/square/orders` | via `_hcFetchBought` |
 | `_helpRowHTML` | `/api/clients` | via `syncClientEvents` |
 | `_helpRowHTML` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_hydrateOffloaded` | `/api/announcements` | via `_checkNews` |
 | `_hydrateOffloaded` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_hydrateOffloaded` | `/api/square/connection` | via `_sqConnState` |
 | `_hydrateOffloaded` | `/api/totp-setup` | via `_beginTotpEnroll` |
@@ -372,8 +373,6 @@ saved anywhere", not "does this always call that".
 | `_initDeepLinks` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_initDeepLinks` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_initDeepLinks` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_initNativeProvider` | `/api/clients` | via `syncClientEvents` |
-| `_initNativeProvider` | `/api/native-push` | via `_flushNativePushTok` |
 | `_inkScanField` | `/api/ai` | via `_aiComplete` |
 | `_libSafeToPersist` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_libSafeToPersist` | `/api/square/loyalty` | via `_loadClientLoyalty` |
@@ -604,6 +603,7 @@ saved anywhere", not "does this always call that".
 | `_recoverUnindexedServerPhotos` | `/api/guide-file` | direct |
 | `_redrawCurrentScreen` | `/api/clients` | via `syncClientEvents` |
 | `_redrawCurrentScreen` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_reloadAfterHydrate` | `/api/announcements` | via `_checkNews` |
 | `_reloadAfterHydrate` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_reloadAfterHydrate` | `/api/square/connection` | via `_sqConnState` |
 | `_reloadAfterHydrate` | `/api/totp-setup` | via `_beginTotpEnroll` |
@@ -643,11 +643,6 @@ saved anywhere", not "does this always call that".
 | `_restorePhotosFromCloud` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_restoreSampleData` | `/api/clients` | via `syncClientEvents` |
 | `_restoreSampleData` | `/api/provider-form` | via `submitSignOnDevice` |
-| `_resumePull` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_resumePull` | `/api/provider-form` | via `submitSignOnDevice` |
-| `_resumePull` | `/api/square/connection` | via `_sqConnState` |
-| `_resumePull` | `/api/totp-setup` | via `_beginTotpEnroll` |
-| `_resumePull` | `/api/transcribe` | via `_probeWhisper` |
 | `_retryProviderMsg` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_reviewAckHome` | `/api/clients` | via `syncClientEvents` |
 | `_reviewAckHome` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -675,11 +670,6 @@ saved anywhere", not "does this always call that".
 | `_saveManualAppts` | `/api/google-cal` | via `_gcalPush` |
 | `_saveNewDoc` | `/api/clients` | via `syncClientEvents` |
 | `_saveNewDoc` | `/api/provider-form` | via `submitSignOnDevice` |
-| `_savePersistenceSweep` | `/api/clients` | via `syncClientEvents` |
-| `_savePersistenceSweep` | `/api/provider-form` | via `submitSignOnDevice` |
-| `_savePersistenceSweep` | `/api/square/connection` | via `_sqConnState` |
-| `_savePersistenceSweep` | `/api/totp-setup` | via `_beginTotpEnroll` |
-| `_savePersistenceSweep` | `/api/transcribe` | via `_probeWhisper` |
 | `_saveSummaryDate` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveWriteNote` | `/api/beta-event` | via `_pingChart` |
 | `_saveWriteNote` | `/api/clients` | via `syncClientEvents` |
@@ -807,6 +797,11 @@ saved anywhere", not "does this always call that".
 | `_syncClientsToServer` | `/api/clients` | direct |
 | `_syncClientsToServer` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_syncInventoryFromSquare` | `/api/square/inventory` | direct |
+| `_syncNewsNotifs` | `/api/announcements` | via `_checkNews` |
+| `_syncNewsNotifs` | `/api/billing-status` | via `_checkBillingBanner` |
+| `_syncNewsNotifs` | `/api/clients` | via `syncClientEvents` |
+| `_syncNewsNotifs` | `/api/square/catalog` | via `_autoSyncCatalog` |
+| `_syncNewsNotifs` | `/api/square/customers` | via `_autoSyncCustomers` |
 | `_syncSpecificClientsToServer` | `/api/clients` | direct |
 | `_syncSpecificClientsToServer` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_syncSquareClientsNow` | `/api/clients` | via `_serverMergeClients` |
@@ -951,6 +946,7 @@ saved anywhere", not "does this always call that".
 | `finishNewClient` | `/api/provider-push` | via `_doLogout` |
 | `finishOnboarding` | `/api/clients` | via `syncClientEvents` |
 | `finishOnboarding` | `/api/provider-form` | via `submitSignOnDevice` |
+| `fmtBookingDate` | `/api/announcements` | via `_checkNews` |
 | `fmtBookingDate` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `fmtBookingDate` | `/api/square/connection` | via `_sqConnState` |
 | `fmtBookingDate` | `/api/totp-setup` | via `_beginTotpEnroll` |
