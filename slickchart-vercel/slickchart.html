@@ -311,7 +311,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-22f';
+const APP_BUILD='2026-10-22g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2104,36 +2104,16 @@ const _SAMPLE_IDS=['maya','sophie','priya'];
 const _SAMPLE_DOC_IDS=(typeof docs!=='undefined')?docs.map(d=>d.id):[];
 const _SAMPLE_DOCS_BACKUP=(typeof docs!=='undefined')?docs.slice():[];
 function _sampleHidden(){try{return localStorage.getItem('sc_hide_sample')==='1';}catch(e){return false;}}
-// Screenshot mode: a NON-DESTRUCTIVE display filter for App Store screenshots. When on, the list
-// screens (Clients, Messages, Payments) and the home "needs attention" cards show ONLY the sample
-// clients (Maya/Sophie/Priya), so real client info never lands in a screenshot. Nothing is deleted,
-// moved, or synced — it purely filters what's drawn, and turning it off shows everyone again.
-// It switches itself off after two hours. A provider turned it on while exploring Settings and
-// for days her Clients list said "No clients yet", search found no one, and a client she added
-// by hand vanished, because every real client was hidden (Jaimie, 2026-10-22). The old value '1'
-// carries no time, so it reads as expired: anyone stuck in it gets her clients back on update.
-const _SHOT_TTL=2*3600000;
-function _shotMode(){try{const v=localStorage.getItem('sc_shot_mode')||'';const t=+(v.split(':')[1]||0);
-  if(v.indexOf('on:')===0&&t&&(Date.now()-t)<_SHOT_TTL)return true;
-  if(v&&v!=='0')localStorage.setItem('sc_shot_mode','0');return false;}catch(e){return false;}}
-function _shotHiddenCount(){try{return Object.keys(CL).filter(function(id){return _SAMPLE_IDS.indexOf(id)<0;}).length;}catch(e){return 0;}}
-function _shotBannerHTML(){if(!_shotMode())return '';const n=_shotHiddenCount();
-  return `<div id="shot-banner" style="margin:0 16px 12px;background:var(--p-purple-bg);border:1px solid var(--p-purple-line);border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;">
-    <i class="ti ti-camera" aria-hidden="true" style="color:var(--p-purple);font-size:18px;flex-shrink:0;"></i>
-    <div style="flex:1;min-width:0;font-size:16px;color:var(--p-ink);line-height:1.45;"><b style="color:var(--p-purple);">Social media mode is on.</b> ${n?`It is hiding your ${n.toLocaleString()} client${n===1?'':'s'}`:'Your real clients are hidden'} (nothing is deleted). It turns off on its own after 2 hours.</div>
-    <button onclick="_setShotMode(false)" style="background:#a891ec;color:#13102a;border:none;border-radius:8px;padding:6px 12px;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0;">Turn off</button>
-  </div>`;}
-function _shotFilterEntries(entries){return _shotMode()?(entries||[]).filter(function(e){return _SAMPLE_IDS.indexOf(e&&e[0])>=0;}):entries;}
-function _shotFilterIds(ids){return _shotMode()?(ids||[]).filter(function(id){return _SAMPLE_IDS.indexOf(id)>=0;}):ids;}
-function _setShotMode(on){
-  try{localStorage.setItem('sc_shot_mode',on?('on:'+Date.now()):'0');}catch(e){}
-  // Screenshot mode is meaningless without the sample clients on screen, so turning it on also
-  // restores sample data if it was hidden. Turning it off leaves sample data as-is.
-  try{if(on&&_sampleHidden()&&typeof _restoreSampleData==='function')_restoreSampleData();}catch(e){}
-  try{if(typeof proToast==='function')proToast(on?'Social media mode on — showing only sample clients':'Social media mode off — your clients are back');}catch(e){}
-  // Turned off from the Clients banner: stay on Clients so her list comes straight back.
-  try{nav((!on&&_navCur&&_navCur.screen==='clients')?'clients':'account');}catch(e){}
-}
+// Social media (screenshot) mode is GONE (Ashley, 2026-10-22: "lets take away the social media mode
+// since that is confusing"). It filtered every list to the sample clients, which a live account does
+// not have, so a provider who switched it on saw "No clients yet" and search found no one (Jaimie).
+// _shotMode() stays as a constant false so the many list filters that call it need no change, and it
+// clears the old stored value (which syncs, so every device of hers drops it too).
+function _shotMode(){try{const v=localStorage.getItem('sc_shot_mode');if(v&&v!=='0')localStorage.setItem('sc_shot_mode','0');}catch(e){}return false;}
+function _shotHiddenCount(){return 0;}
+function _shotBannerHTML(){return '';}
+function _shotFilterEntries(entries){return entries;}
+function _shotFilterIds(ids){return ids;}
 const _SAMPLE_NOTIF_IDS=['n1','n2','n3','n4','n5','n6','n7'];
 const _SAMPLE_CHECKIN_IDS=['ci_demo1'];
 // Demo/affiliate products that ship with the app as examples, these are sample
@@ -10054,7 +10034,6 @@ function renderClients(){
   const _clCount=Object.keys(CL).length;
   S.innerHTML=`
   ${(_clCount>=3)?_searchBar('Search clients by name or treatment…','.client-card','clients-noresults'):''}
-  ${_shotBannerHTML()}
   <div id="clients-tools">
   ${(aiEnabled&&_clCount>=3)?`<div style="margin:0 16px 10px;">
     <button onclick="_askBookToggle()" id="askbook-btn" style="width:100%;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:9px;cursor:pointer;font-family:inherit;text-align:left;">
@@ -10112,7 +10091,6 @@ function renderClients(){
     // to merge — they're just not shown as their own empty rows.
     _ent=_ent.filter(([id,c])=>{const nm=String((c&&c.name)||'').trim().toLowerCase();return nm && nm!=='(no name)' && nm!=='no name';});
     if(_ent.length===0&&_accountStillLoading())return `<div style="margin:24px 16px;text-align:center;color:var(--p-mut);font-size:16px;"><i class="ti ti-loader-2" aria-hidden="true" style="font-size:22px;display:block;margin:0 auto 8px;"></i><span role="status">Loading your clients…</span></div>`;
-    if(_ent.length===0&&_shotMode()&&_shotHiddenCount())return `<div style="margin:24px 16px;text-align:center;color:var(--p-mut);font-size:16px;line-height:1.5;">Social media mode is hiding your clients.<br><button onclick="_setShotMode(false)" class="btnp" style="margin-top:12px;border-radius:12px;width:auto;padding:10px 18px;">Show my clients</button></div>`;
     if(_ent.length===0)return emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'});
     const f=_clientFilter;
     if(f==='attention')_ent=_ent.filter(([id,c])=>_clientNeedsAttention(id,c));
@@ -10134,7 +10112,7 @@ function renderClients(){
       const _oid=(typeof _ownerIdOf==='function')?_ownerIdOf(id):'';
       const _extra=_oid?(' '+String((CL[_oid]&&CL[_oid].name)||'')):'';
       return `<div class="card client-card" data-owner="${_oid?'1':''}"${_oid?' style="margin-left:26px;"':''} data-search="${((c.name||'')+' '+(c.treatment||'')+_extra).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row"><div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:16px;font-weight:500;color:var(--p-ink);">${_oid?'\u{1F40E} ':''}${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:12px;font-weight:700;color:var(--p-mut2);border:1px solid var(--p-green-line);background:var(--p-surf3);border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-top:2px;font-size:16px;color:${_rs.color};overflow:hidden;"><i class="ti ${_rs.icon}" style="font-size:16px;flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_rs.text)}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${_rb}<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div></div></div>`;}).join('');})()}
-  ${_noRes('clients-noresults',_shotMode()?'No sample clients match. Social media mode is hiding your real clients. Turn it off above to search them.':'No clients match your search.')}`;
+  ${_noRes('clients-noresults','No clients match your search.')}`;
 }
 // ── "Ask your book": natural-language search over the client roster (who's due, allergies, etc.). ──
 function _askBookToggle(){
@@ -10179,7 +10157,6 @@ async function _askBookRun(){
   let h='<div style="font-size:16px;color:var(--p-ink);line-height:1.5;padding:2px 2px 8px;">'+_fileEsc(out.answer||'')+'</div>';
   h+=ids.map(id=>{const c=CL[id];return '<div class="card" onclick="nav(\'client\',\''+id+'\')" style="cursor:pointer;"><div class="row">'+av(c)+'<div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">'+_fileEsc(c.name)+'</div><div style="font-size:16px;color:var(--p-mut);">'+_fileEsc(c.treatment||'')+'</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>';}).join('');
   if(total>80)h+='<div style="font-size:14px;color:var(--p-mut);padding:6px 2px;">'+(_anyMatch?'Searched the 80 clients that best match your question.':'Searched 80 of your '+total.toLocaleString()+' clients. Use a name to narrow it down.')+'</div>';
-  if(typeof _shotMode==='function'&&_shotMode())h+='<div style="font-size:14px;color:var(--p-purple);padding:6px 2px;">Social media mode is on, so only sample clients were searched.</div>';
   r2.innerHTML=h;
 }
 function _fileEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -26795,8 +26772,6 @@ function renderAccount(){
     ${_sampleHidden()
       ?`<div onclick="_restoreSampleData()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-history" style="font-size:18px;color:var(--p-purple);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Restore Sample Data</div><div style="font-size:16px;color:var(--p-mut);">Bring back the example client &amp; activity</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`
       :`<div onclick="_clearSampleData()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-eraser" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Remove Sample Data</div><div style="font-size:16px;color:var(--p-mut);">Clear the example client &amp; activity, keep your real data</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`}
-    <div style="border-top:1px solid var(--p-line);"></div>
-    <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-camera" style="font-size:18px;color:var(--p-purple);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Social media content mode</div><div style="font-size:16px;color:var(--p-mut);line-height:1.4;">Show only sample clients (Maya, Sophie, Priya) so you can screenshot or screen-record your app for social media &amp; marketing. Hides your real clients — nothing is deleted.</div></div>${togBtn(_shotMode(),'_setShotMode(!'+_shotMode()+')','Toggle social media content mode')}</div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_openPhotoRecovery()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-photo-search" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Recover lost photos</div><div style="font-size:16px;color:var(--p-mut);">Find before/after photos this device stopped showing</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#4a7a64;"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>

@@ -39,20 +39,12 @@ await p.fill('input[oninput^="searchList("]', 'Bonnie');
 const A2 = await p.evaluate(() => [...document.querySelectorAll('.client-card')].filter(c => !c.classList.contains('srch-hide')).map(c => c.innerText.split('\n')[0]));
 check('A search "Bonnie" finds Bonnie Vale', A2.length === 1 && /Bonnie/.test(A2[0]), JSON.stringify(A2));
 
-// B: freshly on — banner stays visible while searching, empty state says what is hiding them.
+// B: Social media mode is gone (Ashley, 2026-10-22). A stored "on" value is ignored and cleared.
 await p.evaluate(() => { localStorage.setItem('sc_shot_mode', 'on:' + Date.now()); nav('clients'); });
-await p.fill('input[oninput^="searchList("]', 'Bonnie');
-const B = await p.evaluate(() => { const bn = document.getElementById('shot-banner'); return { banner: !!(bn && bn.offsetParent), bannerTxt: bn ? bn.innerText : '', text: S.innerText }; });
-check('B Social media banner visible while searching, with her client count', B.banner && /302/.test(B.bannerTxt), B.bannerTxt);
-check('B empty list explains Social media mode, not "No clients yet"', /hiding your clients/.test(B.text) && !/No clients yet/.test(B.text), '');
-check('B no-match line points at Social media mode', /Social media mode is hiding your real clients/.test(B.text), '');
-await p.evaluate(() => { localStorage.setItem('sc_shot_mode', 'on:' + (Date.now() - 3 * 3600000)); });
-check('B expires after 2 hours', !(await p.evaluate(() => _shotMode())), '');
-await p.evaluate(() => { localStorage.setItem('sc_shot_mode', 'on:' + Date.now()); nav('clients'); });
-await p.click('#shot-banner button');
-const B2 = await p.evaluate(() => ({ screen: _navCur.screen, cards: document.querySelectorAll('.client-card').length, shot: _shotMode() }));
-check('B Turn off on the Clients banner stays on Clients with everyone back', B2.screen === 'clients' && B2.cards === 302 && !B2.shot, JSON.stringify(B2));
-
+const B = await p.evaluate(() => ({ shot: _shotMode(), stored: localStorage.getItem('sc_shot_mode'), cards: document.querySelectorAll('.client-card').length, txt: S.innerText }));
+check('B a stored Social media mode never hides clients', !B.shot && B.cards === 302 && !/Social media/.test(B.txt), JSON.stringify({ ...B, txt: '' }));
+await p.evaluate(() => nav('account'));
+check('B the Settings switch is gone', !(await p.evaluate(() => /Social media/i.test(S.innerText))), '');
 // C: Ask your book sends the clients that match the question, not just the first 80.
 const C = await p.evaluate(async () => { let seen = ''; const orig = window._aiJSON; window._aiJSON = async (pr) => { seen = pr; return { answer: 'Found her', ids: ['c_zz'] }; };
   nav('clients'); const i = document.getElementById('askbook-input'); if (!i) { window._aiJSON = orig; return { noAsk: true }; } i.value = 'Jaimie'; await _askBookRun(); window._aiJSON = orig;

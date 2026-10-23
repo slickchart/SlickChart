@@ -8219,8 +8219,19 @@ Separately, Ask your book sent only the FIRST 80 clients to the AI.
 - Back restores scroll position and the list's search text (`_navRestore`).
 - Send sheet and bundle editor: Preview button opens the client-facing form over the sheet (`_formPreviewSheet`).
 
-**Not built, plan sent to Ashley:** form folders/categories, per-service welcome questionnaires, multi-service booking
-with Square prepay / "use my Square booking page" button.
+**Then built (Ashley chose "all three", 2026-10-22), each Chromium AND WebKit:**
+- `2026-10-22d` **Book on Square** (`test-square-booking-page`, 14): `sc_booking_page.squareUrl`, https on Square hosts
+  only (`normalizeSquareBookingUrl` in lib/booking.js; the /book link 302s there, so no open redirect). Client app's
+  Book screen shows "Book on Square" + "send a request instead" (`client-data` adds `squareBookingUrl`, additive).
+- `2026-10-22e` **Welcome packages** (`test-welcome-packages`, 12): with 2+ bundles (or one that trims the check-in)
+  the first-visit package asks which bundle; `bundle.checkinHide` / `c.checkinHide` ⊂ warmth|drinks|music, applied
+  provider-side in `_assembleClientData` via `_ciCfgForClient`, so old client builds show it right. One marked bundle
+  still sends in one tap (`test-newclient-bundle` 11/11).
+- `2026-10-22f` **Form folders** (`test-form-folders`, 12): new synced key `sc_form_folders`
+  `[{id,name,parent,pos,formIds}]`, authored library in `_LIB_TOMB` with `sc_deleted_form_folders` in `_TOMB_OBJ`,
+  `_reloadAll` step. Forms list and send sheet show her headings/folders first; a filed form is not repeated.
+- `2026-10-22g` **Social media mode removed** (Ashley: "lets take away the social media mode since that is
+  confusing"). `_shotMode()` is a constant false that rewrites any stored `sc_shot_mode` to '0'; Settings row gone.
 
 ## 2026-10-21 — Daily feedback brief in Claude (build `2026-10-21d`, PREVIEW)
 

@@ -730,8 +730,6 @@ saved anywhere", not "does this always call that".
 | `_setPhotoCategory` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_setProviderMsgStatus` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_setRecReason` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_setShotMode` | `/api/clients` | via `syncClientEvents` |
-| `_setShotMode` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_shareClientLinkSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_shareClientLinkSheet` | `/api/logout` | via `_doLogout` |
 | `_shareClientLinkSheet` | `/api/native-push` | via `_doLogout` |
