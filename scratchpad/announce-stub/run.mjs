@@ -1,0 +1,13 @@
+import { register } from 'node:module';
+register(new URL('./hooks.mjs', import.meta.url));
+const { pushAnnouncementToProviders } = await import(new URL('../../slickchart-vercel/lib/announce-push.js', import.meta.url).href);
+let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
+const r = await pushAnnouncementToProviders('Fix on the way', 'x'.repeat(300));
+const S = globalThis.__sent, C = globalThis.__calls;
+ok(r.devices === 5 && r.sent === 3, 'reaches 3 phones + 2 distinct browsers, counts what landed: ' + JSON.stringify(r));
+ok(S.filter(x => x[0] === 'web' && x[1] === 'e1').length === 1, 'a browser shared by two accounts gets it once');
+ok(S.some(x => x[0] === 'apns') && S.some(x => x[0] === 'fcm'), 'iPhone addresses go to Apple, Android to Google');
+ok(C.filter(x => /^SELECT/.test(x.t.trim())).every(x => /owner_kind = 'provider'|provider_push_subscriptions/.test(x.t)), 'only provider devices are selected, never a client\'s');
+ok(C.some(x => /DELETE FROM native_push_tokens/.test(x.t) && x.vals[0] === 'proj:dead') && C.some(x => /DELETE FROM provider_push_subscriptions/.test(x.t) && x.vals[0] === 'w3'), 'dead addresses are pruned');
+const p = S[0][2]; ok(p.kind === 'news' && p.url === '/slickchart?n=news' && p.body.length <= 180 && p.title === 'Fix on the way', 'payload opens What’s new and the text is trimmed for a notification');
+process.exit(fails ? 1 : 0);
