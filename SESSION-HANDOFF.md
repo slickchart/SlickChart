@@ -8336,3 +8336,20 @@ Ashley asked for every route of the new features to be checked. Results:
   `profile.treatment` (it fed their reminders "New client · ..." too).
 - **Test:** `scratchpad/test-booked-service-labels.mjs`, 18/18 in Chromium and WebKit; `CONTROL=1` and
   the old code both fail it.
+
+### 2026-10-23 — Keyboard no longer covers the field being typed in (build `2026-10-23e`, PREVIEW)
+- **Observed (Ashley):** in the client file, typing in the provider notes box, "the screen jumps and
+  keyboard comes up which blocks the box you are typing in and you cant see it". Asked for the whole app.
+- **Cause:** on iPhone the keyboard slides over the page instead of shrinking it. Our layout is a
+  full-height `.shell` with its own scrolling `<main>`, so iOS shoved the whole screen up (the jump,
+  header gone) and the old focus helper centred the field in the FULL height, behind the keyboard.
+- **Fix (both apps, same block, "Keep the field being typed in visible"):** while the keyboard is up,
+  `html.kb-open` makes `.shell` exactly `visualViewport.height` (`--kb-vh`), hides the bottom tab bar,
+  pins the page to the top, shrinks any full-screen fixed overlay holding the field to the visible
+  area, and scrolls the field (or the end of a long note, where the caret is) into the band above the
+  keyboard; re-checked as she types. Android shrinks the page itself, so there only the reveal runs.
+- **Test:** `scratchpad/test-keyboard-visible.mjs` fakes the iOS keyboard (380px incl. the Done bar),
+  with and without the phone's own pan (`NOPAN=1`), on 41 provider fields (client file tabs, write note,
+  summaries, client details sheet, new client, checkout, search) and the client app's message and rebook
+  boxes. 0 hidden in Chromium AND WebKit; `CONTROL=1` (the build before) shows 29 hidden. Headless
+  browsers have no real keyboard, so Ashley's phone is the final check.

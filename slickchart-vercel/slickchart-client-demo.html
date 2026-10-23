@@ -236,6 +236,8 @@ textarea.scf-in,.scf textarea.fi{border:1px solid var(--scf-line) !important;bor
 .scf-thumb{border:1px solid var(--scf-line);border-radius:4px;}
 .scf-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--scf-mut);padding:12px 18px 14px;border-top:1px solid var(--scf-line);}
 .scf-pad{width:100%;height:150px;background:#fff;border:none;border-bottom:1px solid #8f877c;touch-action:none;display:block;}
+/* The keyboard is up (see "Keep the field being typed in visible"): the shell is the visible height. */
+html.kb-open .shell{height:var(--kb-vh)!important;max-height:var(--kb-vh)!important;min-height:0!important;}html.kb-open .shell>.nav{display:none!important;}
 #sc-demo-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#2a231b,#1a1208);border-bottom:1px solid #3c3227;color:#f3ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 14px;flex-wrap:wrap;text-align:center;}#sc-demo-banner b{color:#C8A882;}#sc-demo-banner button{background:none;border:1px solid #6b5d45;color:#C8A882;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}#sc-demo-banner button:hover{border-color:#C8A882;}html,body{height:100%;margin:0;}.shell{height:100vh !important;max-height:100vh !important;min-height:0 !important;}
 </style>
 </head>
@@ -7322,38 +7324,120 @@ function _bootSampleClient(){
   applyActiveProvider();
   nav('home');
 }
-// ── Keep a focused input above the on-screen keyboard (see provider app for rationale) ──
+// ── Keep the field being typed in visible above the on-screen keyboard (2026-10-23) ──────────
+// On an iPhone the keyboard does NOT shrink the page: it slides over the bottom of it, and the
+// phone then shoves the whole screen up to find the field ("the screen jumps"). Our layout is a
+// full-height .shell with its own scrolling <main>, so that shove moved the wrong thing and a
+// scrollIntoView centred the field in the FULL height, which on a phone is behind the keyboard.
+// Ashley: "the screen jumps and keyboard comes up which blocks the box you are typing in".
+// So while the keyboard is up: the shell is exactly the visible height (--kb-vh, html.kb-open),
+// the bottom tab bar steps aside, the page is pinned back to the top, any full-screen overlay
+// holding the field is shrunk to the visible area too, and the field (or its caret, at the end of
+// a long note) is scrolled into the band above the keyboard by its own scroller. Android already
+// shrinks the page for the keyboard, so there kb-open never switches on and only the reveal runs.
+// This block is the same in slickchart.html and slickchart-client.html (test-keyboard-visible).
 (function(){
+  var vv=window.visualViewport;
+  var root=document.documentElement;
   function _isTextField(el){
     if(!el||!el.tagName)return false;
+    if(el.isContentEditable)return true;
     var tag=el.tagName.toLowerCase();
     if(tag==='textarea')return true;
     if(tag!=='input')return false;
     var ty=(el.getAttribute('type')||'text').toLowerCase();
     return ['text','search','email','tel','url','number','password',''].indexOf(ty)>=0;
   }
-  function _revealFocused(el){
-    if(!el||!el.getBoundingClientRect)return;
-    var vv=window.visualViewport;
-    var visibleBottom=vv?(vv.offsetTop+vv.height):window.innerHeight;
-    var r=el.getBoundingClientRect();
-    if(r.bottom>visibleBottom-24||r.top<0){
-      try{el.scrollIntoView({block:'center',behavior:'smooth'});}
-      catch(e){try{el.scrollIntoView(false);}catch(_){}}
+  // The keyboard is up when the visible height is well short of the page height. A pinch zoom
+  // also shrinks the visible area, so a zoomed page is left alone.
+  function _kbUp(){
+    if(!vv)return false;
+    if(vv.scale&&vv.scale>1.05)return false;
+    return (window.innerHeight-vv.height)>120;
+  }
+  function _visibleBottom(){
+    if(!vv)return window.innerHeight;
+    return root.classList.contains('kb-open')?vv.height:(vv.offsetTop+vv.height);
+  }
+  // A full-screen fixed overlay (a sheet or modal) is laid out against the whole screen, so its
+  // bottom half sits behind the keyboard. Shrink the one holding the field to the visible area.
+  var _shrunk=[];
+  function _fitOverlay(el){
+    var vb=_visibleBottom();
+    for(var n=el.parentElement;n&&n!==document.body;n=n.parentElement){
+      var cs;try{cs=getComputedStyle(n);}catch(e){continue;}
+      if(cs.position!=='fixed')continue;
+      if(n._vvCleanup)return;               // already sized by _keyboardAwareSheet
+      var r=n.getBoundingClientRect();
+      if(r.height<window.innerHeight*0.5||r.bottom<=vb+1)return;
+      if(!n._kbOrig){n._kbOrig={h:n.style.height,b:n.style.bottom,mh:n.style.maxHeight};_shrunk.push(n);}
+      n.style.height=Math.max(120,Math.round(vb-Math.max(0,r.top)))+'px';
+      n.style.maxHeight='none';n.style.bottom='auto';
+      return;
     }
   }
+  function _unfitOverlays(){
+    while(_shrunk.length){var n=_shrunk.pop();var o=n._kbOrig;if(!o)continue;
+      n.style.height=o.h;n.style.bottom=o.b;n.style.maxHeight=o.mh;n._kbOrig=null;}
+  }
+  function _scrollable(n){
+    var cs;try{cs=getComputedStyle(n);}catch(e){return false;}
+    return /(auto|scroll)/.test(cs.overflowY)&&n.scrollHeight>n.clientHeight+1;
+  }
+  // Scroll the field's own scrollers (inner first) until it sits inside the visible band, with a
+  // little room around it. A note taller than the band shows its end when the caret is at the end,
+  // which is where she is typing.
+  function _reveal(el){
+    if(!el||!el.getBoundingClientRect||!el.isConnected)return;
+    var vb=_visibleBottom(),PAD=16;
+    for(var n=el.parentElement;n;n=n.parentElement){
+      if(n===document.body||n===root)break;
+      if(!_scrollable(n))continue;
+      var r=el.getBoundingClientRect(),sr=n.getBoundingClientRect();
+      var top=Math.max(sr.top,0)+PAD,bot=Math.min(sr.bottom,vb)-PAD;
+      if(bot-top<40)continue;
+      var atEnd=false;
+      try{atEnd=el.tagName.toLowerCase()==='textarea'&&el.selectionStart>=String(el.value||'').length-1;}catch(e){}
+      var d=0;
+      if(r.height>bot-top){d=atEnd?(r.bottom-bot):(r.top-top);}
+      else if(r.bottom>bot){d=r.bottom-bot;}
+      else if(r.top<top){d=r.top-top;}
+      if(Math.abs(d)>1){n.scrollTop+=d;}
+    }
+    var r2=el.getBoundingClientRect();
+    if(r2.bottom>vb||r2.top<0){try{el.scrollIntoView({block:'nearest'});}catch(e){}}
+  }
+  function _apply(){
+    var up=_kbUp();
+    if(up){
+      root.style.setProperty('--kb-vh',Math.round(vv.height)+'px');
+      if(!root.classList.contains('kb-open'))root.classList.add('kb-open');
+      // The phone slid the page up to find the field; with the shell now the visible height
+      // there is nothing to slide, so put it back rather than leave the header off screen.
+      if(window.scrollY||window.pageYOffset||vv.offsetTop>0){try{window.scrollTo(0,0);}catch(e){}}
+      var el=document.activeElement;
+      if(_isTextField(el)){_fitOverlay(el);_reveal(el);}
+    }else if(root.classList.contains('kb-open')){
+      root.classList.remove('kb-open');root.style.removeProperty('--kb-vh');_unfitOverlays();
+    }
+  }
+  var _raf=0;
+  function _soon(){if(_raf)return;_raf=(window.requestAnimationFrame||setTimeout)(function(){_raf=0;try{_apply();}catch(e){}});}
   document.addEventListener('focusin',function(e){
     var el=e.target;
     if(!_isTextField(el))return;
-    setTimeout(function(){_revealFocused(el);},120);
-    setTimeout(function(){if(document.activeElement===el)_revealFocused(el);},380);
+    // Once straight away, then again after the keyboard has finished sliding in.
+    _soon();
+    setTimeout(function(){if(document.activeElement===el){_apply();if(!_kbUp())_reveal(el);}},120);
+    setTimeout(function(){if(document.activeElement===el){_apply();if(!_kbUp())_reveal(el);}},400);
   });
-  if(window.visualViewport){
-    window.visualViewport.addEventListener('resize',function(){
-      var el=document.activeElement;
-      if(_isTextField(el))_revealFocused(el);
-    });
-  }
+  // A long note grows as she types: keep the caret's line above the keyboard too.
+  document.addEventListener('input',function(e){
+    var el=e.target;
+    if(document.activeElement===el&&_isTextField(el)&&(_kbUp()||!vv))_reveal(el);
+  },true);
+  if(vv){vv.addEventListener('resize',_soon);vv.addEventListener('scroll',_soon);}
+  window.__scKb={apply:_apply,reveal:_reveal};
 })();
 
 </script>
