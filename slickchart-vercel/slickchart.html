@@ -311,7 +311,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-22g';
+const APP_BUILD='2026-10-22h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -6183,11 +6183,26 @@ function _hasCloudAccountSigns(){
     return !!(localStorage.getItem('sc_token')||localStorage.getItem('sc_login_email')||localStorage.getItem('sc_cloud_seeded'));
   }catch(e){return false;}
 }
+// Where a client's care space opens. The iPhone app only keeps a page inside itself when its address
+// starts with the app's own start address (https://slickchart.app/slickchart): Capacitor hands every
+// other page to Safari and stays put. So "/client" from inside the iPhone app threw the person out to
+// Safari, and a phone that had signed in as a client did it again at every launch, before the sign-in
+// screen could even draw (2026-10-22: a new provider "the app keeps kicking me out, Safari works").
+// /slickchart-space serves the same client page (vercel.json) under an address the app keeps.
+function _clientSpaceUrl(tok){
+  const native=(typeof _isNativeApp==='function')&&_isNativeApp();
+  if(!native)return tok?'/client/'+encodeURIComponent(tok):'/client';
+  return '/slickchart-space'+(tok?'?c='+encodeURIComponent(tok):'');
+}
 function renderEntry(){
   let hasClient=false,hasProviderHist=false;
   try{hasClient=!!localStorage.getItem('sc_client_token');}catch(e){}
   try{hasProviderHist=!!localStorage.getItem('sc_login_email');}catch(e){}
-  if(hasClient&&!hasProviderHist){try{location.replace('/client');return;}catch(e){}}
+  // In the installed app, show the chooser instead of jumping: the client page has no way back to the
+  // provider sign-in, so a provider who once used the client sign-in on this phone was locked out of
+  // her own app. Its first button continues to the care space.
+  const native=(typeof _isNativeApp==='function')&&_isNativeApp();
+  if(hasClient&&!hasProviderHist&&!native){try{location.replace(_clientSpaceUrl());return;}catch(e){}}
   if(hasProviderHist&&!hasClient){_loginMode='login';renderLogin();return;}
   _loginMode='welcome';renderLogin();
 }
@@ -6223,7 +6238,7 @@ function _clientVerifyCode(){
         // Remember them: the client page reads sc_client_token, and next app launch renderEntry() sees
         // hasClient and routes straight to /client. Navigate into their space now.
         try{localStorage.setItem('sc_client_token',j.token);}catch(e){}
-        try{location.replace('/client');}catch(e){try{location.href='/client';}catch(_){}}
+        try{location.replace(_clientSpaceUrl());}catch(e){try{location.href=_clientSpaceUrl();}catch(_){}}
       }else{
         if(msg){msg.style.color='var(--p-red)';msg.textContent=(j&&j.error)||'That code didn’t match. Check it and try again.';}
       }
@@ -6280,7 +6295,7 @@ function renderLogin(err){
     // Unified front door: one app, routes to the right experience for who you are.
     const hasClient=(function(){try{return !!localStorage.getItem('sc_client_token');}catch(e){return false;}})();
     inner=`<div style="font-size:16px;color:var(--p-mut);margin-bottom:22px;">Welcome to SlickChart — who's signing in?</div>
-      ${hasClient?`<button onclick="location.href='/client'" style="${btn};margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-heart" style="font-size:16px;"></i> Continue to your care space</button>`:''}
+      ${hasClient?`<button onclick="location.href=_clientSpaceUrl()" style="${btn};margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-heart" style="font-size:16px;"></i> Continue to your care space</button>`:''}
       <button onclick="_setLoginMode('login')" style="${btn};margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-briefcase" style="font-size:16px;"></i> I'm a provider — sign in</button>
       <button onclick="_setLoginMode('client')" style="width:100%;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:12px;padding:13px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-heart" style="font-size:16px;color:var(--accent-strong);"></i> I'm a client — sign in</button>
       ${_isNativeApp()
@@ -15595,7 +15610,11 @@ function _initDeepLinks(){
         var u=new URL(raw);
         if(u.hostname!=='slickchart.app')return;            // only our domain
         if(!/^\/client(\/|$)/.test(u.pathname))return;      // only client-space links
-        var dest=u.pathname+(u.search||'')+(u.hash||'');
+        // Into the page the app keeps (see _clientSpaceUrl), with the tapped link's token and anything else it carried.
+        var m=u.pathname.match(/^\/client\/([^\/?]+)/);
+        var q=new URLSearchParams(u.search||'');if(m&&m[1]&&!q.get('c'))q.set('c',decodeURIComponent(m[1]));
+        var qs=q.toString();
+        var dest='/slickchart-space'+(qs?'?'+qs:'')+(u.hash||'');
         if((location.pathname+location.search+location.hash)!==dest)location.href=dest;
       }catch(e){}
     };
