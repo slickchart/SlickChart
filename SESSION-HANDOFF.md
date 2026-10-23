@@ -8194,6 +8194,34 @@ reports from Aug 27 to Oct 5 that she had never been told about. Nothing alerted
   customers auto-importing (Jaimie's search report; Ashley believes the iPhone storage fixes covered it).
 - `sweep-crossdevice.mjs` / `freshaudit.mjs` are not in this repo's scratchpad, so they were not run.
 
+## 2026-10-22 — Jaimie: "search finds no one", past dates, Back, form preview (build `2026-10-22c`, PREVIEW)
+
+**What Jaimie OBSERVED (ground truth, §1b), from her email and 5 iPhone screenshots:**
+- Square appointments sync and upcoming ones show. She cannot go back to earlier dates to see clients already seen.
+- Searching existing clients ("Bonnie", "Jaimie") says no clients found. She could not add or open a client by hand either.
+- Screenshot 8:10: "1429 clients", Ask your book "No client named Jaimie was found". Screenshot 11:32: search "Bonnie",
+  "No clients yet" AND "No clients match your search". Screenshot 3:53: **"Social media mode is on"** banner, "No clients yet".
+- Back sometimes returns to the top of a list. Wants to preview a form from the send screen.
+
+**Cause:** Social media (screenshot) mode was on. It filters every list to the sample clients, and a live account has
+none, so all 1,429 were hidden; a client she added was hidden too. The banner sat inside `#clients-tools`, which search
+folds away, so while searching nothing said why. `sc_shot_mode` syncs, so it was on on every device.
+Separately, Ask your book sent only the FIRST 80 clients to the AI.
+
+**Fixed (`scratchpad/test-provider-feedback-1022.mjs`, 17/17 Chromium AND WebKit):**
+- `sc_shot_mode` is now `on:<ms>` and expires after 2 h; the old `'1'` reads as off and is rewritten `'0'` (syncs, so
+  every device clears). Banner moved above the list (visible while searching) with her client count; empty state and
+  no-match line name the mode with a Turn off button.
+- Ask your book ranks clients whose name/service matches the question first before the 80 cap.
+- Calendar: a month before today loads past Square visits on demand (`/api/square/appointments?from=YYYY-MM-01`,
+  additive param, max 45 days, 3 years back). Kept in memory in `_sqHist`, shown as `square-past` rows (tap opens the
+  client). `squareAppts` is unchanged, so next-visit stamps, check-ins and the calendar feed are untouched.
+- Back restores scroll position and the list's search text (`_navRestore`).
+- Send sheet and bundle editor: Preview button opens the client-facing form over the sheet (`_formPreviewSheet`).
+
+**Not built, plan sent to Ashley:** form folders/categories, per-service welcome questionnaires, multi-service booking
+with Square prepay / "use my Square booking page" button.
+
 ## 2026-10-21 — Daily feedback brief in Claude (build `2026-10-21d`, PREVIEW)
 
 Ashley asked for a pinned Claude thread ("Daily feedback monitor") that watches the Feedback Inbox,

@@ -1,4 +1,4 @@
-// GET /api/square/appointments?days=14
+// GET /api/square/appointments?days=14   (or ?from=YYYY-MM-DD&days=33 for a past stretch)
 // Lists UPCOMING bookings from Square Appointments for the next N days (default
 // 14, max 31). Queries EVERY location on the account (a seller may have their
 // Appointments set up under a location other than the resolved default, including
@@ -19,8 +19,20 @@ export default async function handler(req, res) {
     // Look back a full day from now (not just "now") so appointments earlier today
     // stay in the list even after their start time passes — the provider may still
     // need to open them later to finish session notes.
-    const startMin = new Date(now.getTime() - 24 * 3600000);
-    const end = new Date(startMin.getTime() + days * 86400000);
+    // ?from=YYYY-MM-DD reads an EARLIER stretch instead, so the calendar can show the visits a
+    // provider has already had (2026-10-22: "I still can't go back to previous dates"). Capped at
+    // 3 years back and 45 days long; anything else falls back to the upcoming window above.
+    let startMin = new Date(now.getTime() - 24 * 3600000);
+    let spanDays = days;
+    const fromQ = String(req.query.from || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fromQ)) {
+      const f = new Date(fromQ + 'T00:00:00Z');
+      if (!isNaN(f.getTime()) && f.getTime() > now.getTime() - 3 * 366 * 86400000 && f.getTime() < now.getTime()) {
+        startMin = new Date(f.getTime() - 14 * 3600000);   // the provider's midnight is up to 14h off UTC
+        spanDays = Math.min(days, 45);
+      }
+    }
+    const end = new Date(startMin.getTime() + spanDays * 86400000);
 
     // Build consecutive query windows no longer than Square's per-request limit.
     const WINDOW_MS = 30 * 86400000; // 30 days per window, safely under Square's ~31-day cap

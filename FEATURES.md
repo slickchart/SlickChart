@@ -401,6 +401,9 @@ saved anywhere", not "does this always call that".
 | `_loadSquareAppts` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_loadSquareAppts` | `/api/square/appointments` | direct |
 | `_loadSquareAppts` | `/api/square/booking-options` | via `openSquareBook` |
+| `_loadSquareHistory` | `/api/consult-slug` | via `_loadConsultLink` |
+| `_loadSquareHistory` | `/api/square/appointments` | direct |
+| `_loadSquareHistory` | `/api/square/booking-options` | via `openSquareBook` |
 | `_loadTotpState` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_loadTotpState` | `/api/totp-verify` | via `_confirmDisableTotp` |
 | `_lsSetItem` | `/api/store` | via `_verifyFormSave` |
@@ -1407,7 +1410,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/reset` | POST | **public** | POST /api/reset  { token, password }  — sets a new password from a reset link. |
 | `/api/sessions` | GET, POST | provider session | GET  /api/sessions          — provider-authed: list this provider's real sessions |
 | `/api/signup` | POST | founder | POST /api/signup  { email, password, name } |
-| `/api/square/appointments` | GET | **public** | GET /api/square/appointments?days=14 |
+| `/api/square/appointments` | GET | **public** | GET /api/square/appointments?days=14   (or ?from=YYYY-MM-DD&days=33 for a past stretch) |
 | `/api/square/availability` | POST | **public** | POST /api/square/availability  { serviceVariationId, teamMemberId?, date 'YYYY-MM-DD' } |
 | `/api/square/book` | POST | **public** | POST /api/square/book |
 | `/api/square/booking-options` | GET | **public** | GET /api/square/booking-options |
@@ -1495,6 +1498,7 @@ Check here before building a new one.
 | `_healBulkStamps` | yes |
 | `_healBulkStampsStored` | yes |
 | `_healGhostForms` | yes |
+| `_navApplyRestore` | yes |
 | `_noteClientRepaired` | yes |
 | `_offerCourseRecovery` | yes |
 | `_openPhotoRecovery` | yes |
