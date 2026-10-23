@@ -8306,3 +8306,16 @@ client sign-in, "Continue to your care space" and tapped client links in the app
 chooser shows instead of the jump. Test: `scratchpad/test-ios-app-stays-inside.mjs` 8/8 Chrome+WebKit,
 control (old file) fails 6. Also: iOS AppDelegate never forwarded the APNs address to the push
 plugin, so no iPhone app could link for alerts; fixed in the repo, needs the next App Store build.
+
+### 2026-10-23 — bug check of the 2026-10-22 features (build 2026-10-22i)
+Ashley asked for every route of the new features to be checked. Results:
+- `scratchpad/test-1022-edge-routes.mjs` (new, 47 checks), `test-square-booking-page` (18), `test-welcome-packages` (12),
+  `test-form-folders` (12), `test-provider-feedback-1022` (14): all pass in Chromium AND WebKit.
+- Whole-app sweep (provider demo): 142 screens, 1,387 controls, 0 errors, 1 no-op (`replayOnboarding`, same as before).
+  NOTE: run it with `_clearSampleData` skipped. Otherwise the crawl removes the demo clients early and every client
+  screen shows the empty list. Yesterday's build hid that because Social media mode put the samples back.
+- Client sweep: 22 screens, 172 controls, identical to the previous build. sweep-all-forms (178), sweep-form-mirror,
+  test-contra-ticks, test-client-form-branding: clean in both engines.
+- Two fixes from the check: (1) the past-month Square fetch now asks for days+2, so the month's last day is covered
+  as far west as UTC-12; (2) the first-visit chooser defaults to the first package when there is no standard intake
+  to fall back on (before, nothing was selected).

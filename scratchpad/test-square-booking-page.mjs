@@ -66,6 +66,25 @@ const b = await pw[ENGINE].launch(launchOpts);
   check('"request instead" shows the normal request form', /Request an appointment/.test(C2), C2.slice(0, 200));
   await p.evaluate(() => nav('home')); await p.evaluate(() => nav('rebook'));
   check('next visit to Book shows Square again', await p.evaluate(() => !!document.getElementById('rb-square')), '');
+  // Home card button route.
+  await p.evaluate(() => nav('home')); await p.waitForTimeout(300);
+  const hb = await p.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /nav\('rebook'\)/.test(x.getAttribute('onclick') || '')); if (!b) return false; b.click(); return !!document.getElementById('rb-square'); });
+  check('Home "Request an appointment" button also lands on Book on Square', hb, '');
+  // A link that is not Square's (should never come from the server) is ignored: normal form.
+  sq = 'https://evil.example/book';
+  await p.goto('http://localhost:' + PORT + '/slickchart-client.html?c=TESTTOKEN', { waitUntil: 'load' }); await p.waitForTimeout(2500);
+  await p.evaluate(() => nav('rebook'));
+  check('a non-Square link from the server is ignored, normal request form', await p.evaluate(() => !document.getElementById('rb-square') && /Request an appointment/.test(S.innerText)), '');
+  // No link: unchanged request form.
+  sq = '';
+  await p.goto('http://localhost:' + PORT + '/slickchart-client.html?c=TESTTOKEN', { waitUntil: 'load' }); await p.waitForTimeout(2500);
+  await p.evaluate(() => nav('rebook'));
+  check('without a Square link the request form is unchanged', await p.evaluate(() => !document.getElementById('rb-square') && /Request an appointment/.test(S.innerText)), '');
+  // Deep link ?scr=rebook (from a notification) with the link set.
+  sq = URLOK;
+  await p.goto('http://localhost:' + PORT + '/slickchart-client.html?c=TESTTOKEN&scr=rebook', { waitUntil: 'load' }); await p.waitForTimeout(3000);
+  const dl = await p.evaluate(() => { try { nav('rebook'); } catch (e) {} return !!document.getElementById('rb-square'); });
+  check('opening Book from a notification link lands on Book on Square', dl, '');
   await ctx.close();
 }
 await b.close();
