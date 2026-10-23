@@ -40,6 +40,7 @@ saved anywhere", not "does this always call that".
 | `_aiSuggestRecs` | `/api/ai` | via `_aiComplete` |
 | `_aiSuggestReplies` | `/api/ai` | via `_aiComplete` |
 | `_aiVisionAnalyze` | `/api/ai` | via `_aiComplete` |
+| `_alSend` | `/api/app-launch` | direct |
 | `_animalOwnerHTML` | `/api/clients` | via `syncClientEvents` |
 | `_animalOwnerHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_apptCancelSquare` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -262,8 +263,6 @@ saved anywhere", not "does this always call that".
 | `_doBulkInvite` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_doCancelSquare` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_doCancelSquare` | `/api/square/cancel-booking` | direct |
-| `_doLogout` | `/api/billing-status` | via `_checkBillingBanner` |
-| `_doLogout` | `/api/client-code` | via `_clientSendCode` |
 | `_doLogout` | `/api/logout` | direct |
 | `_doLogout` | `/api/native-push` | direct |
 | `_doLogout` | `/api/provider-push` | direct |
@@ -344,6 +343,7 @@ saved anywhere", not "does this always call that".
 | `_gettingStartedHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_guidesTabHTML` | `/api/clients` | via `syncClientEvents` |
 | `_guidesTabHTML` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_handleAuthParams` | `/api/app-launch` | via `_alSend` |
 | `_handleAuthParams` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_handleAuthParams` | `/api/client-code` | via `_clientSendCode` |
 | `_handlePushParams` | `/api/clients` | via `syncClientEvents` |
@@ -540,6 +540,7 @@ saved anywhere", not "does this always call that".
 | `_previewGuideFileInFrameP` | `/api/guide-file` | via `_getGuideFile` |
 | `_probeWhisper` | `/api/transcribe` | direct |
 | `_prodPickerRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_promptReSignIn` | `/api/app-launch` | via `_alSend` |
 | `_promptReSignIn` | `/api/client-code` | via `_clientSendCode` |
 | `_promptReSignIn` | `/api/logout` | via `_doLogout` |
 | `_promptReSignIn` | `/api/native-push` | via `_doLogout` |
@@ -721,10 +722,12 @@ saved anywhere", not "does this always call that".
 | `_setDepositMode` | `/api/square/connect` | via `_sqConnect` |
 | `_setDepositMode` | `/api/square/connection` | via `_sqCheckStatus` |
 | `_setDepositMode` | `/api/square/customers` | via `_sqLoadCustomers` |
+| `_setLang` | `/api/app-launch` | via `_alSend` |
 | `_setLang` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_setLang` | `/api/client-code` | via `_clientSendCode` |
 | `_setLang` | `/api/clients` | via `syncClientEvents` |
 | `_setLang` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_setLoginMode` | `/api/app-launch` | via `_alSend` |
 | `_setLoginMode` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_setLoginMode` | `/api/client-code` | via `_clientSendCode` |
 | `_setPhotoCategory` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -738,11 +741,6 @@ saved anywhere", not "does this always call that".
 | `_shareGuideLink` | `/api/logout` | via `_doLogout` |
 | `_shareGuideLink` | `/api/native-push` | via `_doLogout` |
 | `_shareGuideLink` | `/api/provider-push` | via `_doLogout` |
-| `_signOutSafely` | `/api/client-code` | via `_clientSendCode` |
-| `_signOutSafely` | `/api/logout` | via `_doLogout` |
-| `_signOutSafely` | `/api/native-push` | via `_doLogout` |
-| `_signOutSafely` | `/api/provider-push` | via `_doLogout` |
-| `_signOutSafely` | `/api/store` | via `_flushBeforeSignOut` |
 | `_signedOutBannerHTML` | `/api/client-code` | via `_clientSendCode` |
 | `_sqApptsErrHTML` | `/api/clients` | via `syncClientEvents` |
 | `_sqApptsErrHTML` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -871,6 +869,7 @@ saved anywhere", not "does this always call that".
 | `_voiceSmartSave` | `/api/ai` | via `_aiComplete` |
 | `_voiceStop` | `/api/ai` | via `_aiComplete` |
 | `_voiceStopFromPause` | `/api/ai` | via `_aiComplete` |
+| `_withClientToken` | `/api/app-launch` | via `_alSend` |
 | `_withClientToken` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_withClientToken` | `/api/logout` | via `_doLogout` |
 | `_withClientToken` | `/api/native-push` | via `_doLogout` |
@@ -890,6 +889,7 @@ saved anywhere", not "does this always call that".
 | `buildSummaryCustomPanel` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `buildSummaryCustomPanel` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `clearNotif` | `/api/clients` | via `syncClientEvents` |
+| `cloudLogout` | `/api/app-launch` | via `_alSend` |
 | `cloudLogout` | `/api/logout` | via `_doLogout` |
 | `cloudLogout` | `/api/native-push` | via `_doLogout` |
 | `cloudLogout` | `/api/provider-push` | via `_doLogout` |
@@ -923,8 +923,10 @@ saved anywhere", not "does this always call that".
 | `dismissFlag` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `dismissFlag` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `dismissFlag` | `/api/square/save-card` | via `_addCardOnFile` |
+| `doRequestReset` | `/api/app-launch` | via `_alSend` |
 | `doRequestReset` | `/api/billing-status` | via `_checkBillingBanner` |
 | `doRequestReset` | `/api/client-code` | via `_clientSendCode` |
+| `doResetPw` | `/api/app-launch` | via `_alSend` |
 | `doResetPw` | `/api/billing-status` | via `_checkBillingBanner` |
 | `doResetPw` | `/api/client-code` | via `_clientSendCode` |
 | `doSignup` | `/api/clients` | via `syncClientEvents` |
@@ -954,6 +956,7 @@ saved anywhere", not "does this always call that".
 | `fmtBookingDate` | `/api/transcribe` | via `_probeWhisper` |
 | `freeUpDeviceSpace` | `/api/course-versions` | via `_cvFetchList` |
 | `freeUpDeviceSpace` | `/api/guide-file` | via `_evictableFileCache` |
+| `inviteClientToApp` | `/api/app-launch` | via `_alSend` |
 | `inviteClientToApp` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `inviteClientToApp` | `/api/logout` | via `_doLogout` |
 | `inviteClientToApp` | `/api/native-push` | via `_doLogout` |
@@ -1084,6 +1087,7 @@ saved anywhere", not "does this always call that".
 | `renderEditResource` | `/api/ai` | via `_aiComplete` |
 | `renderEditSuggestedForms` | `/api/clients` | via `syncClientEvents` |
 | `renderEditSuggestedForms` | `/api/provider-form` | via `submitSignOnDevice` |
+| `renderEntry` | `/api/app-launch` | via `_alSend` |
 | `renderEntry` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderEntry` | `/api/client-code` | via `_clientSendCode` |
 | `renderFeedbackInbox` | `/api/feedback` | via `_loadFeedbackInbox` |
@@ -1117,6 +1121,7 @@ saved anywhere", not "does this always call that".
 | `renderInviteClients` | `/api/native-push` | via `_doLogout` |
 | `renderInviteClients` | `/api/provider-push` | via `_doLogout` |
 | `renderLearn` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
+| `renderLogin` | `/api/app-launch` | via `_alSend` |
 | `renderLogin` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderLogin` | `/api/client-code` | via `_clientSendCode` |
 | `renderMessages` | `/api/clients` | via `syncClientEvents` |
@@ -1339,6 +1344,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | Endpoint | Methods | Gated by | Purpose |
 |---|---|---|---|
 | `/api/admin-stats` | GET | provider session | GET /api/admin-stats  → owner-only: privacy-safe aggregate adoption metrics. |
+| `/api/admin/app-launches` | GET | founder, provider session | GET /api/admin/app-launches   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/build-buyers` | GET | provider session | GET /api/admin/build-buyers[?format=csv]  → owner-only: the Build Your Own App buyer list. |
 | `/api/admin/client-recover` | POST | founder, provider session | FOUNDER-ONLY. Get a provider's clients back. |
 | `/api/admin/contacts` | GET | provider session | GET /api/admin/contacts[?format=csv][&all=1]  → owner-only: every email address Ashley has, in one |
@@ -1356,6 +1362,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/aftercare-drip` | POST | provider session | Provider-authed: start (or cancel) the automated tattoo aftercare drip for one of the |
 | `/api/ai` | POST | provider session, client link token | POST /api/ai   body: { messages, max_tokens?, model? } |
 | `/api/announcements` | POST | provider session | GET  /api/announcements            → { items, canPost, you, ownerSet } |
+| `/api/app-launch` | POST | **public** | POST /api/app-launch — the phone app's own launch log (lib/app-launch-log.js). Works signed in or |
 | `/api/apple-app-site-association` | — | **public** | GET /.well-known/apple-app-site-association  (served here via a vercel.json rewrite) |
 | `/api/assetlinks` | — | **public** | GET /.well-known/assetlinks.json  (served here via a vercel.json rewrite) |
 | `/api/automation-claim` | POST | provider session | Provider-authed: pre-claim a scheduled automation's occurrence for a set of clients, so the |
@@ -1457,7 +1464,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcements`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `device_reports`, `feedback`, `files`, `founder_accounts`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
+`announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `device_reports`, `feedback`, `files`, `founder_accounts`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.

@@ -311,7 +311,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-22i';
+const APP_BUILD='2026-10-22j';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -4161,7 +4161,7 @@ const Cloud={
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
-  logout(){this.token='';try{localStorage.removeItem('sc_token');}catch(e){}},
+  logout(){try{if(this.token&&typeof _alAdd==='function')_alAdd('token-dropped',(new Error().stack||'').split('\n').slice(1,4).map(function(x){return x.trim().replace(/^at /,'').replace(/\s*\(.*$/,'').replace(/@.*$/,'');}).join(' < '));}catch(e){}this.token='';try{localStorage.removeItem('sc_token');}catch(e){}},
   // Device-local keys the server is still holding from before they were excluded. Cleared out of the
   // account after the pull, so they stop occupying space there and stop arriving on new devices.
   async _dropStaleDeviceLocal(keys){
@@ -4648,6 +4648,7 @@ const Cloud={
               try{if(typeof renderLogin==='function')renderLogin();}catch(e){}
               return;
             }
+            try{_alAdd('signed-out-by-server','store 401');_alSend(true);}catch(_){}
             if(typeof proToast==='function')proToast('You\u2019ve been signed out on this device. Please sign in again.',0);
             try{this.logout();}catch(e){}
             setTimeout(()=>{try{if(typeof _doLogout==='function')_doLogout();}catch(e){}},1200);
@@ -6258,6 +6259,7 @@ function _requestClientLink(){
 }
 function renderLogin(err){
   const old=document.getElementById('login-screen');if(old)old.remove();
+  try{_alAdd('signin-screen',String(_loginMode||''));}catch(e){}
   // App Store / Play compliance: the native app is "payment-silent" — it never sells the
   // SlickChart subscription. Existing accounts can sign in; account creation happens on the web.
   // So force any signup mode back to login when running inside the native (Capacitor) shell.
@@ -6385,13 +6387,16 @@ function doLogin(){
   const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';
   const er=document.getElementById('login-err');if(er)er.textContent='';
   if(!email||!pw){if(er)er.textContent='Enter your email and password.';return;}
+  try{_alAdd('signin-tap');}catch(e){}
   Cloud.login(email,pw).then(async()=>{
+    try{_alAdd('signin-ok');_alSend(true);}catch(e){}
     if(await _signedInAsSomeoneElse())return;
     _restoreUnsent();
     try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else if(n>0){try{localStorage.setItem('sc_onboarded','1');}catch(e){}}else{try{Cloud._retryPullSoon();}catch(e){}} _reloadAll();}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
     try{_checkBillingBanner();}catch(e){}   // she is in on grace — tell her straight away, not next launch
   }).catch(e=>{
+    try{_alAdd('signin-refused',String((e&&e.message)||'').slice(0,120));_alSend(true);}catch(_){}
     if(e&&e.requiresTotp){_pendingTotpEmail=email;_pendingTotpPw=pw;_setLoginMode('totp');return;}
     _loginErr(e,'Login failed');
   });
@@ -6437,6 +6442,7 @@ function doResetPw(){
   Cloud.resetPw(_resetToken,pw).then(()=>{_resetToken='';_loginMode='login';renderLogin();const e2=document.getElementById('login-err');if(e2){e2.style.color='var(--p-green)';e2.textContent=t('pw_updated');}}).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Reset failed';});
 }
 async function _doLogout(){
+  try{_alAdd('signout');_alSend(true);}catch(e){}
   // Revoke THIS session server-side first (while we still hold the token), so signing out actually
   // invalidates the token everywhere — not just on this device. keepalive lets it complete even as we
   // navigate away. Best-effort: local sign-out proceeds regardless.
@@ -9032,7 +9038,9 @@ try{if(_nativeBrowser()){
 function _provScrollTop(){try{S.scrollTop=0;}catch(e){}try{window.scrollTo(0,0);}catch(e){}}
 let _ncLastStep=-1;
 const _NAV_CLIENT_SCREENS={client:1,notes:1,photos:1,'write-note':1,'virtual-client':1,brief:1,room:1,rebook:1,'summary-history':1,'session-summary':1,'client-forms':1,checkout:1};
+var _alLastNav='';
 function nav(screen,data){
+  try{if(screen!==_alLastNav){_alLastNav=screen;_alAdd('screen',String(screen));}}catch(e){}
   // Safari does not fire blur/change on a focused field that is simply removed from the page, so a
   // note typed less than a debounce ago was lost when the screen changed without a tap (a timer, a
   // notification). Blurring it first runs its own save, the same as tapping away does.
@@ -15593,6 +15601,49 @@ function _ensureCamInput(fromLibrary){let inp=document.getElementById('global-ca
   return inp;}
 // True only inside the Capacitor native shell (App Store / Play build).
 function _isNativeApp(){try{return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());}catch(e){return false;}}
+// The phone app's own launch log (lib/app-launch-log.js). A new provider's iPhone app "kept kicking her
+// out" and nothing could say what it did, because the device report only comes once she is signed in.
+// So the app notes each step of each launch on the phone and sends the list, signed in or not.
+// Event names and short reasons only, never client data. Installed app only.
+function _alOn(){try{return _isNativeApp();}catch(e){return false;}}
+function _alAdd(ev,detail){
+  try{
+    if(!_alOn())return;
+    let a=[];try{a=JSON.parse(localStorage.getItem('scnat_log')||'[]');if(!Array.isArray(a))a=[];}catch(_){a=[];}
+    a.push({t:Date.now(),e:String(ev).slice(0,40),d:String(detail||'').slice(0,160)});
+    while(a.length>40)a.shift();
+    localStorage.setItem('scnat_log',JSON.stringify(a));
+  }catch(e){}
+}
+var _alSentAt=0;
+function _alSend(force){
+  try{
+    if(!_alOn())return;
+    if(!force&&Date.now()-_alSentAt<15000)return;
+    _alSentAt=Date.now();
+    let ev=[];try{ev=JSON.parse(localStorage.getItem('scnat_log')||'[]');}catch(_){}
+    const ua=navigator.userAgent||'';const m=ua.match(/OS (\d+[_\d]*) like Mac/)||ua.match(/Android ([\d.]+)/);
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const h={'Content-Type':'application/json'};if(tok)h.Authorization='Bearer '+tok;
+    fetch('/api/app-launch',{method:'POST',keepalive:true,headers:h,body:JSON.stringify({device:(typeof _devKey==='function')?_devKey():'unknown',
+      platform:(window.Capacitor&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||'',os:m?m[1].replace(/_/g,'.'):'',build:(typeof APP_BUILD!=='undefined')?APP_BUILD:'',events:ev})}).catch(function(){});
+  }catch(e){}
+}
+(function(){try{
+  if(!_alOn())return;
+  // Did the last launch end on its own? Going to the background is the normal last step; anything
+  // else means the phone closed the app (a crash, or iOS reclaiming its memory) or it reloaded.
+  let a=[];try{a=JSON.parse(localStorage.getItem('scnat_log')||'[]');}catch(_){}
+  const last=a.length?a[a.length-1]:null;
+  if(last&&!/^(hidden|pagehide|launch-ended)$/.test(last.e))_alAdd('prev-launch-cut-off','last step: '+last.e);
+  _alAdd('launch',location.pathname+location.search.replace(/[?&](c|token|v|reset)=[^&]*/g,''));
+  let errs=0;
+  window.addEventListener('error',function(e){if(errs++<5){_alAdd('error',(e&&e.message||'')+' @'+String(e&&e.lineno||''));setTimeout(function(){_alSend(true);},500);}});
+  window.addEventListener('unhandledrejection',function(e){if(errs++<5)_alAdd('rejection',String(e&&e.reason&&(e.reason.message||e.reason)||'').slice(0,160));});
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'){_alAdd('hidden');_alSend(true);}else _alAdd('visible');});
+  window.addEventListener('pagehide',function(){_alAdd('pagehide');});
+  setTimeout(function(){_alSend(true);},6000);
+}catch(e){}})();
 // Universal Links (iOS) / App Links (Android): when the OS opens the app because a client tapped their
 // https://slickchart.app/client/<token> link, Capacitor still loads the app's start URL (the provider
 // shell), so we catch the tapped link and navigate the WebView to it — landing the client in their own
