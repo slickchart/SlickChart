@@ -569,7 +569,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-22e';
+const APP_BUILD='2026-10-22f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2174,7 +2174,7 @@ const _LS_LABELS={sc_captured_photos:'before/after photos',sc_pro_vc_subs:'consu
   sc_pro_vc_invites:'consult invites',sc_provider_note_drafts:'unfinished notes',sc_session_summaries:'session summaries',
   sc_checkin_cfg:'check-in settings',sc_notif_settings:'notification settings',sc_client_recs:'client recommendations',
   sc_autos:'automations',sc_bus:'your business details',sc_workspace:'workspace settings',sc_partners:'partners',
-  sc_ai:'assistant settings',sc_bundles:'form & guide bundles',sc_tax_rate:'tax rate',sc_manual_appts:'appointments you added by hand'};
+  sc_ai:'assistant settings',sc_bundles:'form & guide bundles',sc_form_folders:'form folders',sc_tax_rate:'tax rate',sc_manual_appts:'appointments you added by hand'};
 // A key like sc_room_draft_sq_08t3yxqvac means nothing to anyone. Name it for what it is.
 function _lsLabel(k){
   if(_LS_LABELS[k])return _LS_LABELS[k];
@@ -3370,7 +3370,7 @@ function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&
 // immediately but NOT registered here, so the map itself rode the plain overwrite: a stale device's
 // copy could drop ids and resurrect a deleted guide. Same class of bug as sc_courses.
 const _TOMB_OBJ={sc_deleted_svc:1,sc_deleted_msg_tmpls:1,sc_deleted_starters:1,sc_deleted_reminders:1,sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
-  sc_deleted_autos:1,sc_deleted_inv:1,sc_deleted_vendors:1,sc_deleted_shop_bundles:1,sc_deleted_bundles:1,
+  sc_deleted_autos:1,sc_deleted_inv:1,sc_deleted_vendors:1,sc_deleted_shop_bundles:1,sc_deleted_bundles:1,sc_deleted_form_folders:1,
   sc_deleted_partners:1,sc_deleted_payments:1,
   sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1,
   // Added 2026-10-08 in the thread-16 pass. Both are RECORDS OF SOMETHING ALREADY DONE, so a plain
@@ -3430,6 +3430,7 @@ const _LIB_TOMB={
   sc_vendors:'sc_deleted_vendors',
   sc_shop_bundles:'sc_deleted_shop_bundles',
   sc_bundles:'sc_deleted_bundles',
+  sc_form_folders:'sc_deleted_form_folders',
   sc_partners:'sc_deleted_partners',
   sc_payments:'sc_deleted_payments',
   sc_checkins:'sc_ci_cleared',
@@ -5539,6 +5540,7 @@ function _reloadAll(){
   S('custom guides',function(){if(typeof loadCustomResources==='function')loadCustomResources();});
   S('summary guides',function(){if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();});
   S('bundles',function(){if(typeof loadBundles==='function')bundles=loadBundles();});
+  S('form folders',function(){if(typeof loadFormFolders==='function')formFolders=loadFormFolders();});
   // applyProfessionConfig() above already rebuilt `resources`, but it ran BEFORE the just-pulled
   // custom guides were loaded, so rebuild again now, or guides/bundles synced from another device
   // (e.g. created on the web, opened on the phone) never make it into the visible list.
@@ -9322,7 +9324,7 @@ function nav(screen,data){
     'upload-doc':renderUploadDoc,
     'checkin-settings':renderCheckinSettings,'checkin-preview':renderCheckinPreview,
     'form-builder':()=>renderFormBuilder(data),'form-preview':()=>renderFormPreview(data),'form-docs':()=>renderFormDocs(data),'sign-form':()=>renderSignOnDevice(data&&data.fid,data&&data.cid),
-    bundles:renderBundles,'edit-bundle':()=>renderEditBundle(data),
+    bundles:renderBundles,'edit-bundle':()=>renderEditBundle(data),'form-folders':renderFormFolders,
     'nc-next-step':()=>renderNCNextStep(data),'provider-fill-intake':()=>renderProviderFillIntake(data),
     'edit-suggested-forms':renderEditSuggestedForms,'merge-clients':renderMergeClients,
     help:renderHelp,'help-article':()=>renderHelpArticle(data),
@@ -11634,7 +11636,10 @@ function openClientFormSender(id,focus){
     <div style="position:relative;margin-bottom:6px;flex-shrink:0;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--p-mut);"></i><input id="cfs-q" oninput="_cfsFilter(this.value)" placeholder="Search forms, guides, courses &amp; bundles…" style="width:100%;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:12px;padding:9px 11px 9px 34px;font-size:16px;color:var(--p-ink);font-family:inherit;box-sizing:border-box;outline:none;"></div>
     <div style="overflow:auto;margin-top:6px;">
       <div class="cfs-section">${secHead('Start here')}${quickHTML}</div>
-      <div class="cfs-section">${secHead('Forms')}${forms.filter(f=>f!==_quickIntake).map(formRow).join('')}</div>
+      ${(function(){const g=_ffGroup(forms.filter(f=>f!==_quickIntake));
+        // Her folders as bold headings, then the forms in no folder under "Forms", as before.
+        return g.groups.map(x=>`<div class="cfs-section">${`<div style="font-size:16px;font-weight:700;color:var(--p-ink);margin:16px 2px 8px;">${_fileEsc(x.title)}</div>`}${x.forms.map(formRow).join('')}${x.kids.map(k=>`<div class="cfs-sub" style="font-size:14px;font-weight:600;color:var(--p-mut2);margin:10px 2px 6px;display:flex;align-items:center;gap:5px;"><i class="ti ti-folder" aria-hidden="true" style="color:var(--accent-strong);"></i>${_fileEsc(k.title)}</div>${k.forms.map(formRow).join('')}`).join('')}</div>`).join('')
+          +(g.rest.length?`<div class="cfs-section">${secHead(g.groups.length?'Other forms':'Forms')}${g.rest.map(formRow).join('')}</div>`:'');})()}
       ${guides.length?`<div class="cfs-section" id="cfs-guides">${secHead('Guides')}${guides.map(guideRow).join('')}</div>`:''}
       ${crs.length?`<div class="cfs-section" id="cfs-courses">${secHead('Courses')}${crs.map(courseRow).join('')}</div>`:''}
       ${bnds.length?`<div class="cfs-section">${secHead('Bundles')}${bnds.map(bndRow).join('')}</div>`:''}
@@ -11666,6 +11671,7 @@ function _cfsFilter(q){
   document.querySelectorAll('#sendform-sheet .cfs-section').forEach(sec=>{
     let any=false;
     sec.querySelectorAll('.cfs-item').forEach(it=>{const m=!q||(it.getAttribute('data-search')||'').includes(q);it.style.display=m?'':'none';if(m){any=true;total++;}});
+    sec.querySelectorAll('.cfs-sub').forEach(x=>{x.style.display=q?'none':'';});
     sec.style.display=any?'':'none';
   });
   const nr=document.getElementById('cfs-noresults');if(nr)nr.style.display=total?'none':'';
@@ -19506,7 +19512,7 @@ function _formCard(f){
   const guides=formGuideList(f.id);
   const chip=g=>`<button onclick="nav('guide-preview','${g.id}')" style="display:inline-flex;align-items:center;gap:4px;font-size:14px;color:var(--p-mut);background:var(--p-chip);border:1px solid var(--p-line-ctl);border-radius:24px;padding:3px 9px;max-width:100%;cursor:pointer;font-family:inherit;" title="Preview guide"><span aria-hidden="true" style="display:inline-flex;align-items:center;">${_iconMarkup(g.icon,14)}</span> <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${g.title}</span> <i class="ti ti-eye" aria-hidden="true" style="font-size:14px;opacity:.6;"></i></button>`;
   const addc=`<button onclick="nav('form-docs','${f.id}')" style="display:inline-flex;align-items:center;gap:4px;font-size:14px;color:var(--p-mut);background:none;border:1px dashed var(--p-line-ctl);border-radius:24px;padding:3px 9px;cursor:pointer;"><i class="ti ti-plus" aria-hidden="true" style="font-size:14px;"></i> Connect a guide</button>`;
-  return `<div class="form-card" data-search="${(_name+' '+(_sub||'')+' '+f.id).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
+  return `<div class="form-card" data-fid="${_fileEsc(f.id)}" data-search="${(_name+' '+(_sub||'')+' '+f.id).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">${_formIconHTML(f,42)}<div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(_name)}</div><div style="font-size:16px;color:var(--p-mut);">${_fileEsc(_sub)}</div></div></div>
     <div style="border-top:1px solid var(--p-line2);padding:9px 14px;background:var(--surf1);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
@@ -19520,7 +19526,8 @@ function _formCard(f){
     <div style="border-top:1px solid var(--p-line2);padding:8px 14px;display:flex;gap:10px;">
       <button onclick="nav('form-builder','${f.id}')" style="border:none;background:none;font-size:16px;color:var(--accent-strong);cursor:pointer;"><i class="ti ti-pencil" style="font-size:16px;"></i> Edit</button>
       <button onclick="nav('form-preview','${f.id}')" style="border:none;background:none;font-size:16px;color:var(--p-mut);cursor:pointer;"><i class="ti ti-eye" style="font-size:16px;"></i> Preview</button>
-      <button onclick="sendFormToClient('${f.id}')" style="border:none;background:none;font-size:16px;color:var(--p-mut);cursor:pointer;margin-left:auto;"><i class="ti ti-send" style="font-size:16px;"></i> Send</button>
+      <button onclick="_ffPickFolder('${f.id}')" aria-label="Move to a folder" title="Move to a folder" style="border:none;background:none;font-size:16px;color:var(--p-mut);cursor:pointer;margin-left:auto;"><i class="ti ti-folder" style="font-size:16px;"></i></button>
+      <button onclick="sendFormToClient('${f.id}')" style="border:none;background:none;font-size:16px;color:var(--p-mut);cursor:pointer;"><i class="ti ti-send" style="font-size:16px;"></i> Send</button>
       <button onclick="deleteFormCard('${f.id}')" aria-label="Delete form" title="Delete form" style="border:none;background:none;font-size:16px;color:var(--p-red);cursor:pointer;"><i class="ti ti-trash" style="font-size:16px;"></i></button>
     </div>
   </div>`;
@@ -19558,6 +19565,9 @@ function renderForms(){
   // Photo release is bundled into every intake (asked once, auto-captured to the client's file),
   // so it's no longer offered as a separate sendable card here, that duplicated the consent.
   const _workKinds=sections.filter(p=>!/coll$/.test(p)).length;
+  // Her own headings and folders come first; a form she filed is shown there and not again below.
+  const _ffG=_ffGroup(_profFormDefs()),_ffUsed={};
+  _ffG.groups.forEach(g=>{g.forms.forEach(f=>{_ffUsed[f.id]=1;});g.kids.forEach(k=>k.forms.forEach(f=>{_ffUsed[f.id]=1;}));});
   const checkinSub=_workKinds>1?`Sends on its own before every visit · Covers all ${_workKinds} kinds of work you do`:'Auto-sends before every appointment · Fully customizable';
 
   S.innerHTML=`
@@ -19588,12 +19598,18 @@ function renderForms(){
   </div>
   <div style="margin:2px 16px 0;padding:9px 12px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:16px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:16px;color:var(--p-blue);line-height:1.5;">Connect aftercare guides to any form, switch to the <b>Guides</b> tab to manage them. Connected guides send with the form in one tap.</span></div>
   </div>
-  ${sections.map((p,si)=>{const[label,forms]=F[p];const list=forms.filter(f=>!_formHidden(f.id));if(!list.length)return'';return`
+  <div id="ff-bar" style="padding:14px 16px 0;display:flex;align-items:center;gap:8px;"><button onclick="nav('form-folders')" style="background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--accent-strong);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-folders" aria-hidden="true"></i> ${formFolders.length?'Edit folders':'Organize into folders'}</button></div>
+  ${_ffG.groups.map(g=>`<div class="form-section ff-group">
+  <div class="sh"><h2 style="font-weight:700;color:var(--p-ink);">${_fileEsc(g.title)}</h2></div>
+  ${g.forms.map(f=>_formCard(f)).join('')}
+  ${g.kids.map(k=>`<div class="ff-sub" style="margin:2px 16px 8px;font-size:16px;font-weight:600;color:var(--p-mut2);display:flex;align-items:center;gap:6px;"><i class="ti ti-folder" aria-hidden="true" style="color:var(--accent-strong);"></i>${_fileEsc(k.title)}</div>${k.forms.map(f=>_formCard(f)).join('')}`).join('')}
+  </div>`).join('')}
+  ${sections.map((p,si)=>{const[label,forms]=F[p];const list=forms.filter(f=>!_formHidden(f.id)&&!_ffUsed[f.id]);if(!list.length)return'';return`
   <div class="form-section">
   <div class="sh"><h2>${label} · intake &amp; consent</h2></div>
   ${list.map(f=>_formCard(f)).join('')}
   </div>`;}).join('')}
-  ${(function(){const cf2=customForms.filter(cf=>!_formHidden(cf.id,cf._ts));return cf2.length?`<div class="form-section"><div class="sh"><h2>Custom forms</h2></div>${cf2.map(cf=>_formCard({icon:'ti-file-text',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:(formTmpls[cf.id]||cf).name||cf.name,sub:`${(formTmpls[cf.id]&&formTmpls[cf.id].qs.length)||0} questions · custom`,id:cf.id})).join('')}</div>`:'';})()}
+  ${(function(){const cf2=customForms.filter(cf=>!_formHidden(cf.id,cf._ts)&&!_ffUsed[cf.id]);return cf2.length?`<div class="form-section"><div class="sh"><h2>Custom forms</h2></div>${cf2.map(cf=>_formCard({icon:'ti-file-text',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:(formTmpls[cf.id]||cf).name||cf.name,sub:`${(formTmpls[cf.id]&&formTmpls[cf.id].qs.length)||0} questions · custom`,id:cf.id})).join('')}</div>`:'';})()}
   <div id="forms-noresults" style="display:none;padding:30px 16px;text-align:center;color:var(--p-mut);font-size:16px;">No forms match your search.</div>
   <div style="height:16px;"></div>
   </div>
@@ -19609,6 +19625,7 @@ function filterForms(q){
   document.querySelectorAll('.form-section').forEach(sec=>{
     let any=false;
     sec.querySelectorAll('.form-card').forEach(c=>{const m=!q||(c.getAttribute('data-search')||'').includes(q);c.style.display=m?'':'none';if(m){any=true;total++;}});
+    sec.querySelectorAll('.ff-sub').forEach(x=>{x.style.display=q?'none':'';});
     sec.style.display=any?'':'none';
   });
   const nr=document.getElementById('forms-noresults');if(nr)nr.style.display=(q&&total===0)?'':'none';
@@ -21463,6 +21480,130 @@ _ensureBundledFormQs();
 function loadBundles(){try{const s=localStorage.getItem('sc_bundles');if(s)return JSON.parse(s);}catch(e){}return [];}
 function saveBundles(){_stampRows('sc_bundles',bundles);const v=JSON.stringify(bundles);try{localStorage.setItem('sc_bundles',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bundles',v);}
 let bundles=loadBundles();
+// ── Form folders (Jaimie, 2026-10-22) ──
+// "Clearly labeled or bold category headings like Facials, Chemical Peels, Waxing, Spray Tanning…
+// create our own folders and subfolders, rearrange forms." A folder is a row in sc_form_folders:
+// {id, name, parent ('' = a top heading, or the id of its heading), pos, formIds:[...]}. A form lives
+// in at most one folder; a form in no folder stays where it always was. The list is an authored
+// library, so it merges by id with sc_deleted_form_folders as its delete record (_LIB_TOMB), and the
+// order travels in `pos` so it survives that merge.
+function loadFormFolders(){try{const s=localStorage.getItem('sc_form_folders');const a=s?JSON.parse(s):[];return Array.isArray(a)?a.filter(f=>f&&f.id):[];}catch(e){}return [];}
+function saveFormFolders(){_stampRows('sc_form_folders',formFolders);const v=JSON.stringify(formFolders);try{localStorage.setItem('sc_form_folders',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_form_folders',v);}
+let formFolders=loadFormFolders();
+function _ffKids(parent){return formFolders.filter(f=>(f.parent||'')===(parent||'')).sort((a,b)=>((a.pos||0)-(b.pos||0))||String(a.name||'').localeCompare(String(b.name||'')));}
+function _ffOf(fid){return formFolders.find(f=>Array.isArray(f.formIds)&&f.formIds.indexOf(fid)>=0)||null;}
+// The forms a folder shows: ones that still exist and are not deleted, in her order.
+function _ffForms(f,known){return (f.formIds||[]).filter(fid=>known[fid]);}
+function _ffNextPos(parent){return _ffKids(parent).reduce((m,f)=>Math.max(m,f.pos||0),0)+1;}
+function _ffAdd(parent){
+  _inputSheet({title:parent?'New folder':'New heading',body:parent?'For example New client paperwork or Returning clients.':'For example Facials, Chemical peels, Waxing or Spray tanning.',placeholder:parent?'New client paperwork':'Facials',action:'Add'},function(v){
+    v=String(v||'').trim().slice(0,60);if(!v)return;
+    formFolders.push({id:'ff_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:v,parent:parent||'',pos:_ffNextPos(parent),formIds:[]});
+    saveFormFolders();renderFormFolders();
+  });
+}
+function _ffRename(id){
+  const f=formFolders.find(x=>x.id===id);if(!f)return;
+  _inputSheet({title:'Rename',value:f.name||'',action:'Save'},function(v){v=String(v||'').trim().slice(0,60);if(!v)return;f.name=v;saveFormFolders();renderFormFolders();});
+}
+function _ffDelete(id){
+  const f=formFolders.find(x=>x.id===id);if(!f)return;
+  const kids=formFolders.filter(x=>x.parent===id);
+  confirmModal({title:'Delete "'+(f.name||'folder')+'"?',body:'Only the '+(f.parent?'folder':'heading'+(kids.length?' and the folders inside it':''))+' goes. Every form in it stays in your library, back in its usual place.',action:'Delete'},function(){
+    [f].concat(kids).forEach(x=>{_libForget('sc_form_folders',x.id);});
+    formFolders=formFolders.filter(x=>x.id!==id&&x.parent!==id);saveFormFolders();renderFormFolders();
+  });
+}
+function _ffMove(id,dir){
+  const f=formFolders.find(x=>x.id===id);if(!f)return;
+  const sib=_ffKids(f.parent||'');sib.forEach((x,i)=>{x.pos=i+1;});
+  const i=sib.indexOf(f),j=i+dir;if(j<0||j>=sib.length)return;
+  const t=sib[i].pos;sib[i].pos=sib[j].pos;sib[j].pos=t;
+  saveFormFolders();renderFormFolders();
+}
+function _ffFormMove(id,fid,dir){
+  const f=formFolders.find(x=>x.id===id);if(!f||!Array.isArray(f.formIds))return;
+  const i=f.formIds.indexOf(fid),j=i+dir;if(i<0||j<0||j>=f.formIds.length)return;
+  const a=f.formIds.slice();a[i]=a[j];a[j]=fid;f.formIds=a;saveFormFolders();renderFormFolders();
+}
+// Put a form in a folder (or take it out with folderId ''). It leaves any folder it was in.
+function _ffPlace(fid,folderId){
+  formFolders.forEach(f=>{if(Array.isArray(f.formIds)&&f.formIds.indexOf(fid)>=0&&f.id!==folderId)f.formIds=f.formIds.filter(x=>x!==fid);});
+  if(folderId){const f=formFolders.find(x=>x.id===folderId);if(f){if(!Array.isArray(f.formIds))f.formIds=[];if(f.formIds.indexOf(fid)<0)f.formIds=f.formIds.concat([fid]);}}
+  saveFormFolders();
+}
+function _ffAllForms(){
+  const out=[];try{_profFormDefs().forEach(f=>{const t=formTmpls[f.id];out.push({id:f.id,name:(t&&t.name)||f.name});});}catch(e){}
+  return out;
+}
+// "Move to folder" from a form card.
+function _ffPickFolder(fid){
+  const cur=_ffOf(fid);
+  const ov=document.createElement('div');ov.id='ff-pick-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const row=(id,label,indent)=>`<button onclick="_ffPlace(${_jsStr2(fid)},${_jsStr2(id)});this.closest('#ff-pick-sheet').remove();if(_navCur&&_navCur.screen==='forms')renderForms();else if(_navCur&&_navCur.screen==='form-folders')renderFormFolders();" style="display:flex;width:100%;align-items:center;gap:9px;padding:11px 12px;margin-bottom:6px;${indent?'padding-left:30px;':''}border:1.5px solid ${(cur?cur.id:'')===id?'var(--accent)':'var(--p-line-ctl)'};background:var(--surf2);border-radius:12px;cursor:pointer;font-family:inherit;text-align:left;font-size:16px;color:var(--p-ink);"><i class="ti ${id?'ti-folder':'ti-folder-off'}" aria-hidden="true" style="color:var(--accent-strong);"></i>${_fileEsc(label)}</button>`;
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px;max-height:82%;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;margin-bottom:10px;flex-shrink:0;"><div style="flex:1;font-size:16px;font-weight:600;color:var(--p-ink);">Move to a folder</div><button onclick="this.closest('#ff-pick-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:22px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>
+    <div style="overflow:auto;">${_ffKids('').map(t=>row(t.id,t.name,false)+_ffKids(t.id).map(k=>row(k.id,k.name,true)).join('')).join('')}
+    ${row('','No folder',false)}</div>
+    <button class="btng" style="margin-top:10px;flex-shrink:0;" onclick="this.closest('#ff-pick-sheet').remove();nav('form-folders')"><i class="ti ti-folder-plus"></i> Make or change folders</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+// Pick forms into one folder: a checklist of every form, ticked = in this folder.
+function _ffAddForms(id){
+  const f=formFolders.find(x=>x.id===id);if(!f)return;
+  const all=_ffAllForms();
+  const ov=document.createElement('div');ov.id='ff-forms-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  const done=()=>{ov.remove();renderFormFolders();};
+  ov.onclick=e=>{if(e.target===ov)done();};
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px;max-height:86%;display:flex;flex-direction:column;">
+    <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;flex-shrink:0;">Forms in "${_fileEsc(f.name)}"</div>
+    <div style="font-size:14px;color:var(--p-mut);margin-bottom:8px;flex-shrink:0;">Tick a form to put it here. A form already in another folder moves here.</div>
+    <div style="overflow:auto;">${all.map(x=>{const o=_ffOf(x.id);return `<label style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--p-line2);cursor:pointer;"><input type="checkbox" ${o&&o.id===id?'checked':''} onchange="_ffPlace(${_jsStr2(x.id)},this.checked?${_jsStr2(id)}:'')" style="width:17px;height:17px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="flex:1;min-width:0;font-size:16px;color:var(--p-ink);">${_fileEsc(x.name)}</span>${o&&o.id!==id?`<span style="font-size:12px;color:var(--p-mut);flex-shrink:0;">in ${_fileEsc(o.name)}</span>`:''}</label>`;}).join('')}</div>
+    <button class="btnp" style="border-radius:12px;margin-top:12px;flex-shrink:0;" id="ff-forms-done">Done</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  ov.querySelector('#ff-forms-done').onclick=done;
+}
+function renderFormFolders(){
+  setNav('pro');
+  document.getElementById('tt').textContent='Form folders';
+  const known={};_ffAllForms().forEach(x=>{known[x.id]=x.name;});
+  const btn=(icon,label,on,extra)=>`<button onclick="${on}" aria-label="${label}" title="${label}" style="border:1px solid var(--p-line-ctl);background:var(--surf1);border-radius:8px;width:34px;height:32px;cursor:pointer;color:var(--p-mut2);flex-shrink:0;${extra||''}"><i class="ti ${icon}" aria-hidden="true" style="font-size:16px;"></i></button>`;
+  const folderBlock=(f,sub,i,n)=>`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:11px 12px;margin:0 0 9px ${sub?'22px':'0'};">
+    <div style="display:flex;align-items:center;gap:6px;">
+      <i class="ti ${sub?'ti-folder':'ti-folders'}" aria-hidden="true" style="font-size:18px;color:var(--accent-strong);flex-shrink:0;"></i>
+      <div style="flex:1;min-width:0;font-size:16px;font-weight:${sub?600:700};color:var(--p-ink);overflow-wrap:anywhere;">${_fileEsc(f.name)}</div>
+      ${i>0?btn('ti-arrow-up','Move up',`_ffMove('${f.id}',-1)`):''}${i<n-1?btn('ti-arrow-down','Move down',`_ffMove('${f.id}',1)`):''}
+      ${btn('ti-pencil','Rename',`_ffRename('${f.id}')`)}${btn('ti-trash','Delete',`_ffDelete('${f.id}')`,'color:var(--p-red);')}
+    </div>
+    <div style="margin-top:6px;">${_ffForms(f,known).map((fid,k,arr)=>`<div style="display:flex;align-items:center;gap:6px;padding:5px 0 5px 26px;"><span style="flex:1;min-width:0;font-size:16px;color:var(--p-mut2);">${_fileEsc(known[fid])}</span>${k>0?btn('ti-chevron-up','Move form up',`_ffFormMove('${f.id}','${fid}',-1)`):''}${k<arr.length-1?btn('ti-chevron-down','Move form down',`_ffFormMove('${f.id}','${fid}',1)`):''}</div>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:6px;padding-left:26px;flex-wrap:wrap;">
+      <button onclick="_ffAddForms('${f.id}')" style="border:none;background:none;color:var(--accent-strong);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;padding:4px 0;"><i class="ti ti-plus" aria-hidden="true"></i> Add forms</button>
+      ${sub?'':`<button onclick="_ffAdd('${f.id}')" style="border:none;background:none;color:var(--accent-strong);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;padding:4px 0;margin-left:10px;"><i class="ti ti-folder-plus" aria-hidden="true"></i> Add a folder inside</button>`}
+    </div>
+  </div>`;
+  const tops=_ffKids('');
+  S.innerHTML=`<div style="padding:14px 16px 20px;">
+    <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:14px;">Group your forms under your own headings, with folders inside them. They show this way in your Forms list and when you send forms to a client.</div>
+    ${tops.length?tops.map((t,i)=>folderBlock(t,false,i,tops.length)+_ffKids(t.id).map((k,j,a)=>folderBlock(k,true,j,a.length)).join('')).join(''):`<div style="background:var(--surf2);border:1px dashed var(--p-line);border-radius:12px;padding:20px 16px;text-align:center;color:var(--p-mut);font-size:16px;line-height:1.5;margin-bottom:12px;">No headings yet. Start with one for each kind of service you offer.</div>`}
+    <button class="btnp" style="border-radius:12px;margin-top:6px;" onclick="_ffAdd('')"><i class="ti ti-plus"></i> New heading</button>
+  </div>`;
+}
+// Group a list of forms by her folders: [{title, sub, forms:[...]}], then whatever is in no folder.
+function _ffGroup(list){
+  const byId={};list.forEach(f=>{byId[f.id]=f;});
+  const used={},groups=[];
+  _ffKids('').forEach(t=>{
+    const own=(t.formIds||[]).filter(fid=>byId[fid]&&!used[fid]);own.forEach(fid=>{used[fid]=1;});
+    const kids=_ffKids(t.id).map(k=>{const fs=(k.formIds||[]).filter(fid=>byId[fid]&&!used[fid]);fs.forEach(fid=>{used[fid]=1;});return {title:k.name,forms:fs.map(fid=>byId[fid])};}).filter(k=>k.forms.length);
+    if(own.length||kids.length)groups.push({title:t.name,forms:own.map(fid=>byId[fid]),kids:kids});
+  });
+  return {groups:groups,rest:list.filter(f=>!used[f.id])};
+}
 function _newBundle(){const id='bnd_'+Date.now().toString(36);bundles.push({id,name:'New bundle',formIds:[],resourceIds:[]});saveBundles();return id;}
 function _bundleItemCount(b){return (b.formIds||[]).length+(b.resourceIds||[]).length;}
 // THE NEW-CLIENT BUNDLE. Jessica (Feedback inbox, Oct 5): "The forms that are automatically sent to
