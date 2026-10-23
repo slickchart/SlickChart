@@ -311,7 +311,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-23a';
+const APP_BUILD='2026-10-23b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -29253,7 +29253,7 @@ async function _fbMonitorOff(){
 function renderWhatsNew(){
   setNav('more');document.getElementById('tt').textContent="What\u2019s new";
   const fmt=ts=>{try{return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
-  const composer=window._newsCanPost?`<div style="margin:0 16px 14px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:14px;"><div style="font-size:16px;font-weight:600;color:var(--accent-strong);margin-bottom:8px;">Post an update (owner)</div><input id="an-title" class="fi" placeholder="Title \u2014 e.g. New: Google Calendar sync" style="margin-bottom:8px;"><textarea id="an-body" class="fi" placeholder="What changed, and what to try" style="height:70px;resize:vertical;margin-bottom:8px;"></textarea><label style="display:flex;align-items:center;gap:8px;font-size:16px;color:var(--p-ink);margin-bottom:10px;"><input type="checkbox" id="an-notify" checked style="width:20px;height:20px;"> Send a notification to every provider</label><button class="btnp" style="width:100%;border-radius:8px;" onclick="_postAnnouncement()"><i class="ti ti-send"></i> Publish update</button></div>`:'';
+  const composer=window._newsCanPost?`<div style="margin:0 16px 14px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:14px;"><div style="font-size:16px;font-weight:600;color:var(--accent-strong);margin-bottom:8px;">Post an update (owner)</div><input id="an-title" class="fi" placeholder="Title \u2014 e.g. New: Google Calendar sync" style="margin-bottom:8px;"><textarea id="an-body" class="fi" placeholder="What changed, and what to try" style="height:70px;resize:vertical;margin-bottom:8px;"></textarea><div style="font-size:14px;color:var(--p-mut);margin-bottom:10px;">Every provider gets a notification when you publish.</div><button class="btnp" style="width:100%;border-radius:8px;" onclick="_postAnnouncement()"><i class="ti ti-send"></i> Publish update</button></div>`:'';
   const list=_news.length?_news.map(n=>`<div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:14px;"><div style="font-size:14px;color:var(--p-mut);margin-bottom:4px;">${fmt(n.ts)}</div><div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:5px;">${String(n.title||'').replace(/</g,'&lt;')}</div>${n.body?`<div style="font-size:16px;color:var(--p-mut);line-height:1.6;white-space:pre-wrap;">${String(n.body).replace(/</g,'&lt;')}</div>`:''}</div>`).join(''):`<div style="margin:14px 16px;text-align:center;color:var(--p-mut);font-size:16px;padding:26px 16px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;">No updates yet \u2014 check back soon.</div>`;
   const diag=window._newsCanPost?'':`<div style="margin:14px 16px 0;font-size:14px;color:var(--p-mut);line-height:1.5;border-top:1px solid var(--p-line2);padding-top:10px;">Signed in as: ${window._newsYou?String(window._newsYou).replace(/</g,'&lt;'):'(email not detected)'} \u00b7 Owner mode: ${window._newsOwnerSet?'configured':'not set'}</div>`;
   S.innerHTML=`<div style="padding:14px 16px 6px;"><div style="font-size:16px;color:var(--p-mut);line-height:1.5;">Everything new in SlickChart \u2014 many of these come straight from your feedback. \ud83d\udc9b</div></div>${composer}${list}${diag}<div style="height:20px;"></div>`;
@@ -29262,10 +29262,8 @@ function renderWhatsNew(){
 async function _postAnnouncement(){
   const t=((document.getElementById('an-title')||{}).value)||'';const b=((document.getElementById('an-body')||{}).value)||'';
   if(!t.trim()){proToast('Add a title');return;}
-  const _ntf=!!((document.getElementById('an-notify')||{checked:true}).checked);
-  // Every provider's phone buzzes, so ask once first (2026-10-23).
-  if(_ntf&&typeof confirmModal==='function'){confirmModal({title:'Notify every provider?',body:'This publishes the update and sends it as a notification to every provider\u2019s phone and browser.',action:'Publish and notify'},()=>_sendAnnouncement(t,b,true));return;}
-  return _sendAnnouncement(t,b,_ntf);
+  // Every update notifies every provider, always (her call, 2026-10-23: "i dont need that to be optional").
+  return _sendAnnouncement(t,b,true);
 }
 async function _sendAnnouncement(t,b,_ntf){
   try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';const r=await fetch('/api/announcements',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({title:t,body:b,notify:_ntf})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Failed');const _p=j.push;proToast(j.duplicate?'Already posted \u2713':(_p&&!_p.error&&_ntf?('Update published \u2713 Sent to '+(_p.sent||0)+' of '+(_p.devices||0)+' provider devices'):(_ntf?'Update published \u2713 (notifications could not be sent)':'Update published \u2713')),6000);await _checkNews();renderWhatsNew();}catch(e){try{console.error('[announce]',e);}catch(_){}proToast('Could not publish \u2014 check your connection and try again');}
