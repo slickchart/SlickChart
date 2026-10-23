@@ -569,7 +569,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-22d';
+const APP_BUILD='2026-10-22e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -19771,6 +19771,8 @@ function renderEditBundle(bid){
   <label style="margin:0 16px 6px;display:flex;align-items:center;gap:10px;background:var(--surf2);border:1px solid ${b.newClient?'var(--accent-strong)':'var(--p-line-ctl)'};border-radius:12px;padding:11px 13px;cursor:pointer;"><input type="checkbox" id="bnd-newclient" ${b.newClient?'checked':''} onchange="_setNewClientBundle('${bid}',this.checked);renderEditBundle('${bid}')" style="width:18px;height:18px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="flex:1;min-width:0;"><span style="display:block;font-size:16px;font-weight:600;color:var(--p-ink);">Send to every new client</span><span style="display:block;font-size:14px;color:var(--p-mut);line-height:1.45;margin-top:2px;">Your first-visit package sends this bundle instead of the standard intake.</span></span></label>
   <div class="sh"><h2>Forms</h2></div>
   <div style="padding:0 16px 6px;">${formList.map(f=>`<label style="display:flex;align-items:center;gap:10px;padding:9px 0;cursor:pointer;border-bottom:1px solid var(--p-line2);"><input type="checkbox" ${b.formIds.includes(f.id)?'checked':''} onchange="_toggleBundleItem('${bid}','formIds','${f.id}')" style="width:17px;height:17px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-ink);flex:1;min-width:0;">${_fileEsc(f.name)}</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_formPreviewSheet('${f.id}')" aria-label="Preview ${_fileEsc(f.name)}" style="flex-shrink:0;background:none;border:1px solid var(--p-line-ctl);border-radius:8px;padding:4px 9px;color:var(--accent-strong);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-eye" aria-hidden="true"></i> Preview</button></label>`).join('')}</div>
+  <div class="sh"><h2>Check-in asks about</h2></div>
+  <div style="padding:0 16px 6px;"><div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:4px;">When this bundle goes out as a welcome package, the pre-visit check-in asks only what is ticked.</div>${_CI_PARTS.map(x=>`<label style="display:flex;align-items:center;gap:10px;padding:9px 0;cursor:pointer;border-bottom:1px solid var(--p-line2);"><input type="checkbox" ${(Array.isArray(b.checkinHide)&&b.checkinHide.indexOf(x[0])>=0)?'':'checked'} onchange="_bundleCiToggle('${bid}','${x[0]}')" style="width:17px;height:17px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-ink);">${x[1]}</span></label>`).join('')}</div>
   <div class="sh"><h2>Guides &amp; resources</h2></div>
   <div style="padding:0 16px 20px;">${guideList.length?guideList.map(r=>`<label style="display:flex;align-items:center;gap:10px;padding:9px 0;cursor:pointer;border-bottom:1px solid var(--p-line2);"><input type="checkbox" ${b.resourceIds.includes(r.id)?'checked':''} onchange="_toggleBundleItem('${bid}','resourceIds','${r.id}')" style="width:17px;height:17px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;">${_fileEsc(r.icon)||'\ud83d\udcda'}</span><span style="font-size:16px;color:var(--p-ink);">${_fileEsc(r.title)}</span></label>`).join(''):`<div style="color:var(--p-mut);font-size:16px;padding:8px 0;">No guides yet \u2014 add some under Guides.</div>`}</div>`;
 }
@@ -22611,7 +22613,7 @@ function _assembleClientData(id){
   // sc_checkin_cfg (see _applyRealClientData), but it was never being sent — so real clients always
   // saw the generic default questionnaire instead of the provider's added/removed questions and the
   // "saved, your clients see these now" toast was misleading. It's small and bounded, so per-client is fine.
-  const checkinCfgOut=(typeof checkinCfg!=='undefined'&&checkinCfg&&typeof checkinCfg==='object')?checkinCfg:null;
+  const checkinCfgOut=_ciCfgForClient(c,(typeof checkinCfg!=='undefined'&&checkinCfg&&typeof checkinCfg==='object')?checkinCfg:null);
   const loyaltyOut=(c.loyalty&&typeof c.loyalty==='object'&&c.loyalty.points!=null)?{points:c.loyalty.points,lifetime:c.loyalty.lifetime||0}:null;
   // studioPhone rides alongside studioAddress so the client's "Add to calendar" invite shows a real
   // contact number. NOTE: the provider's raw session `photos` are deliberately NOT sent — the client
@@ -23096,8 +23098,88 @@ function _assignGuidesToClient(c,guides){
   if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
   (guides||[]).forEach(g=>{const gid=(g&&(g.id||g.guideId))||g;if(gid)_assignPending(c.pendingGuides,'guideId',gid);});
 }
-async function sendFirstVisitPackage(id){
+// ── Welcome packages per service (Jaimie, 2026-10-22) ──
+// "When I invite a spray tan client, they're asked about preferences like a weighted blanket or bed
+// warmer." The first-visit package always sent one intake plus the full pre-visit check-in. Now any
+// bundle is a welcome package: she picks one when she sends (her new-client bundle is preselected),
+// and each bundle says which comfort questions its check-in asks. The choice is stamped on the client
+// (c.checkinHide) and applied to the check-in that client is sent, here AND in every later check-in,
+// so it is done on the provider side and an older client app shows it correctly too.
+const _CI_PARTS=[['warmth','Blanket and bed warmer'],['drinks','Drink and snack'],['music','Music']];
+function _ciCfgForClient(c,cfg){
+  const hide=(c&&Array.isArray(c.checkinHide))?c.checkinHide:[];
+  if(!cfg||!hide.length)return cfg;
+  const o=Object.assign({},cfg);
+  if(hide.indexOf('warmth')>=0){o.blankets=[];o.heat=[];}
+  if(hide.indexOf('drinks')>=0){o.drinks=[];o.snacksOn=false;}
+  if(hide.indexOf('music')>=0){o.music=[];o.musicCustom=false;}
+  if(!((o.drinks||[]).length||(o.snacksOn&&(o.snacks||[]).length)||(o.music||[]).length||(o.heat||[]).filter(h=>h&&h.on!==false).length||(o.blankets||[]).length))o.chairComfortOn=false;
+  return o;
+}
+function _bundleAsPackage(b){
+  if(!b)return null;
+  const fids=(b.formIds||[]).filter(fid=>formTmpls[fid]&&!(typeof _formHidden==='function'&&_formHidden(fid)));
+  return fids.length?{b:b,formIds:fids,guideIds:(b.resourceIds||[]).slice()}:null;
+}
+function _fvpChoices(){return (typeof bundles!=='undefined'&&Array.isArray(bundles)?bundles:[]).filter(b=>b&&_bundleAsPackage(b));}
+let _fvpSel=null;
+function _fvpChooser(id){
   const c=CL[id];if(!c)return;
+  const first=_fileEsc(String(c.name||'').split(' ')[0]);
+  const nb=_newClientBundle();
+  _fvpSel=nb?nb.b.id:'';
+  const ov=document.createElement('div');ov.id='fvp-choose-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px;max-height:88%;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-shrink:0;"><div style="flex:1;min-width:0;font-size:16px;font-weight:600;color:var(--p-ink);">Welcome package for ${first}</div><button onclick="this.closest('#fvp-choose-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:22px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>
+    <div style="font-size:14px;color:var(--p-mut);margin-bottom:10px;flex-shrink:0;line-height:1.5;">Pick what they are coming in for. They get those forms plus your pre-visit check-in.</div>
+    <div id="fvp-choose-body" style="overflow:auto;"></div>
+    <button class="btnp" style="border-radius:12px;margin-top:12px;flex-shrink:0;" onclick="_fvpChooseSend('${id}')"><i class="ti ti-send"></i> Send welcome package</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _fvpChooseDraw(id,true);
+}
+function _fvpChooseDraw(id,fresh){
+  const el=document.getElementById('fvp-choose-body');if(!el)return;
+  const c=CL[id]||{};
+  const sel=_fvpSel||'';
+  const b=sel?(bundles||[]).find(x=>x&&x.id===sel):null;
+  // What the check-in will ask: the package's own setting, or this client's last one for the standard intake.
+  let hide=b?(Array.isArray(b.checkinHide)?b.checkinHide:[]):(Array.isArray(c.checkinHide)?c.checkinHide:[]);
+  if(!fresh){hide=_CI_PARTS.map(x=>x[0]).filter(k=>{const cb=document.getElementById('fvp-ci-'+k);return cb&&!cb.checked;});
+    const prev=el.getAttribute('data-sel');if(prev!==sel)hide=b?(Array.isArray(b.checkinHide)?b.checkinHide:[]):[];}
+  const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
+  const opt=(val,title,forms)=>{const on=val===sel;return `<div style="border:1.5px solid ${on?'var(--accent)':'var(--p-line-ctl)'};background:var(--surf2);border-radius:12px;padding:11px 12px;margin-bottom:8px;">
+      <button onclick="_fvpSel=${_jsStr2(val)};_fvpChooseDraw(${_jsStr2(id)})" style="display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:left;">
+        <span style="width:20px;height:20px;border-radius:50%;border:1.5px solid ${on?'var(--btn-edge)':'var(--p-chip2)'};background:${on?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?'<i class="ti ti-check" style="font-size:14px;color:var(--accent-ink);"></i>':''}</span>
+        <span style="flex:1;min-width:0;font-size:16px;font-weight:600;color:var(--p-ink);">${_fileEsc(title)}</span></button>
+      ${on?`<div style="margin:8px 0 0 30px;">${forms.map(fid=>{const t=formTmpls[fid];return t?`<div style="display:flex;align-items:center;gap:8px;padding:3px 0;"><span style="flex:1;min-width:0;font-size:14px;color:var(--p-mut2);">${_fileEsc(t.name)}</span><button onclick="_formPreviewSheet(${_jsStr2(fid)})" style="background:none;border:none;color:var(--accent-strong);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-eye" aria-hidden="true"></i> Preview</button></div>`:'';}).join('')}</div>`:''}
+    </div>`;};
+  el.setAttribute('data-sel',sel);
+  el.innerHTML=_fvpChoices().map(x=>opt(x.id,x.name||'Bundle',_bundleAsPackage(x).formIds)).join('')
+    +(intakeFid&&formTmpls[intakeFid]?opt('','Standard intake',[intakeFid]):'')
+    +`<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin:14px 2px 6px;">Check-in asks about</div>`
+    +_CI_PARTS.map(x=>`<label style="display:flex;align-items:center;gap:10px;padding:8px 2px;cursor:pointer;"><input type="checkbox" id="fvp-ci-${x[0]}" ${hide.indexOf(x[0])<0?'checked':''} style="width:17px;height:17px;accent-color:var(--accent-strong);"><span style="font-size:16px;color:var(--p-ink);">${x[1]}</span></label>`).join('');
+}
+function _fvpChooseSend(id){
+  const hide=_CI_PARTS.map(x=>x[0]).filter(k=>{const cb=document.getElementById('fvp-ci-'+k);return cb&&!cb.checked;});
+  const sh=document.getElementById('fvp-choose-sheet');if(sh)sh.remove();
+  sendFirstVisitPackage(id,{bundleId:_fvpSel||'',hide:hide});
+}
+function _bundleCiToggle(bid,part){
+  const b=bundles.find(x=>x&&x.id===bid);if(!b)return;
+  const h=Array.isArray(b.checkinHide)?b.checkinHide.slice():[];
+  const i=h.indexOf(part);if(i>=0)h.splice(i,1);else h.push(part);
+  if(h.length)b.checkinHide=h;else delete b.checkinHide;
+  saveBundles();
+}
+async function sendFirstVisitPackage(id,opts){
+  const c=CL[id];if(!c)return;
+  // She has welcome packages to choose from (two or more, or one that trims the check-in): ask first.
+  // One marked bundle and nothing else to pick still sends in one tap, as it always did.
+  if(!opts){const ch=_fvpChoices();if(ch.length>=2||ch.some(b=>Array.isArray(b.checkinHide)&&b.checkinHide.length)){_fvpChooser(id);return;}}
+  if(opts&&Array.isArray(opts.hide)){if(opts.hide.length)c.checkinHide=opts.hide.slice();else delete c.checkinHide;}
   // The intake and the pre-visit check-in must travel as ONE bundle. The client shows the check-in on a
   // time window (available the moment they open their link), but the intake only shows once its
   // pendingForms entry has actually synced. So if we stamped the check-in but the intake push failed or
@@ -23107,7 +23189,8 @@ async function sendFirstVisitPackage(id){
   // CONFIRM the push landed (with one retry) before telling the provider it's ready.
   const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
   // Her chosen new-client bundle, when she has marked one, replaces the built-in intake.
-  const _nb=(typeof _newClientBundle==='function')?_newClientBundle():null;
+  const _nb=(opts&&opts.bundleId!=null)?(opts.bundleId?_bundleAsPackage((bundles||[]).find(x=>x&&x.id===opts.bundleId)):null)
+    :((typeof _newClientBundle==='function')?_newClientBundle():null);
   if(!_nb&&(!intakeFid||!formTmpls[intakeFid])){
     // No intake template resolved at all — extremely unlikely (the built-in "intake" is always present),
     // but rather than quietly send a check-in with no intake, tell the provider and stop. Sending a

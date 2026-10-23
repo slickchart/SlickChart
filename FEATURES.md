@@ -311,6 +311,8 @@ saved anywhere", not "does this always call that".
 | `_founderKvHealth` | `/api/admin/kv-health` | direct |
 | `_founderStaleSubs` | `/api/admin/stale-subs` | direct |
 | `_founderTestPush` | `/api/admin/test-push` | direct |
+| `_fvpChooseSend` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_fvpChooser` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_fvpClientRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_gcalCardHTML` | `/api/google-cal` | via `_gcalDisconnect` |
 | `_gcalDisconnect` | `/api/clients` | via `syncClientEvents` |
