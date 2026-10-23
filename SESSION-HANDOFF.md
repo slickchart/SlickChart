@@ -8289,3 +8289,20 @@ The three web-side leftovers from the 2026-10-19 Android sweep. New `scratchpad/
 Also green: the seven CI checks, test-native-files 14/14 and test-safari-storage-hook 6/6 in both
 engines. Ashley approved it for tonight's overnight release ("make sure tonight ships all things we
 didn't already push").
+
+### 2026-10-22 evening: new provider's iPhone app "keeps kicking her out" (build 2026-10-22h, preview)
+Observed (Ashley, relaying the provider, 0588laura@…): she had just signed up and downloaded the
+iPhone app; the app "won't let her open it and keeps kicking her out"; the site works in Safari.
+Account: paid + signed up 2026-10-23 01:22 UTC (push-state recentAlerts). Live iPhone app is 1.0.3
+(App Store, 2026-10-21). Ashley's own phones are Android, so no iPhone app had been exercised.
+Found: Capacitor iOS keeps a top-level page only if its URL starts with server.url
+(`https://slickchart.app/slickchart`, WebViewDelegationHandler `isApplicationNavigation`); any other
+page goes to Safari and the app stays put. Every in-app route to a client space (`/client`) did that,
+and renderEntry() auto-jumped to `/client` at EVERY launch on a phone holding `sc_client_token`
+without `sc_login_email`, so such a phone could never reach the sign-in screen. Not yet confirmed
+that this is her phone's state (her device reports are only on the founder Recover screen).
+Fix (preview `ab59437`): `/slickchart-space` rewrite to the client page; `_clientSpaceUrl()` used by
+client sign-in, "Continue to your care space" and tapped client links in the app; in the app the
+chooser shows instead of the jump. Test: `scratchpad/test-ios-app-stays-inside.mjs` 8/8 Chrome+WebKit,
+control (old file) fails 6. Also: iOS AppDelegate never forwarded the APNs address to the push
+plugin, so no iPhone app could link for alerts; fixed in the repo, needs the next App Store build.
