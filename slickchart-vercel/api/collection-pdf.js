@@ -7,7 +7,7 @@
 // pass a link on, exactly as an Etsy buyer can pass on a download — it just keeps the files out of
 // search engines and away from anyone who is not a signed-in subscriber.
 import { sessionFromReq } from '../lib/auth.js';
-import { sql, dbEnabled, getSubscription } from '../lib/db.js';
+import { sql, dbEnabled, getSubscription, accountEmail } from '../lib/db.js';
 
 const DIR = '/assets/ec-9308d13917a6f75f4f385060/';
 const FILES = [
@@ -86,7 +86,7 @@ export default async function handler(req, res) {
   // Same rule as signing in (api/login.js): only a paying account gets in when payment is required.
   // A provider who is behind on a payment is let in there with a banner, so she is let in here too.
   if ((process.env.REQUIRE_PAYMENT || '').toLowerCase() === 'true' && p.u !== 'owner') {
-    const email = String(p.e || '').trim().toLowerCase();
+    const email = dbEnabled() ? await accountEmail(p) : String(p.e || '').trim().toLowerCase();
     const founders = ['botanicalaestheticsbyashley@gmail.com']
       .concat(String(process.env.FOUNDER_EMAILS || '').toLowerCase().split(','))
       .map(s => s.trim()).filter(Boolean);

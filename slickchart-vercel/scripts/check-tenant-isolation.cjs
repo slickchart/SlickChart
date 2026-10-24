@@ -24,6 +24,10 @@ const ALLOW={
   'client-code.js':'passwordless: same',
   'build-id.js':'returns the build string only',
   'cloud-status.js':'returns whether sync is enabled',
+  // Login-email change. Its only owner-less statements are "is this address already some account's
+  // login" (the same uniqueness check signup makes); no row is returned, the request answers the same
+  // either way, and every read or write of an account is by the session's id or the one-time token's.
+  'change-email.js':'uniqueness check on providers.email only; account resolved from session id / one-time token',
   // Owner-only tools. Both verify the session token, check the session is still valid, and gate on
   // FOUNDER_EMAILS using the TOKEN'S email. The email in the request is the subject being looked
   // up, never the authorizer — which is exactly what §0.5 requires. Re-read them if either changes.

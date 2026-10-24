@@ -213,6 +213,7 @@ saved anywhere", not "does this always call that".
 | `_confirmDeleteDoc` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_confirmDisableTotp` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_confirmDisableTotp` | `/api/totp-verify` | direct |
+| `_confirmEmailChange` | `/api/change-email` | direct |
 | `_confirmSentToApp` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_confirmTotpEnroll` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_confirmTotpEnroll` | `/api/totp-verify` | direct |
@@ -275,6 +276,7 @@ saved anywhere", not "does this always call that".
 | `_downloadEmailListCSV` | `/api/admin/contacts` | direct |
 | `_downloadGuideFileP` | `/api/guide-file` | via `_getGuideFile` |
 | `_downloadWaitlistCSV` | `/api/waitlist` | direct |
+| `_drawLoginEmail` | `/api/change-email` | direct |
 | `_editClientDetails` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_editClientDetails` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_editClientDetails` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
@@ -345,6 +347,7 @@ saved anywhere", not "does this always call that".
 | `_guidesTabHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_handleAuthParams` | `/api/app-launch` | via `_alSend` |
 | `_handleAuthParams` | `/api/billing-status` | via `_checkBillingBanner` |
+| `_handleAuthParams` | `/api/change-email` | via `_confirmEmailChange` |
 | `_handleAuthParams` | `/api/client-code` | via `_clientSendCode` |
 | `_handlePushParams` | `/api/clients` | via `syncClientEvents` |
 | `_hcAddHowTo` | `/api/square/orders` | via `_hcFetchBought` |
@@ -638,6 +641,7 @@ saved anywhere", not "does this always call that".
 | `_reqSyncOut` | `/api/square/booking-options` | direct |
 | `_reqToLocalAppt` | `/api/google-cal` | via `_gcalPush` |
 | `_requestClientLink` | `/api/client-link` | direct |
+| `_requestEmailChange` | `/api/change-email` | direct |
 | `_restorePhotosFromCloud` | `/api/clients` | via `syncClientEvents` |
 | `_restorePhotosFromCloud` | `/api/guide-file` | via `_getGuideFile` |
 | `_restorePhotosFromCloud` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -1141,6 +1145,7 @@ saved anywhere", not "does this always call that".
 | `renderPartnerDetail` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderPartners` | `/api/clients` | via `syncClientEvents` |
 | `renderPartners` | `/api/provider-form` | via `submitSignOnDevice` |
+| `renderPasswordSecurity` | `/api/change-email` | via `_drawLoginEmail` |
 | `renderPasswordSecurity` | `/api/change-password` | via `_updatePassword` |
 | `renderPasswordSecurity` | `/api/sessions` | via `_loadSessions` |
 | `renderPasswordSecurity` | `/api/totp-setup` | via `_beginTotpEnroll` |
@@ -1374,6 +1379,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/build-unlock` | — | **public** | GET /api/build-unlock?session_id=cs_...  -> { ok, videoUrl, artifactUrl, email } |
 | `/api/calendar-url` | — | provider session | GET /api/calendar-url  (Bearer session) → { url } : a private, long-lived ICS feed URL |
 | `/api/calendar` | — | provider session | GET /api/calendar?t=<token>  → an iCalendar (.ics) feed of the provider's appointments. |
+| `/api/change-email` | GET, POST | founder | Change a provider's own login email, from Settings → Password & Security. |
 | `/api/change-password` | POST | provider session | POST /api/change-password  { token, current, next } |
 | `/api/client-availability` | GET | client link token | TOKEN-AUTHED: GET /api/client-availability?t=<client link token>&date=YYYY-MM-DD&service=<name> |
 | `/api/client-code` | POST | **public** | POST /api/client-code |

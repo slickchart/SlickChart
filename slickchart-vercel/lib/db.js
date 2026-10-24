@@ -142,6 +142,9 @@ export async function ensureProvidersTable() {
     expires_at timestamptz NOT NULL,
     created_at timestamptz DEFAULT now()
   )`;
+  // What a one-time token is FOR, when the kind alone does not say: an 'email_change' token carries
+  // the new address here, so the change is only made once that address has proved it is hers.
+  await q`ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS data text`;
   // Failed-login log for rate limiting.
   await q`CREATE TABLE IF NOT EXISTS login_attempts (
     id bigserial PRIMARY KEY,
@@ -329,6 +332,21 @@ export async function getSubscription(email) {
   const q = sql();
   const rows = await q`SELECT * FROM subscriptions WHERE email=${String(email || '').trim().toLowerCase()}`;
   return rows[0] || null;
+}
+// The account's CURRENT email, for the email-keyed tables (subscriptions). A session token carries
+// the address it signed in with (`e`), which goes stale the moment she changes her login email
+// (api/change-email.js) on another device — and signing her out instead would wipe that device's
+// unsent edits. So read it from her own provider row, by the verified id, and fall back to the token.
+export async function accountEmail(p) {
+  const fromToken = String((p && p.e) || '').trim().toLowerCase();
+  if (!p || !p.u || p.u === 'owner') return fromToken;
+  try {
+    await ensureProvidersTable();
+    const q = sql();
+    const rows = await q`SELECT email FROM providers WHERE id = ${String(p.u)}`;
+    if (rows[0] && rows[0].email) return String(rows[0].email).trim().toLowerCase();
+  } catch (e) { /* fall back to the token below */ }
+  return fromToken;
 }
 export async function hasActiveSubscription(email) {
   const s = await getSubscription(email);

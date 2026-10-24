@@ -40,10 +40,10 @@ export default async function handler(req, res) {
     try { if (!(await isSessionValid(q, payload.sid))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; } } catch (e) { /* if the check itself errors, don't hard-block a legitimate deletion */ }
 
     // Resolve the account email (needed for the email-keyed tables).
-    let email = (payload && payload.e) ? String(payload.e).toLowerCase() : null;
-    if (!email) {
-      try { const r = await q`SELECT email FROM providers WHERE id = ${providerId}`; email = (r[0] && r[0].email) ? String(r[0].email).toLowerCase() : null; } catch (e) {}
-    }
+    // Her CURRENT address from her own row first: the token's `e` is stale after a login-email change.
+    let email = null;
+    try { const r = await q`SELECT email FROM providers WHERE id = ${providerId}`; email = (r[0] && r[0].email) ? String(r[0].email).toLowerCase() : null; } catch (e) {}
+    if (!email && payload && payload.e) email = String(payload.e).toLowerCase();
 
     // 1) Revoke the seller's Square tokens at Square and remove the stored connection.
     try { await disconnect(providerId); } catch (e) { /* best-effort */ }

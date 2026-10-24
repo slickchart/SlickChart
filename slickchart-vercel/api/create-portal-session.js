@@ -4,7 +4,7 @@
 // rebuilt by hand in the app.
 import { verifyToken, sessionOk } from '../lib/auth.js';
 import { safeStripeMessage } from '../lib/stripe-safe.js';
-import { dbEnabled, getSubscription } from '../lib/db.js';
+import { dbEnabled, getSubscription, accountEmail } from '../lib/db.js';
 import { appOrigin } from '../lib/email.js';
 
 function claims(req) {
@@ -22,7 +22,8 @@ export default async function handler(req, res) {
   if (!key) { res.status(500).json({ error: 'Billing is not fully configured yet (missing STRIPE_SECRET_KEY).' }); return; }
 
   const c = claims(req);
-  const email = (c && c.e || '').toLowerCase();
+  if (!c || !c.u) { res.status(401).json({ error: 'Not signed in' }); return; }
+  const email = await accountEmail(c);
   if (!email) { res.status(401).json({ error: 'Not signed in' }); return; }
 
   try {

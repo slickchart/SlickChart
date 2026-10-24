@@ -8367,3 +8367,22 @@ Ashley asked for every route of the new features to be checked. Results:
   list (`#hc-pick-body`) in place and holds the sheet at its tallest. `scratchpad/test-keyboard-typing.mjs`:
   the box never moves in Chromium and WebKit; the live build redraws the box on every key and moves it
   111px. A sweep typing one letter into every field on 17 screens found no other box that redraws.
+
+## Providers can change their own login email (build `2026-10-24c`, PREVIEW)
+
+Asked for by a new provider (Jessica, `jriske412@gmail.com` → `jessica@fabulousyoumakeup.com`); Ashley
+chose self-serve over an admin button. **Settings → Password & Security → Login email**: new address +
+password → `api/change-email.js` emails a confirm link to the NEW address (24 h, one use, POSTed from
+`?emailchange=`, never a GET a mail scanner could fire) and a notice to the old one. Nothing changes
+until the link is opened. The request answers the same whether or not the address is taken; only that
+inbox is told. Founder accounts are excluded both ways (founder gates read the token's email).
+- Data is keyed by provider id and does not move. What moves on confirm: `providers.email` (+verified),
+  the `subscriptions` row (the sign-in paywall reads it BY EMAIL; skipped if the new address already
+  has its own row), every Stripe customer on the old address (receipts, login's ask-Stripe fallback),
+  `nurture_sends`/`nurture_optout` copied (else the welcome emails start over), `waitlist` row.
+- **Sessions are NOT revoked**: a revoked session wipes the device, unsent edits included. Instead
+  billing-status, create-portal-session, collection-pdf and delete-account read her CURRENT email from
+  her row by id (`accountEmail` in lib/db.js) rather than the token's stale `e`.
+- Tests: `scratchpad/test-change-email-pg.mjs` (real Postgres, 27 checks incl. an old-token device
+  still seeing her subscription and the new email passing the paywall) and
+  `scratchpad/test-change-email-ui.mjs` (Chromium + WebKit).

@@ -1,7 +1,7 @@
 // GET /api/billing-status — provider-authed: returns the real Stripe
 // subscription record for the logged-in provider (or null if none yet).
 import { verifyToken, sessionOk } from '../lib/auth.js';
-import { dbEnabled, getSubscription } from '../lib/db.js';
+import { dbEnabled, getSubscription, accountEmail } from '../lib/db.js';
 import { pastDueForEmail } from '../lib/stripe-subs.js';
 
 function claims(req) {
@@ -16,9 +16,10 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, subscription: null }); return; }
   const c = claims(req);
-  const email = (c && c.e || '').toLowerCase();
-  if (!email) { res.status(401).json({ error: 'Not signed in' }); return; }
+  if (!c || !c.u) { res.status(401).json({ error: 'Not signed in' }); return; }
   try {
+    const email = await accountEmail(c);
+    if (!email) { res.status(401).json({ error: 'Not signed in' }); return; }
     const sub = await getSubscription(email);
     // A provider who is behind is let in (api/login.js) and shown a banner instead of being locked
     // out, so the app needs somewhere to send her: her OWN open invoice, which takes a new card and

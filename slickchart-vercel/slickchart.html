@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-24b';
+const APP_BUILD='2026-10-24c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -6171,7 +6171,8 @@ function _prefillEmail(){try{return _signupEmail||localStorage.getItem('sc_login
 function _handleAuthParams(){
   try{
     const p=new URLSearchParams(location.search);
-    const v=p.get('verify'), r=p.get('reset');
+    const v=p.get('verify'), r=p.get('reset'), ec=p.get('emailchange');
+    if(ec){setTimeout(function(){_confirmEmailChange(ec);},300);try{const u=new URL(location.href);u.searchParams.delete('emailchange');history.replaceState({},'',u);}catch(e){}}
     if(v){Cloud.verifyEmail(v).then(ok=>{if(typeof proToast==='function')proToast(ok?'Email verified \u2713':'That verification link has expired');});try{const u=new URL(location.href);u.searchParams.delete('verify');history.replaceState({},'',u);}catch(e){}}
     if(r){_resetToken=r;_loginMode='newpw';try{const u=new URL(location.href);u.searchParams.delete('reset');history.replaceState({},'',u);}catch(e){}renderLogin();return true;}
     // ?signup=1[&email=] — the link in the paid-but-no-account rescue email. Someone has already
@@ -36175,6 +36176,8 @@ function renderPasswordSecurity(){
   S.innerHTML=`
   
   <div style="padding:14px 16px 0;">
+    <div class="sh" style="padding:0 0 7px;"><h2>Login email</h2></div>
+    <div id="email-body" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:14px;margin-bottom:16px;color:var(--p-mut);font-size:16px;">Loading\u2026</div>
     <div class="sh" style="padding:0 0 7px;"><h2>Change password</h2></div>
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:14px;margin-bottom:16px;">
       <span class="fl-lbl">Current password</span>
@@ -36197,6 +36200,53 @@ function renderPasswordSecurity(){
   </div>`;
   _loadSessions();
   _loadTotpState();
+  _drawLoginEmail();
+}
+// Login email (api/change-email.js). Nothing changes until the NEW address opens the link we send it.
+async function _drawLoginEmail(){
+  const box=document.getElementById('email-body');if(!box)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){box.textContent='Sign in to change your login email.';return;}
+  let j=null;
+  try{const r=await fetch('/api/change-email',{headers:{'Authorization':'Bearer '+tok}});j=r.ok?await r.json():null;}catch(e){}
+  if(!document.getElementById('email-body'))return;
+  if(!j||!j.email){box.textContent='Couldn\u2019t load your login email. Try again in a moment.';return;}
+  try{localStorage.setItem('sc_login_email',j.email);}catch(e){}
+  const pend=j.pending?`<div style="font-size:15px;color:var(--p-amber);margin:-4px 0 12px;">Waiting for you to confirm <b>${_fileEsc(j.pending)}</b>. Check that inbox for our email.</div>`:'';
+  box.style.color='';
+  box.innerHTML=`<div style="font-size:16px;color:var(--p-ink,inherit);margin-bottom:12px;">You sign in with <b>${_fileEsc(j.email)}</b></div>${pend}`
+    +(j.canChange===false?`<div style="font-size:15px;color:var(--p-mut);">This account\u2019s email can\u2019t be changed here.</div>`:
+    `<span class="fl-lbl">New email</span>
+    <input id="em-new" class="fi" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" style="margin-bottom:12px;">
+    <span class="fl-lbl">Your password</span>
+    <div style="position:relative;margin-bottom:14px;"><input id="em-pw" class="fi" type="password" autocomplete="current-password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;"><button type="button" onclick="_togglePw('em-pw',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
+    <button class="btnp" style="border-radius:8px;" onclick="_requestEmailChange()">Change email</button>
+    <div style="font-size:14px;color:var(--p-mut);margin-top:10px;">We\u2019ll email a link to the new address. Your login changes when you tap it. Your clients, notes and photos stay exactly as they are.</div>`);
+}
+async function _requestEmailChange(){
+  const nw=String((document.getElementById('em-new')||{}).value||'').trim();
+  const pw=(document.getElementById('em-pw')||{}).value||'';
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nw)){proToast('Enter a valid email address');return;}
+  if(!pw){proToast('Enter your password');return;}
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    const r=await fetch('/api/change-email',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({newEmail:nw,password:pw})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.ok){proToast('Check '+nw+' for a link to finish the change',0);_drawLoginEmail();return;}
+    proToast(d.error||'Could not change your email \u2014 try again');
+  }catch(e){proToast('Could not reach the server \u2014 try again');}
+}
+async function _confirmEmailChange(token){
+  let d={};
+  try{const r=await fetch('/api/change-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:token})});d=await r.json().catch(()=>({}));if(!r.ok)d.ok=false;}catch(e){d={ok:false,error:'Could not reach the server \u2014 open the link again.'};}
+  if(d.ok&&d.email){
+    // Only this device's sign-in box is pre-filled; whoever is signed in here stays signed in.
+    try{if(!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token))localStorage.setItem('sc_login_email',d.email);}catch(e){}
+  }
+  // A dialog, not a toast: the link usually opens a fresh page, and boot's own toasts replace a toast.
+  const say=function(title,body){try{confirmModal({title:title,body:body,action:'OK'},function(){});}catch(e){try{proToast(title+'. '+body,0);}catch(_){}}};
+  if(d.ok&&d.email)say('Your login email is changed','From now on, sign in with '+d.email+' and your same password. Your clients, notes and photos are all still there.');
+  else say('That link didn\u2019t work',d.error||'That link has expired. Ask for a new one in Settings.');
 }
 // ── Real two-factor authentication (TOTP) ──
 async function _loadTotpState(){
