@@ -8,7 +8,7 @@ const srv = http.createServer((q, s) => { const p = q.url.split('?')[0]; const f
   if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.statusCode = 404; return s.end(); } s.setHeader('content-type', /\.html$/.test(f) ? 'text/html' : 'application/octet-stream'); s.end(fs.readFileSync(f)); }).listen(PORT);
 const b = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
-async function run(native, loginStatus) {
+async function run(native, loginStatus, standalone) {
   const ctx = await b.newContext({ serviceWorkers: 'block' }); const p = await ctx.newPage(); const posts = [];
   await p.route('**/api/**', r => { const u = r.request().url();
     if (u.includes('/api/app-launch')) { posts.push({ auth: r.request().headers()['authorization'] || '', body: r.request().postDataJSON() }); }
@@ -16,6 +16,7 @@ async function run(native, loginStatus) {
     if (u.includes('/api/login')) return r.fulfill({ status: loginStatus, contentType: 'application/json', body: loginStatus === 200 ? '{"token":"tok-1","email":"l@x.com"}' : '{"error":"Email or password is incorrect."}' });
     if (u.includes('/api/store') && r.request().method() === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: '{"data":{"sc_onboarded":"1"}}' });
     return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }); });
+  if (standalone) await p.addInitScript(() => { const mm = window.matchMedia.bind(window); window.matchMedia = q => /standalone/.test(q) ? { matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} } : mm(q); Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36' }); });
   await p.addInitScript((native) => { if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', isPluginAvailable: () => false, Plugins: { App: { addListener() {}, getLaunchUrl: async () => ({}) }, StatusBar: {} } }; }, native);
   await p.goto('http://localhost:' + PORT + '/slickchart'); await p.waitForFunction(() => !!document.getElementById('login-screen'), null, { timeout: 30000 }).catch(() => {});
   await p.evaluate(() => { _setLoginMode('login'); }); await p.waitForTimeout(200);
@@ -37,4 +38,6 @@ ok(posts.some(x => x.body.events.some(e => e.e === 'signin-refused' && /incorrec
 ok(posts.some(x => !x.auth), 'and it is sent with nobody signed in');
 posts = await run(false, 200);
 ok(!posts.length, 'a browser sends nothing (installed app only)');
+posts = await run(false, 200, true);
+ok(posts.length && posts.every(x => x.body.platform === 'android-homescreen') && posts[0].body.events.some(e => e.e === 'launch'), 'an app added to the home screen sends its log too, named as such');
 await b.close(); srv.close(); console.log(fails ? fails + ' FAILED' : 'ALL PASS'); process.exit(fails ? 1 : 0);

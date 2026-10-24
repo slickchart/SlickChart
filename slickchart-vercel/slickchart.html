@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-24c';
+const APP_BUILD='2026-10-24d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -15627,7 +15627,10 @@ function _isNativeApp(){try{return !!(window.Capacitor&&window.Capacitor.isNativ
 // out" and nothing could say what it did, because the device report only comes once she is signed in.
 // So the app notes each step of each launch on the phone and sends the list, signed in or not.
 // Event names and short reasons only, never client data. Installed app only.
-function _alOn(){try{return _isNativeApp();}catch(e){return false;}}
+// Also a home-screen app (Android Chrome "Install app", iPhone "Add to Home Screen"): to a provider that
+// IS "the app", and a 2026-10-24 Android report came from a phone that never sent a log (2026-10-24).
+function _alStandalone(){try{return !!((window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone);}catch(e){return false;}}
+function _alOn(){try{return _isNativeApp()||_alStandalone();}catch(e){return false;}}
 function _alAdd(ev,detail){
   try{
     if(!_alOn())return;
@@ -15648,7 +15651,7 @@ function _alSend(force){
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
     const h={'Content-Type':'application/json'};if(tok)h.Authorization='Bearer '+tok;
     fetch('/api/app-launch',{method:'POST',keepalive:true,headers:h,body:JSON.stringify({device:(typeof _devKey==='function')?_devKey():'unknown',
-      platform:(window.Capacitor&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||'',os:m?m[1].replace(/_/g,'.'):'',build:(typeof APP_BUILD!=='undefined')?APP_BUILD:'',events:ev})}).catch(function(){});
+      platform:(_isNativeApp()&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||(/Android/i.test(ua)?'android-homescreen':/iPhone|iPad/i.test(ua)?'ios-homescreen':'homescreen'),os:m?m[1].replace(/_/g,'.'):'',build:(typeof APP_BUILD!=='undefined')?APP_BUILD:'',events:ev})}).catch(function(){});
   }catch(e){}
 }
 (function(){try{
@@ -15657,14 +15660,17 @@ function _alSend(force){
   // else means the phone closed the app (a crash, or iOS reclaiming its memory) or it reloaded.
   let a=[];try{a=JSON.parse(localStorage.getItem('scnat_log')||'[]');}catch(_){}
   const last=a.length?a[a.length-1]:null;
-  if(last&&!/^(hidden|pagehide|launch-ended)$/.test(last.e))_alAdd('prev-launch-cut-off','last step: '+last.e);
+  const cut=!!(last&&!/^(hidden|pagehide|launch-ended)$/.test(last.e));
+  if(cut)_alAdd('prev-launch-cut-off','last step: '+last.e);
   _alAdd('launch',location.pathname+location.search.replace(/[?&](c|token|v|reset)=[^&]*/g,''));
   let errs=0;
   window.addEventListener('error',function(e){if(errs++<5){_alAdd('error',(e&&e.message||'')+' @'+String(e&&e.lineno||''));setTimeout(function(){_alSend(true);},500);}});
   window.addEventListener('unhandledrejection',function(e){if(errs++<5)_alAdd('rejection',String(e&&e.reason&&(e.reason.message||e.reason)||'').slice(0,160));});
   document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'){_alAdd('hidden');_alSend(true);}else _alAdd('visible');});
   window.addEventListener('pagehide',function(){_alAdd('pagehide');});
-  setTimeout(function(){_alSend(true);},6000);
+  // Send early: a launch that dies within a few seconds every time used to never report at all.
+  setTimeout(function(){_alSend(true);},cut?300:1500);
+  setTimeout(function(){_alSend(true);},8000);
 }catch(e){}})();
 // Universal Links (iOS) / App Links (Android): when the OS opens the app because a client tapped their
 // https://slickchart.app/client/<token> link, Capacitor still loads the app's start URL (the provider

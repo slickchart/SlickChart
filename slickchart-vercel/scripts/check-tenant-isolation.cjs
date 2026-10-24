@@ -67,6 +67,10 @@ const ALLOW={
   'admin/exposure.js':'founder-gated cross-account exposure scan (the point of the tool)',
   'admin/square-create-log.js':'founder-gated; maps provider ids to emails for the log view',
   'admin/stale-subs.js':'founder-gated subscription report',
+  // Read-only, monitor-key or founder session. Lists accounts made in the last N days, then reads each
+  // one's own rows by its id (sessions, kv key NAMES and sizes, device reports, launch logs). Never values,
+  // never client data, emails masked. Re-read it if it changes.
+  'admin/new-providers.js':'founder/monitor-gated new-account health; per-account reads keyed by that account id, names and counts only',
   'admin/test-push.js':'founder-gated; resolves the founder\'s own account by email to test push',
 };
 const PER_PROVIDER=/\b(from|into|update|delete\s+from)\s+(clients|kv|client_events|square_connections|providers|course_versions)\b/i;

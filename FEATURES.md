@@ -1352,6 +1352,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/admin/contacts` | GET | provider session | GET /api/admin/contacts[?format=csv][&all=1]  → owner-only: every email address Ashley has, in one |
 | `/api/admin/exposure` | POST | founder, provider session | OWNER-ONLY. |
 | `/api/admin/kv-health` | — | founder, provider session | GET /api/admin/kv-health?email=<provider email>  — FOUNDER-ONLY, READ-ONLY, METADATA ONLY. |
+| `/api/admin/new-providers` | GET | founder, provider session | GET /api/admin/new-providers?days=14   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/provider-lookup` | GET, POST | founder, provider session | FOUNDER-ONLY. Helps the founder support a provider who "can't log in". |
 | `/api/admin/push-state` | POST | founder | GET /api/admin/push-state  Authorization: Monitor <key>   — the founder's OWN notification setup. |
 | `/api/admin/recover-import` | GET, POST | founder, provider session | FOUNDER-ONLY. Pull a provider's work out of a Neon point-in-time |
