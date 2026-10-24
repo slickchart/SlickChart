@@ -571,7 +571,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-24d';
+const APP_BUILD='2026-10-24e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -27176,17 +27176,41 @@ let onboardData={
 };
 
 function onboardComplete(){return !!localStorage.getItem('sc_onboarded');}
-function maybeShowOnboarding(){if(!onboardComplete())showOnboarding();}
-function showOnboarding(){
+function maybeShowOnboarding(){if(!onboardComplete())showOnboarding(true);}
+// Setup picks up where she left it (2026-10-24). Three new providers in three days reported the app
+// "crashing and going back to the setup page": the setup's own "Add SlickChart to your phone" step
+// sends her to install it, the installed app opens as a fresh page, and setup started again from the
+// first screen, every time. Any reload did the same (a phone dropping the tab while she picks a photo,
+// a crash). So every step is kept on this device, and the answers so far go to her account as she goes.
+// Not an sc_ key on purpose: it is this device's place in a wizard, not account data to sync.
+const _OB_KEY='scob_progress';
+function _obWho(){try{return String(localStorage.getItem('sc_login_email')||'').toLowerCase();}catch(e){return '';}}
+function _obSave(){try{localStorage.setItem(_OB_KEY,JSON.stringify({who:_obWho(),at:Date.now(),step:ONBOARD_STEPS[onboardStep]||'welcome',data:onboardData,profs:Array.isArray(selectedProfessions)?selectedProfessions:[]}));}catch(e){}}
+function _obClear(){try{localStorage.removeItem(_OB_KEY);}catch(e){}}
+function _obRestore(){
+  try{
+    const p=JSON.parse(localStorage.getItem(_OB_KEY)||'null');
+    if(!p||!p.step||(p.who||'')!==_obWho()||!(Date.now()-(+p.at||0)<30*86400000))return false;
+    let i=ONBOARD_STEPS.indexOf(p.step);if(i<0)return false;
+    // She left from "Add SlickChart to your phone" to install it: the app she just opened is the result.
+    if(p.step==='install'&&i<ONBOARD_STEPS.length-1)i++;
+    if(p.data&&p.data.biz)onboardData.biz={name:String(p.data.biz.name||''),owner:String(p.data.biz.owner||'')};
+    if(p.data&&p.data.avail)try{onboardData.avail=normalizeAvail(p.data.avail);}catch(e){}
+    if(Array.isArray(p.profs)&&p.profs.length)selectedProfessions=p.profs.slice();
+    onboardStep=i;return true;
+  }catch(e){return false;}
+}
+function showOnboarding(resume){
   onboardStep=0;
   onboardData.biz={name:bizInfo.name||'',owner:bizInfo.ownerName||''};
   const existingAvail=SlickBridge.getAvailability();
   if(existingAvail)onboardData.avail=normalizeAvail(existingAvail); // always per-day shape
+  if(resume===true)_obRestore();else _obClear();
   renderOnboard();
 }
 function replayOnboarding(){localStorage.removeItem('sc_onboarded');showOnboarding();}
 function closeOnboard(){const o=document.getElementById('onboard-overlay');if(o)o.remove();}
-function onboardSkip(){localStorage.setItem('sc_onboarded','skipped');closeOnboard();}
+function onboardSkip(){localStorage.setItem('sc_onboarded','skipped');_obClear();closeOnboard();}
 function onboardBack(){if(onboardStep>0){onboardStep--;renderOnboard();}}
 function onboardNext(){
   const step=ONBOARD_STEPS[onboardStep];
@@ -27197,6 +27221,8 @@ function onboardNext(){
     if(!openKeys.length){proToast('Pick at least one working day');return;}
     for(const k of openKeys){const d=onboardData.avail[k];if(toMin(d.end)<=toMin(d.start)){proToast('Closing time must be after opening time on '+k.charAt(0).toUpperCase()+k.slice(1));return;}}
   }
+  // Save what she has answered so far to her account as she goes, not only at the end.
+  if(step==='profession'||step==='business'||step==='availability')_persistOnboarding();
   onboardStep++;renderOnboard();
 }
 // Persist everything the wizard collected (profession, business/owner name, availability) — the half of
@@ -27216,7 +27242,7 @@ function _persistOnboarding(){
 }
 function finishOnboarding(dest,data){
   _persistOnboarding();
-  localStorage.setItem('sc_onboarded','1');
+  localStorage.setItem('sc_onboarded','1');_obClear();
   closeOnboard();
   nav(dest||'data-setup',data);
   setTimeout(()=>proToast(dest&&dest!=='data-setup'?'You\'re all set \u2728':'You\'re all set, let\'s bring your data in ✨'),200);
@@ -27229,9 +27255,9 @@ function onboardToggleProf(id){
   renderOnboard();
 }
 function onboardToggleDay(d){onboardData.avail[d].open=!onboardData.avail[d].open;renderOnboard();}
-function onboardSetHour(k,which,v){onboardData.avail[k][which]=v;}
+function onboardSetHour(k,which,v){onboardData.avail[k][which]=v;_obSave();}
 function onboardCopyHoursToAll(){const ref=onboardData.avail.mon;DAY_DEFS.forEach(([k])=>{if(onboardData.avail[k].open){onboardData.avail[k].start=ref.start;onboardData.avail[k].end=ref.end;}});renderOnboard();proToast('Applied Monday\'s hours to all open days');}
-function onboardConnectSquare(){_persistOnboarding();try{localStorage.setItem('sc_onboarded','1');}catch(e){}if(typeof _sqConnect==='function'){_sqConnect();}else{onboardNext();}}
+function onboardConnectSquare(){_persistOnboarding();try{localStorage.setItem('sc_onboarded','1');}catch(e){}_obClear();if(typeof _sqConnect==='function'){_sqConnect();}else{onboardNext();}}
 
 function _togglePw(id,btn){
   const el=document.getElementById(id);if(!el)return;
@@ -27795,6 +27821,7 @@ function openBetaFeedback(){
 
 function renderOnboard(){
   const step=ONBOARD_STEPS[onboardStep];
+  _obSave();
   const existing=document.getElementById('onboard-overlay');if(existing)existing.remove();
   const m=document.createElement('div');
   m.id='onboard-overlay';
@@ -27876,9 +27903,9 @@ function renderOnboard(){
       <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Your practice</div>
       <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:20px;">This shows up on summaries, forms, and client messages. You can change it later in Settings.</div>
       <span class="fl-lbl">Studio / business name</span>
-      <input class="fi" id="ob-biz-name" value="${_fileEsc(onboardData.biz.name||'')}" placeholder="Your business name" oninput="onboardData.biz.name=this.value" style="margin-bottom:14px;">
+      <input class="fi" id="ob-biz-name" value="${_fileEsc(onboardData.biz.name||'')}" placeholder="Your business name" oninput="onboardData.biz.name=this.value;_obSave()" style="margin-bottom:14px;">
       <span class="fl-lbl">Your name</span>
-      <input class="fi" id="ob-biz-owner" value="${_fileEsc(onboardData.biz.owner||'')}" placeholder="e.g. Ashley Watson, LE" oninput="onboardData.biz.owner=this.value" style="margin-bottom:14px;">
+      <input class="fi" id="ob-biz-owner" value="${_fileEsc(onboardData.biz.owner||'')}" placeholder="e.g. Ashley Watson, LE" oninput="onboardData.biz.owner=this.value;_obSave()" style="margin-bottom:14px;">
       <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 13px;display:flex;gap:9px;align-items:flex-start;">
         <i class="ti ti-sparkles" style="font-size:16px;color:var(--p-purple);flex-shrink:0;margin-top:1px;"></i>
         <span style="font-size:16px;color:var(--p-mut);line-height:1.6;">Clients see this name in their app when they get summaries and book with you.</span>

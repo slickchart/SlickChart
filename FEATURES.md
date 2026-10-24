@@ -1518,6 +1518,7 @@ Check here before building a new one.
 | `_healGhostForms` | yes |
 | `_navApplyRestore` | yes |
 | `_noteClientRepaired` | yes |
+| `_obRestore` | yes |
 | `_offerCourseRecovery` | yes |
 | `_openPhotoRecovery` | yes |
 | `_photoRecoveryScan` | yes |

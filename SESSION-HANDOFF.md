@@ -8386,3 +8386,25 @@ inbox is told. Founder accounts are excluded both ways (founder gates read the t
 - Tests: `scratchpad/test-change-email-pg.mjs` (real Postgres, 27 checks incl. an old-token device
   still seeing her subscription and the new email passing the paywall) and
   `scratchpad/test-change-email-ui.mjs` (Chromium + WebKit).
+
+## 2026-10-24 — New providers' setup restarted from screen one ("the app crashes and goes back to setup") (build `2026-10-24e`)
+**Observed (Ashley, from the provider, info@bp… signed up 2026-10-24 06:23 PT):** on Android, "the app is
+crashing and going back to the main setup page". Third new provider in three days with an app that
+"kicks her out" (Laura on iPhone was a different cause: the iOS 27 launch crash, fixed by iPhone 1.0.4 (7)).
+**Read, not asked** (`GET /api/admin/new-providers`, new this day, monitor key): one session only,
+"Android device · Chrome", 13:24-13:33 UTC; device report kind `browser`, not native, not standalone;
+`sc_onboarded` never set; her phone never sent an app launch log. So "the app" was Chrome / the
+home-screen app, and setup never finished.
+**Cause:** setup's own "Add SlickChart to your phone" step tells her to install it from Chrome; the
+installed app opens as a fresh page and `showOnboarding()` always started at step 0. Any reload (a
+phone dropping the tab, a crash) did the same.
+**Fix:** setup keeps its place on the device (`scob_progress`, deliberately not an `sc_` key, stamped
+with the sign-in email so another account never inherits it), resumes there on the next open, treats
+"install" as done when the app reopens, and saves profession / business / hours to the account at
+each Next instead of only at the end. Test `scratchpad/test-onboard-resume.mjs` (Chrome + WebKit;
+WebKit headless crashes on a 2nd `page.reload()` of this page even on the old build, so the test
+relaunches with a fresh page instead).
+**Also this day:** `/api/admin/new-providers` (every account made in the last N days: plan, sessions,
+saved key names, device reports, launch logs) feeds the daily feedback brief; the launch log now also
+runs in home-screen apps and sends at 1.5 s. **Open for Ashley:** the install step still teaches the
+Chrome / Safari home-screen app rather than linking the Play Store / App Store apps.
