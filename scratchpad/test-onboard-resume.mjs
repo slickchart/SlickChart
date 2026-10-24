@@ -27,7 +27,8 @@ ok(await stepNow() === 'profession', 'reaches profession');
 await p.evaluate(() => { selectedProfessions = ['massage']; onboardNext(); });
 await p.fill('#onboard-overlay input >> nth=0', 'BP Massage and Esthetics');
 await p.evaluate(() => onboardNext()); await p.evaluate(() => onboardNext()); await p.evaluate(() => onboardNext());
-ok(await stepNow() === 'install', 'walks to "Add SlickChart to your phone"');
+ok(await stepNow() === 'install', 'walks to "Get the SlickChart app"');
+ok(await p.evaluate(() => { const a = [...document.querySelectorAll('#onboard-overlay a')].map(x => x.href); return a.some(h => h.includes('apps.apple.com/app/id6792418818')) && a.some(h => h.includes('play.google.com/store/apps/details?id=com.slickchart.app')) && !/Add to Home Screen|Install app/.test(document.getElementById('onboard-overlay').innerText); }), 'the step links the real App Store and Google Play apps, no home-screen shortcut steps');
 await p.waitForTimeout(1500);
 ok(/BP Massage and Esthetics/.test(posted), 'her business name is already saved to her account before setup ends');
 // She installs it; the home-screen app opens as a fresh page on the same phone.
@@ -38,6 +39,13 @@ await p.evaluate(() => onboardBack()); await relaunch();
 ok(await stepNow() === 'invite', 'a reload on any step lands on that same step (install counts as done)');
 await p.evaluate(() => { onboardStep = ONBOARD_STEPS.indexOf('square'); renderOnboard(); }); await relaunch();
 ok(await stepNow() === 'square', 'a crash mid-setup resumes on the step she was on');
+await p.evaluate(() => { onboardStep = ONBOARD_STEPS.indexOf('install'); renderOnboard(); const a = [...document.querySelectorAll('#onboard-overlay a')].find(x => /play.google/.test(x.href)); a.removeAttribute('target'); a.removeAttribute('href'); a.click(); });
+ok(await p.evaluate(() => localStorage.getItem('sc_onboarded') === '1' && !localStorage.getItem('scob_progress')), 'tapping a store button counts setup as done, so the app never opens on setup again');
+await p.evaluate(() => { window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'android', Plugins: {} }; onboardStep = ONBOARD_STEPS.indexOf('square'); onboardNext(); });
+ok(await p.evaluate(() => ONBOARD_STEPS[onboardStep] === 'invite'), 'inside the app the store step is skipped');
+await p.evaluate(() => { onboardBack(); });
+ok(await p.evaluate(() => ONBOARD_STEPS[onboardStep] === 'square'), 'and Back skips it too');
+await p.evaluate(() => { delete window.Capacitor; });
 await p.evaluate(() => finishOnboarding('home')); await p.waitForTimeout(300);
 ok(await p.evaluate(() => !localStorage.getItem('scob_progress')), 'finishing clears the saved place');
 // Another account on the same phone starts its own setup from the beginning.

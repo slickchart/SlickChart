@@ -571,7 +571,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-24e';
+const APP_BUILD='2026-10-24f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -27211,7 +27211,10 @@ function showOnboarding(resume){
 function replayOnboarding(){localStorage.removeItem('sc_onboarded');showOnboarding();}
 function closeOnboard(){const o=document.getElementById('onboard-overlay');if(o)o.remove();}
 function onboardSkip(){localStorage.setItem('sc_onboarded','skipped');_obClear();closeOnboard();}
-function onboardBack(){if(onboardStep>0){onboardStep--;renderOnboard();}}
+function onboardBack(){if(onboardStep>0){onboardStep--;if(ONBOARD_STEPS[onboardStep]==='install'&&_isNativeApp()&&onboardStep>0)onboardStep--;renderOnboard();}}
+// Leaving for the store: the app is a separate install with its own storage, so setup counts as done
+// here and everything answered so far is on the account; the app must not open on setup again.
+function _onboardGotApp(){try{_persistOnboarding();localStorage.setItem('sc_onboarded','1');_obClear();_markGetAppTapped();}catch(e){}}
 function onboardNext(){
   const step=ONBOARD_STEPS[onboardStep];
   if(step==='profession'&&selectedProfessions.length===0){proToast('Pick at least one profession');return;}
@@ -27223,7 +27226,9 @@ function onboardNext(){
   }
   // Save what she has answered so far to her account as she goes, not only at the end.
   if(step==='profession'||step==='business'||step==='availability')_persistOnboarding();
-  onboardStep++;renderOnboard();
+  onboardStep++;
+  if(ONBOARD_STEPS[onboardStep]==='install'&&_isNativeApp())onboardStep++;   // already in the app
+  renderOnboard();
 }
 // Persist everything the wizard collected (profession, business/owner name, availability) — the half of
 // finishOnboarding that must ALSO run before "Connect Square" redirects away mid-wizard, or that setup
@@ -27962,22 +27967,19 @@ function renderOnboard(){
   }
 
   else if(step==='install'){
-    const androidSteps=['Tap the \u22ee menu in the top-right of Chrome','Tap "Install app" (or "Add to Home screen")','Tap "Install" and the icon lands on your home screen'];
-    const iphoneSteps=['Tap the Share button (the box with an \u2191 arrow)','Scroll down and tap "Add to Home Screen"','Tap "Add" and you\u2019re done'];
-    const stepRows=arr=>arr.map((t,i)=>`<div style="display:flex;gap:9px;align-items:flex-start;margin-bottom:7px;"><div style="width:20px;height:20px;border-radius:50%;background:var(--accent-tint);color:var(--accent-strong);font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</div><span style="font-size:16px;color:var(--p-mut);line-height:1.5;">${t}</span></div>`).join('');
+    // The real store apps (2026-10-24, Ashley: "link to the real play store and app store"). This step
+    // used to teach Chrome's "Install app" / Safari's "Add to Home Screen", and the shortcut it made
+    // opened setup again from the first screen. Her phone's own store goes first.
+    const APPLE='https://apps.apple.com/app/id6792418818',PLAY='https://play.google.com/store/apps/details?id=com.slickchart.app';
+    const ua=navigator.userAgent||'',isA=/Android/i.test(ua),isI=/iPhone|iPad|iPod/i.test(ua)||(/Macintosh/i.test(ua)&&navigator.maxTouchPoints>1);
+    const btn=(href,ic,label)=>`<a href="${href}" target="_blank" rel="noopener" onclick="_onboardGotApp()" style="display:flex;align-items:center;justify-content:center;gap:9px;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:12px;padding:13px;font-size:16px;font-weight:600;color:var(--p-ink);text-decoration:none;margin-bottom:10px;"><i class="ti ${ic}" aria-hidden="true" style="font-size:20px;"></i>${label}</a>`;
+    const apple=btn(APPLE,'ti-brand-apple','Get it on the App Store'),play=btn(PLAY,'ti-brand-google-play','Get it on Google Play');
     body=`
     <div style="padding:30px 24px 8px;">
-      <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Add SlickChart to your phone</div>
-      <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:18px;">Put SlickChart on your home screen so it opens like a real app: full screen, one tap, no browser bar. It updates itself automatically.</div>
-      <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:14px;margin-bottom:12px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><i class="ti ti-brand-android" style="font-size:18px;color:var(--p-green);"></i><span style="font-size:16px;font-weight:600;color:var(--p-ink);">On Android (Chrome)</span></div>
-        ${stepRows(androidSteps)}
-      </div>
-      <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:14px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><i class="ti ti-brand-apple" style="font-size:18px;color:var(--p-mut);"></i><span style="font-size:16px;font-weight:600;color:var(--p-ink);">On iPhone (Safari)</span></div>
-        ${stepRows(iphoneSteps)}
-      </div>
-      <div style="margin-top:12px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:12px;padding:11px 13px;display:flex;gap:9px;align-items:flex-start;"><i class="ti ti-bell" style="font-size:16px;color:var(--p-green);flex-shrink:0;margin-top:1px;"></i><span style="font-size:16px;color:var(--p-mut2);line-height:1.6;">Installing keeps you logged in and lets SlickChart send you reminders.</span></div>
+      <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Get the SlickChart app</div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:18px;">SlickChart is on the App Store and Google Play. Download it, then sign in with the same email and password. Everything you set up here is already saved to your account.</div>
+      ${isA?play+apple:isI?apple+play:apple+play}
+      <div style="margin-top:12px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:12px;padding:11px 13px;display:flex;gap:9px;align-items:flex-start;"><i class="ti ti-bell" style="font-size:16px;color:var(--p-green);flex-shrink:0;margin-top:1px;"></i><span style="font-size:16px;color:var(--p-mut2);line-height:1.6;">The app sends you alerts for new bookings, client messages and reminders.</span></div>
     </div>`;
   }
 
