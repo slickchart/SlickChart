@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-24a';
+const APP_BUILD='2026-10-24b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -966,7 +966,12 @@ function _hcPickerButtonHTML(id,ctx){
 // The picker. What they bought on top, then their plan, then the rest of the catalogue, with a
 // search box over all of it. Anything not in the catalogue goes in as their own step from here too.
 function _hcPickerSheet(id,ctx,q,noFocus){
-  const old=document.getElementById('hc-picker');if(old)old.remove();
+  // Typing in the search redraws only the list, in place. Rebuilding the whole sheet on every key
+  // dropped it behind the keyboard and back each time, and the sheet shrank as the list did, so it
+  // jumped with every letter (Ashley, 2026-10-23: "the page is jumping when I type").
+  const old=document.getElementById('hc-picker'), _oq=document.getElementById('hc-pick-q');
+  const _inPlace=!!(old&&_oq&&document.activeElement===_oq&&old.querySelector('#hc-pick-body'));
+  if(old&&!_inPlace)old.remove();
   const cx=_jsAttr(ctx||'profile'), ix=_jsAttr(id);
   let items=[];
   try{ items=_hcProducts(id); }catch(e){ items=[]; }
@@ -1008,12 +1013,20 @@ function _hcPickerSheet(id,ctx,q,noFocus){
     +'style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;background:var(--surf1);border:1px dashed var(--p-line-ctl);border-radius:12px;padding:10px 12px;margin:2px 0 8px;cursor:pointer;font-family:inherit;min-height:48px;color:var(--accent-strong);font-size:16px;font-weight:600;">'
     +'<i class="ti ti-pencil" style="font-size:17px;flex-shrink:0;"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
     +(raw?('Add “'+_fileEsc(raw)+'” as your own step'):'Type your own step')+'</span></button>';
-  ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));max-height:86%;overflow-y:auto;">'
+  const body=(raw&&!shown.length?custom+listHTML:listHTML+custom);
+  if(_inPlace){
+    // Hold the sheet at the tallest it has been while she types, so a shorter list cannot pull it down.
+    const sh=old.querySelector('#hc-pick-sheet');
+    if(sh)sh.style.minHeight=Math.max(sh.offsetHeight,parseFloat(sh.style.minHeight)||0)+'px';
+    old.querySelector('#hc-pick-body').innerHTML=body;
+    return;
+  }
+  ov.innerHTML='<div id="hc-pick-sheet" style="background:var(--surf1);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));max-height:86%;overflow-y:auto;">'
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">Add to the routine</div>'
     +'<div style="font-size:14px;color:var(--p-mut);margin-bottom:12px;line-height:1.5;">Pick a product, then add how to use it in your words.</div>'
     +'<input id="hc-pick-q" value="'+_jsAttr(q||'')+'" placeholder="Search your products…" aria-label="Search your products" oninput="_hcPickerSheet(\''+ix+'\',\''+cx+'\',this.value)" '
     +'style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;margin-bottom:12px;">'
-    +(raw&&!shown.length?custom+listHTML:listHTML+custom)
+    +'<div id="hc-pick-body">'+body+'</div>'
     +'<button onclick="document.getElementById(\'hc-picker\').remove();" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:10px;">Cancel</button>'
     +'</div>';
   (document.querySelector('.shell')||document.body).appendChild(ov);

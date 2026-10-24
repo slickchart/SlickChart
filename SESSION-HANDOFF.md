@@ -8360,3 +8360,10 @@ Ashley asked for every route of the new features to be checked. Results:
   summary sent, a session count, a real last visit, or a past Square booking). Returning: told not to
   say nice to meet you; unknown: told not to assume a first visit. The same check now decides the
   "First visit for X" tile, the intake nudge wording and the local brief. Test 21/21 both engines.
+- **Follow-up, build `2026-10-24b` (PREVIEW):** Ashley, after `2026-10-23e` went live: *"when typing in
+  the 'add to the routine' section the page is jumping when I type"*. The "Add to the routine" sheet
+  (`_hcPickerSheet`) rebuilt itself on every key, so each letter dropped the new sheet behind the
+  keyboard and back, and the bottom-anchored sheet shrank with the list. Typing now redraws only the
+  list (`#hc-pick-body`) in place and holds the sheet at its tallest. `scratchpad/test-keyboard-typing.mjs`:
+  the box never moves in Chromium and WebKit; the live build redraws the box on every key and moves it
+  111px. A sweep typing one letter into every field on 17 screens found no other box that redraws.
