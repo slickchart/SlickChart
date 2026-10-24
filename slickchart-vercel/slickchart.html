@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-23e';
+const APP_BUILD='2026-10-24a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -9398,7 +9398,7 @@ function _fvpCandidates(){
       // filled the intake in. A completed intake is proof the package is done; trust it over the flag.
       if(!c||!String(c.name||'').trim())return false;
       if(typeof _hasIntakeOnFile==='function'&&_hasIntakeOnFile(c))return false;
-      return !c.lastVisit&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
+      return !_isReturningClient(id)&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
     }).sort(function(a,b){return (_clientApptSoonMs(a[0])||Infinity)-(_clientApptSoonMs(b[0])||Infinity);});
 }
 function _attnTilesHTML(){
@@ -11150,7 +11150,7 @@ function _firstVisitNudgeHTML(cid,apptAt){
   const invited=!!(c.appInvited||c._token);
   const hasIntake=(typeof _hasIntakeOnFile==='function')&&_hasIntakeOnFile(c);
   if(!hasIntake){
-    const label=invited?'First-visit package not done yet':'New client — send their first-visit package';
+    const label=invited?'First-visit package not done yet':(_isReturningClient(cid)?'No intake on file — send their first-visit package':'New client — send their first-visit package');
     const cta='Send package';
     out+=`<div onclick="event.stopPropagation();sendFirstVisitPackage('${cid}')" style="border-top:1px solid var(--p-line-ctl);background:var(--p-amber-bg);padding:9px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;">
       <i class="ti ti-rocket" aria-hidden="true" style="font-size:16px;color:var(--p-amber);flex-shrink:0;"></i>
@@ -11455,7 +11455,7 @@ function _localBrief(id,c){
   const cond=clean(c.conditions); if(cond)watch.push('Medical: '+cond+'.');
   const meds=clean(c.medications); if(meds&&!/^none/i.test(meds))watch.push('Medications: '+meds+'.');
   const _lastTx=_realSvc(c.lastServiceTreatment)||_realSvc(c.treatment);
-  const last=clean(c.lastVisit)?('Last seen '+c.lastVisit+(_lastTx?' for '+_lastTx+'.':'.')):'No prior visit on file, treat as a first appointment.';
+  const last=clean(c.lastVisit)?('Last seen '+c.lastVisit+(_lastTx?' for '+_lastTx+'.':'.')):(_isReturningClient(id)?'Returning client, no last-visit date on file.':'No prior visit on file, treat as a first appointment.');
   return [
     {icon:'ti-clock',color:'var(--accent-strong)',label:'Last session',detail:last},
     {icon:'ti-alert-triangle',color:'var(--p-red)',label:'Watch for',detail:watch.length?watch.join(' '):'Nothing flagged on the chart. Confirm there are no new allergies, medications, or changes since the last visit.'},
@@ -14381,7 +14381,7 @@ async function _refreshNoteFromNotes(id){
   _noteRefreshing[id]=1;
   try{if(_onSummaryOf(id)&&!document.getElementById('note-edit-ta'))renderSessionSummary(id);}catch(e){}
   try{
-    const prompt=`You are helping a ${typeof _profName==='function'?_profName():'wellness provider'} write the short note their client reads in a post-appointment summary. From the provider's own session notes below, write a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, do not invent treatments or outcomes, and keep it to 2–4 short sentences. Return ONLY the note, no preamble and no quotation marks.\n\nClient first name: ${first}\nTreatment: ${c.treatment||''}\n\nSession notes:\n${notesText}`;
+    const prompt=`You are helping a ${typeof _profName==='function'?_profName():'wellness provider'} write the short note their client reads in a post-appointment summary. From the provider's own session notes below, write a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, do not invent treatments or outcomes, and keep it to 2–4 short sentences. Return ONLY the note, no preamble and no quotation marks.\n\nClient first name: ${first}\n${_aiVisitFacts(id)}\n\nSession notes:\n${notesText}`;
     const out=((await _aiComplete([{role:'user',content:prompt}],400))||'').trim().replace(/^["']+|["']+$/g,'');
     if(!out)throw new Error('empty');
     // She may have typed in the note, or changed her notes again, while this ran: only land it if not.
@@ -14412,7 +14412,7 @@ async function aiClientFriendly(id,btn){
   const c=CL[id]||{};const first=(c.name||'').split(' ')[0]||'your client';
   const old=btn.innerHTML;btn.disabled=true;btn.style.opacity='.6';btn.innerHTML='<i class="ti ti-loader-2"></i> Rewriting…';
   try{
-    const prompt=`You are helping a ${typeof _profName==='function'?_profName():'skincare provider'} write the short note their client reads in a post-appointment summary. Rewrite the notes below into a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, and keep it to 2-4 short sentences. Do not invent treatments or outcomes that are not in the notes. Return ONLY the rewritten note, no preamble and no quotation marks.\n\nClient first name: ${first}\nTreatment: ${c.treatment||''}\n\nNotes:\n${raw}`;
+    const prompt=`You are helping a ${typeof _profName==='function'?_profName():'skincare provider'} write the short note their client reads in a post-appointment summary. Rewrite the notes below into a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, and keep it to 2-4 short sentences. Do not invent treatments or outcomes that are not in the notes. Return ONLY the rewritten note, no preamble and no quotation marks.\n\nClient first name: ${first}\n${_aiVisitFacts(id)}\n\nNotes:\n${raw}`;
     const out=((await _aiComplete([{role:'user',content:prompt}],400))||'').trim().replace(/^["']+|["']+$/g,'');
     if(!out)throw new Error('empty');
     summaryNoteDraft[id]=out;_noteSrcMark(id,out);
@@ -14442,7 +14442,7 @@ async function _aiDraftSummaryFromNotes(id,btn){
     const old=btn?btn.innerHTML:'';if(btn){btn.disabled=true;btn.style.opacity='.6';btn.innerHTML='<i class="ti ti-loader-2"></i> Drafting…';}
     try{
       const notesText=secs.map(s=>s.label+': '+s.text).join('\n');
-      const prompt=`You are helping a ${typeof _profName==='function'?_profName():'wellness provider'} write the short note their client reads in a post-appointment summary. From the provider's own session notes below, write a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, do not invent treatments or outcomes, and keep it to 2–4 short sentences. Return ONLY the note, no preamble and no quotation marks.\n\nClient first name: ${first}\nTreatment: ${c.treatment||''}\n\nSession notes:\n${notesText}`;
+      const prompt=`You are helping a ${typeof _profName==='function'?_profName():'wellness provider'} write the short note their client reads in a post-appointment summary. From the provider's own session notes below, write a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, do not invent treatments or outcomes, and keep it to 2–4 short sentences. Return ONLY the note, no preamble and no quotation marks.\n\nClient first name: ${first}\n${_aiVisitFacts(id)}\n\nSession notes:\n${notesText}`;
       const out=((await _aiComplete([{role:'user',content:prompt}],400))||'').trim().replace(/^["']+|["']+$/g,'');
       if(!out)throw new Error('empty');
       summaryNoteDraft[id]=out;_noteSrcMark(id,out);if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();
@@ -23566,7 +23566,7 @@ async function _aiSuggestReplies(id){
   const first=(c.name||'Client').split(' ')[0];
   const convo=(msgStore[id]||[]).slice(-8).map(m=>((m.from==='me')?'Me':first)+': '+(m.text||'[photo]')).join('\n');
   const chart=[
-    c.treatment?('Service: '+c.treatment):'',
+    _clientSvcLabel(id,'')?('Service: '+_clientSvcLabel(id,'')):'',
     c.concerns?('Goals/concerns: '+c.concerns):'',
     (c.allergies&&!/^none/i.test(c.allergies))?('Allergies: '+c.allergies):'',
     c.lastVisit?('Last visit: '+c.lastVisit):''
@@ -32010,6 +32010,32 @@ function _nextVisitSvc(id){
   if(c._nvAuto&&_realSvc(c.nextVisitTx))return _realSvc(c.nextVisitTx);
   try{const n=_nextApptForClient(id);if(n&&n.treatment)return n.treatment;}catch(e){}
   return _realSvc(c.treatment);
+}
+// Has this client been seen before today? Any one of: a saved session before today, a summary she
+// was sent, a session count, a real last-visit date, or a past Square booking. The chart's own
+// "New client" label is NOT evidence: every chart starts with it. Ashley, 2026-10-24: "Client
+// friendly" opened a regular client's note with "it was great meeting you today", because the AI
+// was told "Treatment: New client".
+function _isReturningClient(id){
+  const c=CL[id]||{};
+  try{
+    const t0=new Date();t0.setHours(0,0,0,0);
+    const todayIso=(typeof _isoToday==='function')?_isoToday():'';
+    const ss=(typeof sessionSummaries!=='undefined'&&sessionSummaries[id])||[];
+    if(ss.some(function(r){if(!r)return false;const d=String(r._draftDate||'').slice(0,10);if(d)return d<todayIso;return (Number(r.ts)||0)>0&&Number(r.ts)<t0.getTime();}))return true;
+    if((Array.isArray(c.summaries)?c.summaries:[]).some(function(r){return r&&!(String(r._draftDate||'').slice(0,10)===todayIso);}))return true;
+    if((Number(c.sessions)||0)>0)return true;
+    if(typeof _isBlankVal==='function'?!_isBlankVal(c.lastVisit):!!c.lastVisit)return true;
+    if(typeof _sqHistAppts==='function'&&_sqHistAppts().some(function(a){return a&&a.at&&a.at<t0&&_apptIsClients(a,id);}))return true;
+  }catch(e){}
+  return false;
+}
+// The visit facts every client-facing AI note is given, so it never greets a regular as new.
+function _aiVisitFacts(id){
+  const svc=_todayServiceFor(id);
+  return (svc?'Treatment: '+svc+'\n':'')+(_isReturningClient(id)
+    ?'This is a RETURNING client who has visited before. Do not say it was nice or great to meet them, and do not call this their first visit.'
+    :'Do not assume this was their first visit. Only mention meeting them for the first time if the notes say so.');
 }
 // Today's service, for the headers of the treatment notes and the session summary.
 function _todayServiceFor(id){

@@ -85,6 +85,27 @@ await p.evaluate(() => { changeTreatment('c_pat', 'notes'); document.getElementB
 await p.waitForTimeout(300);
 t = await text();
 check('her own Edit treatment for today wins over the booked one', /Hydrafacial/.test(t) && !/Dermaplane/.test(t.slice(0, 400)), t.replace(/\s+/g, ' ').slice(0, 160));
+// 2026-10-24: "Client friendly" on a regular client began "it was great meeting you today Sarah".
+// The AI was told "Treatment: New client". It now gets the booked service and whether she is returning.
+const prompts = await p.evaluate(async () => {
+  const seen = [];
+  window._aiComplete = async (msgs) => { seen.push(msgs[0].content); return 'Your skin looked great today.'; };
+  window.aiEnabled = true; try { aiEnabled = true; } catch (e) {}
+  const lastWk = Date.now() - 14 * 864e5;
+  CL.c_sarah = { name: 'Sarah Reg', treatment: 'New client', lastVisit: '—', nextVisit: 'Not scheduled' };
+  sessionSummaries.c_sarah = [{ date: 'Oct 10', treatment: 'Facial', note: 'old', ts: lastWk }];
+  CL.c_fresh = { name: 'Fran Fresh', treatment: 'New client', lastVisit: '—', nextVisit: 'Not scheduled' };
+  for (const id of ['c_sarah', 'c_fresh', 'c_pat']) {
+    summaryNoteDraft[id] = 'Did a facial, skin calm.';
+    nav('session-summary', id); await new Promise(r => setTimeout(r, 300));
+    const btn = document.getElementById('ai-friendly-btn') || document.createElement('button');
+    await aiClientFriendly(id, btn);
+  }
+  return seen;
+});
+check('Client friendly: a returning client is described to the AI as returning', /RETURNING/.test(prompts[0] || '') && !/New client/.test(prompts[0] || ''), (prompts[0] || '').split('\n').slice(-5).join(' | ').slice(0, 220));
+check('Client friendly: a brand-new client is not called returning', prompts[1] && !/RETURNING/.test(prompts[1]) && !/New client/.test(prompts[1]), (prompts[1] || '').split('\n').slice(-4).join(' | ').slice(0, 200));
+check('Client friendly: the AI is given the service booked today', /Treatment: Hydrafacial|Treatment: Dermaplane/.test(prompts[2] || ''), (prompts[2] || '').split('\n').slice(-5).join(' | ').slice(0, 200));
 await b.close();
 let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS' : 'FAIL') + '  ' + x.n + '  — ' + x.d); }
 console.log(`\n${results.length - bad}/${results.length} pass`); process.exit(bad ? 1 : 0);

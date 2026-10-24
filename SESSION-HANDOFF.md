@@ -8353,3 +8353,10 @@ Ashley asked for every route of the new features to be checked. Results:
   summaries, client details sheet, new client, checkout, search) and the client app's message and rebook
   boxes. 0 hidden in Chromium AND WebKit; `CONTROL=1` (the build before) shows 29 hidden. Headless
   browsers have no real keyboard, so Ashley's phone is the final check.
+- **2026-10-24 follow-up (build 2026-10-24a, preview):** *Observed (Ashley):* in treatment notes,
+  "Client friendly" on a regular client began "it was great meeting you today Sarah". The three
+  client-note AI prompts were sent `Treatment: ${c.treatment}`, i.e. "New client". They now get
+  `_aiVisitFacts(id)`: today's booked service plus `_isReturningClient(id)` (a session before today, a
+  summary sent, a session count, a real last visit, or a past Square booking). Returning: told not to
+  say nice to meet you; unknown: told not to assume a first visit. The same check now decides the
+  "First visit for X" tile, the intake nudge wording and the local brief. Test 21/21 both engines.
