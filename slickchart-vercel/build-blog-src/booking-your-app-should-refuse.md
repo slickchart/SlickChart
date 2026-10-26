@@ -4,7 +4,6 @@ h1: Patch tests, consent and the booking your app should refuse
 description: Lash lifts, color, PMU and tattoo all have checks that must happen first. Why those checks belong in the app itself, and why describing them is the real work.
 date: 2026-10-26
 keywords: patch test booking, lash lift patch test app, beauty booking app rules, build your own booking app, salon app consent forms, build an app with ai
-draft: true
 ---
 
 Every beauty trade has a booking that should not happen.

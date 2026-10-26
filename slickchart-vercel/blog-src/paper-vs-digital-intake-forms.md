@@ -4,7 +4,6 @@ h1: Paper or digital intake forms? An honest look for a one-person studio
 description: Clipboards still work. Here is what paper does well, where it quietly fails a solo pro, and what to check before you move your intake and consent forms online.
 date: 2026-10-26
 keywords: paper vs digital intake forms, digital consent forms esthetician, esthetician intake form, online intake forms salon, client intake forms solo esthetician, digital forms beauty business
-draft: true
 ---
 
 I used a clipboard for years. It worked. A new client sat down, filled in the front and back, signed at the bottom, and the page went into a folder. Nothing crashed, nobody needed a password, and nobody ever asked me how to download an app.
