@@ -22,7 +22,8 @@ committed to anything, the later ones are for people mid-build.
 - [x] **Your booking app was built for every salon. Yours can be built for you.** Fill windows,
       patch tests, processing time, formula cards: the workarounds, and what owning the app changes.
       Drafted 2026-10-19 (`booking-app-built-for-your-trade.md`).
-- [ ] **Patch tests, consent and the booking that should not happen.** Why "checks before you start"
+- [x] **Patch tests, consent and the booking that should not happen.** Drafted 2026-10-26
+      (`booking-your-app-should-refuse.md`). Why "checks before you start"
       belong in the app itself, per trade (lash lift, color, PMU, tattoo). No medical or legal advice.
 - [ ] **Lash fills, color touch-ups and the pricing your app cannot do.** Time-since-last-visit pricing
       as the clearest example of a trade rule generic software skips.
