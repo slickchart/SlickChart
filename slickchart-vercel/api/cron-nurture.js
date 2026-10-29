@@ -6,6 +6,7 @@
 import { dbEnabled } from '../lib/db.js';
 import { runNurture } from '../lib/nurture.js';
 import { runFreeFunnel } from '../lib/free-funnel.js';
+import { withCronRun } from '../lib/cron-runs.js';
 
 function authorized(req) {
   const secret = process.env.CRON_SECRET || '';
@@ -16,7 +17,7 @@ function authorized(req) {
   return false;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
   // Run the two independently. They share the once-only table but nothing else, and a failure in
@@ -40,3 +41,6 @@ export default async function handler(req, res) {
   if (out.nurtureError && out.freeError) { res.status(500).json({ error: 'cron failed' }); return; }
   res.status(200).json(out);
 }
+
+// Every run is recorded (lib/cron-runs.js) so the daily health sweep can tell a job that stopped.
+export default withCronRun('cron-nurture', handler);

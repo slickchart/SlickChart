@@ -21,6 +21,7 @@ import { dbEnabled, sql, ensureProvidersTable } from '../lib/db.js';
 import { sendEmail, trustedOrigin } from '../lib/email.js';
 import { ensureNurtureTables } from '../lib/nurture.js';
 import { pushFounders } from '../lib/fcm.js';
+import { withCronRun } from '../lib/cron-runs.js';
 
 // Long enough that nobody mid-signup is emailed, short enough to matter the same day.
 const GRACE_HOURS = 3;
@@ -71,7 +72,7 @@ SlickChart
 `;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
 
@@ -163,3 +164,6 @@ export default async function handler(req, res) {
     res.status(500).json({ error: 'Something went wrong.' });
   }
 }
+
+// Every run is recorded (lib/cron-runs.js) so the daily health sweep can tell a job that stopped.
+export default withCronRun('cron-orphan-checkout', handler);

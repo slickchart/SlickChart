@@ -59,6 +59,12 @@ const ALLOW={
   // sign-in and sign-up look an account up by the email being signed in with; the Stripe webhook is
   // HMAC-verified and resolves the paying email; the rest are founder-gated aggregates over all
   // accounts (counts, the exposure scan) that never hand one account's rows to another.
+  // The daily health sweep. Gated like new-providers/app-launches (the owner's revocable Monitor key
+  // or a founder session, both checked before any query). It reads ACROSS accounts on purpose — it is
+  // the one place that can see a shared Square merchant or a provider stuck at sign-in — and returns
+  // only counts and masked emails, never a client's name, contact, note or message. Re-read it if it
+  // changes.
+  'admin/health-sweep.js':'founder/Monitor-key gated cross-account sweep; counts and masked emails only',
   'login.js':'looks up the account by the email being signed in with; generic failure, rate-limited',
   'signup.js':'checks the email is free and creates the account; count is for a launch cap',
   'stripe-webhook.js':'signature-verified webhook; resolves the paying email to its account',

@@ -15,6 +15,7 @@ import { ensureClientTables, listPushSubs, deletePushSub, claimReminder, logEven
 import { getConnection, squareFetch } from '../lib/square.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
+import { withCronRun } from '../lib/cron-runs.js';
 
 const HOUR = 3600 * 1000;
 // Ashley (2026-10-22): the check-in says when the visit is. `when` is '' when we cannot be sure of the
@@ -55,7 +56,7 @@ async function autoSendOn(providerId) {
   return true;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
 
@@ -166,3 +167,6 @@ export default async function handler(req, res) {
     res.status(500).json({ error: 'cron failed' });
   }
 }
+
+// Every run is recorded (lib/cron-runs.js) so the daily health sweep can tell a job that stopped.
+export default withCronRun('cron-checkins', handler);

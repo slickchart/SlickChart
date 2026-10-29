@@ -15,6 +15,7 @@ import { dbEnabled, sql, ensureTable } from '../lib/db.js';
 import { ensureClientTables, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, wantsPush } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
+import { withCronRun } from '../lib/cron-runs.js';
 
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
@@ -89,7 +90,7 @@ function classify(a) {
   return null;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
 
@@ -203,3 +204,6 @@ export default async function handler(req, res) {
 
 // Exported for local unit tests of the pure evaluation logic (no DB needed).
 export { classify, birthdayMD, lastVisitMs, localParts };
+
+// Every run is recorded (lib/cron-runs.js) so the daily health sweep can tell a job that stopped.
+export default withCronRun('cron-events', handler);

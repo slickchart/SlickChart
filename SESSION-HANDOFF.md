@@ -8431,3 +8431,29 @@ so every provider is sent to the login screen 30 days after signing in, mid-use.
   purpose, no-sid, expired, one-key read, same claims), `scratchpad/test-session-renew-ui.mjs`
   (app, 7 checks) in Chromium AND WebKit; `test-safari-storage-hook` and `test-bizname` still pass in both.
 - A provider whose pass is already past day 30 still has to sign in once; after that it renews.
+
+## 2026-10-29 — The daily health sweep (build `2026-10-29b`, PREVIEW)
+
+Ashley: *"build your own system to sweep, monitor, and fix ongoing issues from now on"*, *"do deep
+research on what we should monitor and add it in"*. Every past incident in this file was mined for a
+server-side signal; the ones that have one became checks.
+
+- **`GET /api/admin/health-sweep`** (Monitor key or founder session, read-only, counts and masked
+  emails only). 15 checks, each run on its own: shared Square merchant (§0, ALERT), library shrink in
+  `kv_history` (ALERT), settings saved empty/`null` (§2q), founder alerts that reached no phone or
+  feedback with no alert (§0b), device reports with unsent changes / memory-only / broken storage /
+  reload failures / near-full storage, scheduled jobs not running, Square sign-in not refreshed or
+  expired, past-due-but-using and paid-with-no-account, repeated failed sign-ins, app logs with
+  sign-outs/errors/offline page, devices on a build >5 days old, refused phone pushes, new providers
+  who never finished setup, duplicate-client bursts, and deleted clients still live on the server.
+  Returns `checks` and a worst-first `problems` list. In ALLOW of `check-tenant-isolation.cjs`.
+- **`lib/cron-runs.js` `withCronRun`** now wraps all 7 crons: one `cron_runs` row per run with status,
+  ok, and the NUMBERS from its reply only (arrays become counts, text dropped). A 401 is not a run.
+  Before this no cron recorded that it ran at all.
+- Test: `scratchpad/test-health-sweep.mjs` runs every query against a REAL Postgres (PGlite;
+  `PGLITE=<dir with node_modules/@electric-sql/pglite>`), seeds one healthy account and one of each
+  incident: 22 checks, including that no client name, full email or merchant id leaves it.
+- Known gaps that need a NEW signal (from the incident mining): client reminders/check-ins that reach
+  no device leave no trace (`reminder_log` is the claim, released on failure); Square token refresh
+  errors and login 402 refusals only go to the console; `client_events.seen` is never set server-side.
+- The daily brief (thread "Daily feedback monitor") reads this sweep every morning.

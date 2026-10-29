@@ -19,6 +19,7 @@ import {
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
 import { enforceFounderMerchantIsolation } from '../lib/square.js';
+import { withCronRun } from '../lib/cron-runs.js';
 
 const HOUR = 3600 * 1000;
 // How often Vercel Cron invokes this (vercel.json). Client-set routine reminders need finer than
@@ -62,7 +63,7 @@ function authorized(req) {
   return false;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
   // DATA ISOLATION (top priority): every hour, forcibly remove any foreign account connected to a
@@ -282,3 +283,6 @@ export default async function handler(req, res) {
     console.error('[cron-reminders] failed:', e && e.message); res.status(500).json({ error: 'cron failed' });
   }
 }
+
+// Every run is recorded (lib/cron-runs.js) so the daily health sweep can tell a job that stopped.
+export default withCronRun('cron-reminders', handler);

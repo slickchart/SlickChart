@@ -24,6 +24,7 @@ import { dbEnabled, sql } from '../lib/db.js';
 import { claimReminder, releaseReminder, ensureClientTables } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { nativePushConfigured, sendNativeToProvider } from '../lib/fcm.js';
+import { withCronRun } from '../lib/cron-runs.js';
 import {
   ensureProviderPushTable, listReminderOwners, listProviderPushSubs,
   deleteProviderPushSubById, providerClaimKey
@@ -89,7 +90,7 @@ function firstName(clients, cid) {
   } catch (e) { return ''; }
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
   const webOn = pushConfigured(), nativeOn = nativePushConfigured();
@@ -170,3 +171,6 @@ export default async function handler(req, res) {
     res.status(500).json({ error: 'failed' });
   }
 }
+
+// Every run is recorded (lib/cron-runs.js) so the daily health sweep can tell a job that stopped.
+export default withCronRun('cron-provider-reminders', handler);

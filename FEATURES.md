@@ -1351,6 +1351,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/admin/client-recover` | POST | founder, provider session | FOUNDER-ONLY. Get a provider's clients back. |
 | `/api/admin/contacts` | GET | provider session | GET /api/admin/contacts[?format=csv][&all=1]  → owner-only: every email address Ashley has, in one |
 | `/api/admin/exposure` | POST | founder, provider session | OWNER-ONLY. |
+| `/api/admin/health-sweep` | GET | founder, provider session | GET /api/admin/health-sweep   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/kv-health` | — | founder, provider session | GET /api/admin/kv-health?email=<provider email>  — FOUNDER-ONLY, READ-ONLY, METADATA ONLY. |
 | `/api/admin/new-providers` | GET | founder, provider session | GET /api/admin/new-providers?days=14   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/provider-lookup` | GET, POST | founder, provider session | FOUNDER-ONLY. Helps the founder support a provider who "can't log in". |
@@ -1468,7 +1469,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `device_reports`, `feedback`, `files`, `founder_accounts`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
+`announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.
