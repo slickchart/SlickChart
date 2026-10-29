@@ -188,6 +188,10 @@ export async function ensureProvidersTable() {
   )`;
   await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS connected_at timestamptz DEFAULT now()`;
   await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS last_used_at timestamptz`;
+  // Why the last Square sign-in refresh failed, if it did (2026-10-29). Before this a failed refresh only
+  // reached the console, so two providers' connections sat expired for weeks with no trace.
+  await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS refresh_error text`;
+  await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS refresh_failed_at timestamptz`;
   // DATA ISOLATION (top priority): one Square merchant must belong to exactly ONE provider, enforced at
   // the DATABASE level — not just the application guard in storeConnection (which can fail open on a DB
   // hiccup or lose a race). A UNIQUE index makes it impossible for two provider rows to share a

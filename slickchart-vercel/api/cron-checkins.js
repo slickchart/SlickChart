@@ -12,7 +12,7 @@
 // reminder_log so it sends exactly once even though the cron runs hourly across the 24h window.
 import { dbEnabled, sql, getKVValue } from '../lib/db.js';
 import { ensureClientTables, listPushSubs, deletePushSub, claimReminder, logEvent, spaceUrl, wantsPush } from '../lib/clients.js';
-import { getConnection, squareFetch } from '../lib/square.js';
+import { getConnection, squareFetch, refreshExpiringConnections } from '../lib/square.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
 import { withCronRun } from '../lib/cron-runs.js';
@@ -65,6 +65,8 @@ async function handler(req, res) {
   try {
     await ensureClientTables();
     const q = sql();
+    // Square sign-ins near expiry are renewed whether or not this provider uses check-ins.
+    try { summary.squareRefresh = await refreshExpiringConnections(); } catch (e) {}
     const conns = await q`SELECT provider_id FROM square_connections`;
     for (const row of (conns || [])) {
       const provider = row.provider_id;

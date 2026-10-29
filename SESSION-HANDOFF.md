@@ -8457,3 +8457,23 @@ server-side signal; the ones that have one became checks.
   no device leave no trace (`reminder_log` is the claim, released on failure); Square token refresh
   errors and login 402 refusals only go to the console; `client_events.seen` is never set server-side.
 - The daily brief (thread "Daily feedback monitor") reads this sweep every morning.
+
+## 2026-10-29 — Health sweep: first live run, tuned; Square sign-ins kept alive (build `2026-10-29c`, PREVIEW)
+
+First live run of `/api/admin/health-sweep` (build 2026-10-29b, pushed live early at Ashley's word).
+**Real findings:** two providers' Square connections expired and never refreshed (hea…@hotmail.com
+since Oct 14, tif…@theskynboutiquemedspa.com since Aug 29); izz…@yahoo.com has an active paid
+subscription and no SlickChart account; deleted-but-live clients for mis… (134), jes… (9), bar… (5),
+not yet investigated (the check ignores Square-key and merge paths, so it may over-count).
+**False alarms fixed:** a new provider clearing 3 starter courses (shrink now ALERTs only above 2KB),
+the deliberate paid-signup de-dup (`already announced`), 1-2 `unsent` (a save in its delay; now >=5),
+`sc_availability` = `{}` (hours never set; now only `null`/empty), a new provider's Square import
+(542 in a day; bursts only for accounts >7 days old), shared emails (now >=25 per account).
+
+**Square sign-ins kept alive:** `getConnection` only refreshed when something asked for the
+connection, so an idle provider's expired. `refreshExpiringConnections()` (lib/square.js), called
+hourly by cron-checkins, renews every connection within 7 days of expiry under its own provider id;
+a failure is now RECORDED (`square_connections.refresh_error`, `refresh_failed_at`, new columns) and
+retried after 6 h. Also fixed: a connection refreshed back to life on a call was still returned as
+expired on that same call (stale `row.expires_at`). Tests: `test-square-refresh.mjs` (8),
+`test-health-sweep.mjs` (22), both on real Postgres (PGlite).

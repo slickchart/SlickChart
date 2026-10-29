@@ -320,8 +320,13 @@ export async function getConnection(providerId) {
       await q`UPDATE square_connections SET access_token=${encrypt(r.access_token)},
         refresh_token=${encrypt(r.refresh_token || refresh)}, expires_at=${r.expires_at || null}, updated_at=now()
         WHERE provider_id=${providerId}`;
+      try { await q`UPDATE square_connections SET refresh_error=NULL, refresh_failed_at=NULL WHERE provider_id=${providerId}`; } catch (e2) {}
       access = r.access_token;
+      // The expiry check below reads row.expires_at. Without this, a connection refreshed back to life
+      // on this very call was still treated as expired and returned nothing until the NEXT call.
+      row.expires_at = r.expires_at || null;
     } catch (e) {
+      try { await q`UPDATE square_connections SET refresh_error=${String((e && e.message) || e).slice(0, 200)}, refresh_failed_at=now() WHERE provider_id=${providerId}`; } catch (e2) {}
       // Keep the existing token — it may still be valid for a few more days. But say so loudly: a
       // refresh that quietly fails is how a connection dies on its own. Everything downstream then
       // degrades silently (appointments stop syncing, pre-visit check-ins stop auto-sending), and the
@@ -336,6 +341,28 @@ export async function getConnection(providerId) {
     return null;
   }
   return { token: access, locationId: row.location_id || null, merchantId: row.merchant_id || null };
+}
+
+// Keep every Square connection alive (2026-10-29). getConnection only refreshes when something asks
+// for the connection, so a provider who used no Square feature for a few weeks came back to an expired
+// one (the first live health sweep found two, expired since Aug 29 and Oct 14), and with it her
+// appointment sync and auto check-ins had quietly stopped. Called hourly by cron-checkins. Each
+// connection is refreshed under its OWN provider id, exactly as if she had opened the app.
+export async function refreshExpiringConnections(limit = 25) {
+  const out = { due: 0, refreshed: 0, failed: 0 };
+  if (!dbEnabled()) return out;
+  await ensureProvidersTable();
+  const q = sql();
+  const rows = await q`SELECT provider_id FROM square_connections
+    WHERE expires_at IS NOT NULL AND expires_at < now() + interval '7 days'
+      AND (refresh_failed_at IS NULL OR refresh_failed_at < now() - interval '6 hours')
+    ORDER BY expires_at LIMIT ${limit}`;
+  out.due = rows.length;
+  for (const r of rows) {
+    try { const c = await getConnection(r.provider_id); if (c && c.token) out.refreshed++; else out.failed++; }
+    catch (e) { out.failed++; }
+  }
+  return out;
 }
 
 // ── AUTONOMOUS ISOLATION ENFORCEMENT ─────────────────────────────────────────────────────────────

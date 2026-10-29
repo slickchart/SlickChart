@@ -68,14 +68,22 @@ export async function runSweep(q) {
       FROM kv_history h LEFT JOIN kv ON kv.owner = h.owner AND kv.k = h.k
       WHERE h.reason = 'shrink' AND h.saved_at > now() - interval '26 hours' AND h.k = ANY(${SHRINK_KEYS})
       ORDER BY h.saved_at DESC LIMIT 60`;
-    const items = rows.filter(r => (r.old_bytes || 0) > 200 && (r.now_bytes || 0) < (r.old_bytes || 0) * 0.8)
-      .map(r => who(r.owner) + ': ' + r.k + ' went from ' + r.old_bytes + ' to ' + (r.now_bytes || 0) + ' bytes (' + (r.old_items != null ? r.old_items + ' items before; ' : '') + 'earlier copy kept)');
-    return { level: items.length ? 'alert' : 'ok', items };
+    // First run on live data (2026-10-29): a new provider clearing the 3 starter courses read as an
+    // alert. A shrink of a few hundred bytes is a provider tidying up; an alert needs real work at stake.
+    const seen = new Set(), items = []; let big = false;
+    for (const r of rows) {
+      const key = r.owner + '|' + r.k;
+      if (seen.has(key) || !((r.old_bytes || 0) > 200 && (r.now_bytes || 0) < (r.old_bytes || 0) * 0.8)) continue;
+      seen.add(key);
+      if ((r.old_bytes || 0) > 2000) big = true;
+      items.push(who(r.owner) + ': ' + r.k + ' went from ' + r.old_bytes + ' to ' + (r.now_bytes || 0) + ' bytes (' + (r.old_items != null ? r.old_items + ' items before; ' : '') + 'earlier copy kept)');
+    }
+    return { level: big ? 'alert' : (items.length ? 'warn' : 'ok'), items };
   });
 
   // 3. Settings stored as an empty value (§2q: hours saved as `null` reset every device).
   await check('settings-empty', 'No settings saved as empty', async () => {
-    const rows = await q`SELECT owner, k FROM kv WHERE k = ANY(${SETTINGS_KEYS}) AND (v IS NULL OR btrim(v) IN ('null', '', '{}', '[]', '""'))`;
+    const rows = await q`SELECT owner, k FROM kv WHERE k = ANY(${SETTINGS_KEYS}) AND (v IS NULL OR btrim(v) IN ('null', '', '""'))`;
     return { items: rows.map(r => who(r.owner) + ': ' + r.k + ' is empty on the server') };
   });
 
@@ -83,6 +91,7 @@ export async function runSweep(q) {
   await check('founder-alerts', 'Every alert to Ashley went out', async () => {
     const rows = await q`SELECT kind, subject, skipped, devices, sent, detail, at FROM notify_log
       WHERE at > now() - interval '26 hours' AND (coalesce(sent, 0) = 0 OR coalesce(skipped, '') <> '' OR detail LIKE '%failed%')
+      AND coalesce(skipped, '') NOT LIKE 'already announced%' AND coalesce(detail, '') NOT LIKE '%already covered%'
       ORDER BY at DESC LIMIT 20`;
     const items = rows.map(r => r.kind + ' alert' + (r.subject ? ' (' + maskEmail(r.subject) + ')' : '') + ': ' + (r.skipped ? 'skipped, ' + String(r.skipped).slice(0, 80) : 'reached ' + (r.sent || 0) + ' of ' + (r.devices || 0) + ' phones') + (r.detail ? '; ' + String(r.detail).slice(0, 80) : ''));
     try {
@@ -99,7 +108,8 @@ export async function runSweep(q) {
     const items = [];
     for (const r of rows) {
       const p = r.report || {}, bad = [];
-      if ((p.unsent || 0) > 0) bad.push(p.unsent + ' changes not yet saved to the account');
+      // 1 or 2 is a save still in its few-second delay when the report was taken (first live run).
+      if ((p.unsent || 0) >= 5) bad.push(p.unsent + ' changes not yet saved to the account');
       if ((p.memOnly || 0) > 0) bad.push(p.memOnly + ' items held only in memory');
       if (p.idbWorks === false) bad.push('device storage not working');
       if (p.reloadFails) bad.push('screens failing to reload: ' + String(p.reloadFails).slice(0, 80));
@@ -133,8 +143,10 @@ export async function runSweep(q) {
 
   // 7. Square connections that should have refreshed and did not.
   await check('square-tokens', 'Every Square connection is current', async () => {
-    const rows = await q`SELECT provider_id, expires_at FROM square_connections WHERE expires_at IS NOT NULL AND expires_at < now() + interval '6 days'`;
-    const items = rows.map(r => who(r.provider_id) + ': Square sign-in ' + (new Date(r.expires_at) < new Date() ? 'EXPIRED ' : 'expires ') + new Date(r.expires_at).toISOString().slice(0, 10) + ' and has not refreshed');
+    let rows;
+    try { rows = await q`SELECT provider_id, expires_at, refresh_error FROM square_connections WHERE expires_at IS NOT NULL AND expires_at < now() + interval '6 days'`; }
+    catch (e) { rows = await q`SELECT provider_id, expires_at FROM square_connections WHERE expires_at IS NOT NULL AND expires_at < now() + interval '6 days'`; }
+    const items = rows.map(r => who(r.provider_id) + ': Square sign-in ' + (new Date(r.expires_at) < new Date() ? 'EXPIRED ' : 'expires ') + new Date(r.expires_at).toISOString().slice(0, 10) + ' and has not refreshed' + (r.refresh_error ? ' (Square said: ' + String(r.refresh_error).slice(0, 80) + ')' : ''));
     return { level: rows.some(r => new Date(r.expires_at) < new Date()) ? 'alert' : (items.length ? 'warn' : 'ok'), items };
   });
 
@@ -206,10 +218,12 @@ export async function runSweep(q) {
   // 14. Duplicate bursts: many clients created at once, or the same email twice (2026-10-15 "47 bookings").
   await check('duplicates', 'No burst of duplicate clients', async () => {
     const dayAgo = Date.now() - 86400000;
-    const burst = await q`SELECT provider_id, count(*)::int AS n FROM clients WHERE created_at > ${dayAgo} AND deleted_at IS NULL
-      GROUP BY provider_id HAVING count(*) > 40`;
+    // A provider who joined this week is importing her list (542 in a day on the first live run).
+    const burst = await q`SELECT c.provider_id, count(*)::int AS n FROM clients c JOIN providers p ON p.id = c.provider_id
+      WHERE c.created_at > ${dayAgo} AND c.deleted_at IS NULL AND p.created_at < now() - interval '7 days'
+      GROUP BY c.provider_id HAVING count(*) > 40`;
     const dup = await q`SELECT provider_id, count(*)::int AS n FROM (SELECT provider_id, lower(email) FROM clients
-      WHERE deleted_at IS NULL AND coalesce(email, '') <> '' GROUP BY provider_id, lower(email) HAVING count(*) > 1) d GROUP BY provider_id HAVING count(*) >= 5`;
+      WHERE deleted_at IS NULL AND coalesce(email, '') <> '' GROUP BY provider_id, lower(email) HAVING count(*) > 1) d GROUP BY provider_id HAVING count(*) >= 25`;
     return { items: burst.map(r => who(r.provider_id) + ': ' + r.n + ' clients added in the last day')
       .concat(dup.map(r => who(r.provider_id) + ': ' + r.n + ' emails appear on more than one client')) };
   });
