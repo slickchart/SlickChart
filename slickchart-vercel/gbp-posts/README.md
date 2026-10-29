@@ -65,3 +65,9 @@ Screenshot the **real product**, never a mockup.
 `gbp-posts/` is content, so it goes **straight to `main`** under `CLAUDE.md` §1a. It is not built,
 not served and not linked from the site. It exists so there is a record of what was posted and when,
 and so the next one can be written without re-deriving the rules.
+
+## Claude's watermark (2026-10-29)
+
+GBP posts are short, so Claude's text watermark is barely there, and nothing outside Anthropic can read
+it anyway. Nothing changes here. The full write-up, and the two rules that matter (never invent
+Ashley's experience; never say a post is "human-written"), are in `blog-src/README.md`.
