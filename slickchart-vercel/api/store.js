@@ -5,7 +5,7 @@
 // Most keys are last-writer-wins. A few append-only ones are MERGED server-side instead — see
 // UNION_SET_KEYS / OLDEST_WINS_KEYS below.
 import { sql, ensureTable, ensureProvidersTable, dbEnabled } from '../lib/db.js';
-import { verifyToken, isSessionValid } from '../lib/auth.js';
+import { verifyToken, signToken, isSessionValid } from '../lib/auth.js';
 import { snapshotBeforeWrite, rescueDeviceCopy } from '../lib/kv-history.js';
 
 async function requireLogin(req, res, q) {
@@ -25,7 +25,24 @@ async function requireLogin(req, res, q) {
   // 'owner' tenant would be a latent cross-account footgun — a future token-mint path that forgot `u`
   // would hand its holder the owner's entire dataset. Fail closed instead.
   if (!payload.u) { res.status(401).json({ error: 'Not logged in.' }); return null; }
+  req._scPayload = payload;
   return payload.u;
+}
+
+// A sign-in pass lasts 30 days and nothing used to renew it, so every provider was sent back to the
+// login screen on day 30, mid-use (2026-10-27: an Android provider's app signed her out during a sync
+// with token-dropped < Cloud.pull). A full pull now hands back a fresh 30-day pass for the SAME session
+// once the current one is a week old, so a provider who keeps using the app stays signed in.
+// Only a real session token is renewed: it must carry `sid` (so sign-out and "sign out other devices"
+// still kill it, isSessionValid ran above) and no scope (`k`) or purpose (`p`) claim. The new pass has
+// exactly the old claims, so it can never name a different account.
+const RENEW_WHEN_LEFT_S = 60 * 60 * 24 * 23;
+function renewedToken(payload) {
+  const secret = process.env.SESSION_SECRET || '';
+  if (!secret || !payload || !payload.u || !payload.sid || payload.k || payload.p || !payload.exp) return null;
+  if (payload.exp - Math.floor(Date.now() / 1000) > RENEW_WHEN_LEFT_S) return null;
+  const { exp, ...claims } = payload;
+  return signToken(claims, secret);
 }
 
 // ── Keys the server must MERGE instead of overwrite ────────────────────────────
@@ -86,7 +103,10 @@ export default async function handler(req, res) {
       const rows = await q`SELECT k, v FROM kv WHERE owner = ${owner}`;
       const data = {};
       rows.forEach(r => { data[r.k] = r.v; });
-      res.status(200).json({ data, count: rows.length });
+      const out = { data, count: rows.length };
+      const renew = renewedToken(req._scPayload);
+      if (renew) out.renew = renew;   // additive: a build that does not read it is unaffected
+      res.status(200).json(out);
       return;
     }
 

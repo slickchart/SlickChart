@@ -8408,3 +8408,26 @@ relaunches with a fresh page instead).
 saved key names, device reports, launch logs) feeds the daily feedback brief; the launch log now also
 runs in home-screen apps and sends at 1.5 s. **Open for Ashley:** the install step still teaches the
 Chrome / Safari home-screen app rather than linking the Play Store / App Store apps.
+
+## 2026-10-29 — Providers signed out on day 30: the sign-in pass now renews (build `2026-10-29a`, PREVIEW)
+
+Found by the daily brief's new app-report check (Ashley: "I would love to be proactive"), not reported.
+
+**What a phone OBSERVED (its own app log, not a theory):** jes…@gmail.com, Android, build 2026-10-24f,
+Oct 28 05:12:39 UTC (Oct 27 10:12pm Pacific): `launch` → `screen client` → `token-dropped
+Object.logout < Object._pullInner < async Object.pull` → `signin-screen`, then signed straight back in.
+So `/api/store` answered 401 to a pull. Whether that 401 was `expired` or `revoked` is not in the log.
+
+**What the code proves:** `signToken` gives every login a 30-day pass and nothing anywhere renewed it,
+so every provider is sent to the login screen 30 days after signing in, mid-use.
+
+- `api/store.js` `renewedToken`: a FULL pull (not `?key=`) returns `renew`, a fresh 30-day pass with
+  exactly the old claims, once the current pass has under 23 days left. Only for a real session pass:
+  must have `sid` (so sign-out / sign-out-others still kill it, `isSessionValid` already ran), and no
+  `k` or `p`. Additive field; older builds ignore it.
+- `slickchart.html` `Cloud._pullInner`: takes `j.renew` only if `Cloud.token` is still the pass the
+  pull was sent with, so a sign-out or account switch during the pull is never undone.
+- Tests: `scratchpad/test-session-renew.mjs` (server, 14 checks: revoked/unknown session, scoped,
+  purpose, no-sid, expired, one-key read, same claims), `scratchpad/test-session-renew-ui.mjs`
+  (app, 7 checks) in Chromium AND WebKit; `test-safari-storage-hook` and `test-bizname` still pass in both.
+- A provider whose pass is already past day 30 still has to sign in once; after that it renews.
