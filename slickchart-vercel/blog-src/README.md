@@ -82,3 +82,42 @@ Lead with these rather than a feature list. See TOPICS.md for the reasoning.
 
 Don't oversell. If a reader would be better served by something else, the post can say so; that's what
 makes the rest of it credible.
+
+## Claude's text watermark, and what it changes here (researched 2026-10-29)
+
+Since August 2026 Claude puts an invisible statistical watermark in the text it writes (a version of
+Google's SynthID-Text), to meet the EU's AI transparency code. Images and files it generates get
+C2PA metadata instead. What is known, from Anthropic's own pages (anthropic.com/news/claude-text-watermark,
+support.claude.com "How Claude marks AI-generated content"):
+
+- It changes nothing a reader can see: no hidden characters, no quality difference in testing.
+- It says only that Claude was *probably involved*. Nothing about who, which account or which chat.
+- **Only Anthropic can check for it.** There is no public detector; detection is a private preview for
+  regulators, researchers, media and similar. Google, Gmail and email providers cannot read it.
+- Light editing leaves it in. A full rewrite in her own words removes it. Short text (a GBP post, a
+  subject line) carries too little to detect reliably.
+- Google ranks on quality, not on how a page was made (its Search guidance since February 2023), and
+  has never used its own watermark as a ranking signal. What does lose traffic is scaled, templated
+  content with nothing unique in it. (Checked: the 51 consent-form posts share about 5% of their
+  lines pair to pair, so they are not template swaps.)
+
+**So nothing about publishing changes, and nothing is hidden.** The rules that follow are what
+actually protects rankings and her name:
+
+1. **Never invent Ashley's experience.** A draft may write in her first person only for things already
+   on `/build`, `/slickchart` or an earlier published post, or that she told us. The weekly report
+   lists **"What this post says about you"**, every first-person claim, so she can confirm or fix each
+   one before it goes live.
+2. **Ask her for one real detail.** The report ends with one or two short questions (a client moment,
+   a mistake she made, what she actually does). Her answer goes into the post before publishing. That
+   first-hand detail is what no template site can copy, and it is the part Google rewards.
+3. **She reads and approves every post** (already the rule: drafts never publish themselves). Her name
+   is on the byline (`author` in the page data), which is the "named person with editorial
+   responsibility" the EU rule describes.
+4. **Never claim content is "human-written" or "AI-free"**, anywhere: blog, emails, GBP, sales pages.
+   A detector could later say Claude was involved, and a false claim is the only real exposure here.
+5. **Never run text through a "watermark remover" or paraphrasing tool** to hide it. It breaks the
+   spirit of the code Anthropic and every major AI company signed, adds nothing for readers, and
+   usually makes the writing worse.
+6. **Same for email and GBP.** Watermarks do not affect deliverability (mail filters cannot read them)
+   or Google Business posts. The rules above still apply to what the email says.
