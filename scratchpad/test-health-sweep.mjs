@@ -54,6 +54,11 @@ INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead
 `);
 let fail = 0; const ok = (c, m, d) => { console.log((c ? 'PASS ' : 'FAIL ') + m + (c || !d ? '' : '  :: ' + d)); if (!c) fail++; };
 
+// 2026-10-30: a forms shrink must say WHAT shrank (one form edited shorter, one she deleted, one gone).
+{ const oldF = JSON.stringify({ tmpls: { f_long: { t: 'q'.repeat(9000) }, f_del: { t: 'a' }, f_gone: { t: 'b' } }, guides: {} });
+  const nowF = JSON.stringify({ tmpls: { f_long: { t: 'short' } }, guides: {} });
+  await db.query("INSERT INTO kv VALUES ('other','sc_forms',$1),('other','sc_hidden_forms',$2)", [nowF, JSON.stringify({ f_del: now })]);
+  await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('other','sc_forms',$1,$2,5,'shrink',now()-interval '1 hour')", [oldF, oldF.length]); }
 const { default: handler, runSweep } = await import(pathToFileURL(path.join(dir, 'api/admin/health-sweep.js')));
 const { withCronRun } = await import(pathToFileURL(path.join(dir, 'lib/cron-runs.js')));
 // a recorded cron run (one OK, one failing) and a refused one
@@ -73,7 +78,7 @@ const j = res.body; const by = Object.fromEntries(j.checks.map(c => [c.id, c]));
 ok(res.code === 200 && j.checks.length === 15, 'all 15 checks reported', res.code + ' ' + (j.checks || []).length);
 ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every check ran against real SQL', JSON.stringify(j.checks.filter(c => (c.items[0] || '').startsWith('could not run')).map(c => c.id + ': ' + c.items[0])));
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
-ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
+ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
 ok(by['settings-empty'].items.length === 1 && /sc_availability/.test(by['settings-empty'].items[0]), 'hours saved as null are flagged; hours never set ({}) are not');
 ok(by['founder-alerts'].level === 'alert' && by['founder-alerts'].items.some(i => /feedback alert/.test(i)) && !by['founder-alerts'].items.some(i => /paid-signup|provider-signup/.test(i)), 'the skipped feedback alert is flagged; a good one and a deliberate de-dup are not', JSON.stringify(by['founder-alerts'].items));
 ok(/7 changes not yet saved/.test(by['device-health'].items.join()) && /storage not working/.test(by['device-health'].items.join()) && by['device-health'].items.length === 1, 'the failing device is flagged; 2 unsent (save in its delay) is not');
@@ -85,6 +90,8 @@ ok(by['app-logs'].items.length === 1 && /signed out by the app 1x/.test(by['app-
 ok(by['stale-builds'].items.length === 1 && /2026-10-10a/.test(by['stale-builds'].items[0]), 'the device on an old build is flagged');
 ok(by['phone-push'].items.length === 1 && /send failed: UNREGISTERED/.test(by['phone-push'].items[0]), 'a refused phone push is flagged, a link is not');
 ok(by['new-setup'].items.length === 1 && /fre…@new.com/.test(by['new-setup'].items[0]), 'the new provider who never finished setup is flagged');
+{ const f = by['data-shrink'].items.find(i => /oth…@x.com: sc_forms/.test(i)) || '';
+  ok(/Shrank: tmpls 3\u21921 entries/.test(f) && /Forms: 2 gone \(1 deleted by her\), 1 edited much shorter/.test(f) && !/f_long|f_del|qqq/.test(f), 'a forms shrink says which part shrank and how many forms she deleted, with no ids or content', f); }
 ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-live'].items[0]), 'a deleted client still live on the server is flagged');
 ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|locked@out|ghost@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
 ok(j.problems.length > 0 && j.problems[0].startsWith('ALERT'), 'problems list is worst first');

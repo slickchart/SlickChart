@@ -41,6 +41,37 @@ const CRONS = { 'cron-reminders': 45, 'cron-provider-reminders': 45, 'cron-check
 const buildDate = b => { const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(b || '')); return m ? Date.parse(m[1] + 'T00:00:00Z') : 0; };
 const tail = id => '…' + String(id || '').slice(-4);
 
+// WHAT shrank, in counts, so a shrink can be judged from the brief without opening the provider's
+// data (2026-10-30: "sc_forms went from 49970 to 3239 bytes" said nothing about whether a form was
+// lost or one form was simply edited shorter). Compound libraries are broken down by part (the part
+// names are the app's own, e.g. tmpls/guides), forms say how many went missing and how many of those
+// she deleted herself. Only counts and the app's part names: never a client id, name or any content.
+const COMPOUND = { sc_forms: 1, sc_workspace: 1 };
+const entries = x => Array.isArray(x) ? x.length : (x && typeof x === 'object' ? Object.keys(x).length : 0);
+export function explainShrink(k, oldV, nowV, hiddenV) {
+  let a, b, hid = {};
+  try { a = JSON.parse(oldV); b = nowV == null ? null : JSON.parse(nowV); } catch (e) { return ''; }
+  try { hid = JSON.parse(hiddenV || '{}') || {}; } catch (e) {}
+  if (!a || typeof a !== 'object') return '';
+  if (!COMPOUND[k] || Array.isArray(a)) return '. Entries: ' + entries(a) + ' before, ' + entries(b) + ' now';
+  const bb = (b && typeof b === 'object') ? b : {};
+  const parts = [];
+  for (const p of Object.keys(a)) {
+    const ob = JSON.stringify(a[p] || '').length, nb = JSON.stringify(bb[p] == null ? '' : bb[p]).length;
+    const oe = entries(a[p]), ne = entries(bb[p]);
+    if (ne < oe || nb < ob * 0.75) parts.push(p + ' ' + oe + '\u2192' + ne + ' entries (' + ob + '\u2192' + nb + ' bytes)');
+  }
+  let out = parts.length ? '. Shrank: ' + parts.slice(0, 6).join(', ') : '';
+  if (k === 'sc_forms' && a.tmpls && typeof a.tmpls === 'object') {
+    const now = (bb.tmpls && typeof bb.tmpls === 'object') ? bb.tmpls : {};
+    const gone = Object.keys(a.tmpls).filter(id => !(id in now));
+    const deleted = gone.filter(id => id in hid).length;
+    const shorter = Object.keys(a.tmpls).filter(id => id in now && JSON.stringify(now[id]).length < JSON.stringify(a.tmpls[id]).length * 0.75).length;
+    out += '. Forms: ' + gone.length + ' gone (' + deleted + ' deleted by her), ' + shorter + ' edited much shorter';
+  }
+  return out;
+}
+
 export async function runSweep(q) {
   const checks = [];
   const emails = {};
@@ -64,8 +95,10 @@ export async function runSweep(q) {
 
   // 2. A library that shrank in the last day (kv_history keeps the copy from before each shrink).
   await check('data-shrink', 'No saved library shrank sharply in the last day', async () => {
-    const rows = await q`SELECT h.owner, h.k, h.items AS old_items, h.bytes AS old_bytes, length(kv.v) AS now_bytes, h.saved_at
+    const rows = await q`SELECT h.owner, h.k, h.items AS old_items, h.bytes AS old_bytes, length(kv.v) AS now_bytes, h.saved_at,
+        h.v AS old_v, kv.v AS now_v, hf.v AS hidden_forms
       FROM kv_history h LEFT JOIN kv ON kv.owner = h.owner AND kv.k = h.k
+      LEFT JOIN kv hf ON hf.owner = h.owner AND hf.k = 'sc_hidden_forms' AND h.k = 'sc_forms'
       WHERE h.reason = 'shrink' AND h.saved_at > now() - interval '26 hours' AND h.k = ANY(${SHRINK_KEYS})
       ORDER BY h.saved_at DESC LIMIT 60`;
     // First run on live data (2026-10-29): a new provider clearing the 3 starter courses read as an
@@ -76,7 +109,7 @@ export async function runSweep(q) {
       if (seen.has(key) || !((r.old_bytes || 0) > 200 && (r.now_bytes || 0) < (r.old_bytes || 0) * 0.8)) continue;
       seen.add(key);
       if ((r.old_bytes || 0) > 2000) big = true;
-      items.push(who(r.owner) + ': ' + r.k + ' went from ' + r.old_bytes + ' to ' + (r.now_bytes || 0) + ' bytes (' + (r.old_items != null ? r.old_items + ' items before; ' : '') + 'earlier copy kept)');
+      items.push(who(r.owner) + ': ' + r.k + ' went from ' + r.old_bytes + ' to ' + (r.now_bytes || 0) + ' bytes (' + (r.old_items != null ? r.old_items + ' items before; ' : '') + 'earlier copy kept)' + explainShrink(r.k, r.old_v, r.now_v, r.hidden_forms));
     }
     return { level: big ? 'alert' : (items.length ? 'warn' : 'ok'), items };
   });

@@ -8477,3 +8477,28 @@ a failure is now RECORDED (`square_connections.refresh_error`, `refresh_failed_a
 retried after 6 h. Also fixed: a connection refreshed back to life on a call was still returned as
 expired on that same call (stale `row.expires_at`). Tests: `test-square-refresh.mjs` (8),
 `test-health-sweep.mjs` (22), both on real Postgres (PGlite).
+
+## 2026-10-30: daily brief findings, build 2026-10-30a (preview)
+
+- **29c did not ship overnight.** `release` holds eddcfc2 (approved "ship it" 2026-10-29), but the
+  only scheduled run of deploy-at-2am.yml on 10-30 started at 06:58 PDT, outside the 12:00-5:59am
+  window, so it did nothing. Looking back, GitHub fired the schedule ONCE a day at 06:07-07:06 PDT on
+  10-26, 10-27, 10-28, 10-29 and 10-30: none of the six hourly crons landed in the window. The
+  scheduled train has effectively not shipped since 10-25; everything since went out by dispatch.
+  Asked Ashley how to make the overnight run reliable (decision card in the feedback thread).
+- **Shrink alert, inf…@mncaesthetics.com (new 10-29), sc_forms 49970 -> 3239 bytes, "4 items
+  before".** Earlier copy is in kv_history. The live sweep cannot say whether a form went missing or
+  was edited shorter, so 30a's `explainShrink` adds counts per part and, for forms, "N gone (M deleted
+  by her), K edited much shorter" (no ids or content; test-health-sweep.mjs). Not reported to the
+  provider, nothing judged lost. Re-read the sweep once 30a is live.
+- **deleted-but-live (mis… 134, jes… 9, bar… 5) is real, not an over-count.** The check only counts
+  ids that are in the account's `sc_deleted_clients` with a newer stamp than `sc_undeleted_clients`
+  AND still have a live `clients` row. The app's only path to `deleted_at` is `_serverDeleteClients`
+  (fire-and-forget fetch, no retry) or `_tidySaveToAccount` (awaited). A delete made offline or with
+  the app closed right after never reaches the row, while the delete RECORD syncs through the
+  retrying queue. Effect: the provider never sees them (the roster is filtered by the record), but the
+  row is live server-side, so that client's link still opens and server jobs that read `clients`
+  could still reach them. Proposed fix (needs Ashley's yes, it is a delete of live rows): when
+  /api/store saves `sc_deleted_clients`, soft-delete (deleted_at only, recoverable) that owner's rows
+  whose delete stamp is newer than the put-back stamp; and make put-back clear deleted_at, which
+  upsertClient currently never does.
