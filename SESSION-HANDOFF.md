@@ -8520,3 +8520,25 @@ expired on that same call (stale `row.expires_at`). Tests: `test-square-refresh.
 - **Overnight start:** "Overnight update start" scheduled task at 12:15am Pacific (CLAUDE.md §1a).
 - Ashley gave standing permission: fix health-sweep findings within reason and report after
   (recorded in /mnt/project-files/feedback-monitor/routine-prompt.md §2b).
+
+### 2026-10-30 evening: build 2026-10-30c, face chart + All Photos download (preview, NOT approved for release yet)
+
+Asked for by a provider (Jennie Milla, JEM House of Glam) via Ashley. Ashley has not said ship it.
+
+- **Face chart.** Write-note editor, under the session date, for esty/brow/pmu/makeup/lash/wax (and
+  always when a chart already exists; never on the tattoo record, which has the body map). Tap the face
+  to drop numbered marks of a type (Breakout, Pigmentation, Redness, ... Treated area, Avoid, Other),
+  area named from the tap and editable, optional note. "Start from last visit's chart" when empty.
+  **No new synced key:** marks live on the visit's draft (`providerNoteDrafts[id].faceChart`, synced in
+  `sc_note_drafts`) and are copied to the session record (`sessionSummaries[id][i].faceChart`) on save,
+  which `_CLIENT_MAP_LIST` already unions by entry. A `Face chart: ...` line is written at the top of the
+  note's first section (old builds and exports read it) and kept OUT of the client-facing `entry.note`.
+  The three places that rebuild a draft object (`_snapshotWriteNoteNow`, `_commitWriteNote`, the
+  treatment-change snapshot) carry `faceChart` across. An older build that snapshots the draft drops the
+  draft's chart (the text line survives); a saved record keeps it. Test: `scratchpad/test-face-chart.mjs`.
+- **All Photos (.zip).** Download your data -> All Photos (and a Photos button on Delete account).
+  `_exportAllPhotos()`: this device's photos plus every `sc_photo_index` photo it lacks via
+  `_getGuideFile` (her own files only), folder per client, store-only zip built client-side
+  (`_zipBlob`), skips removed clients, dismissed photos and `__recovered__`. Says how many could not be
+  reached. The full backup's `_note` no longer says photos "stay on this device".
+  Test: `scratchpad/test-photo-export.mjs`. Both tests pass in Chromium and WebKit.

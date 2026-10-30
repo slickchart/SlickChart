@@ -284,6 +284,7 @@ saved anywhere", not "does this always call that".
 | `_editClientDetails` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_editPhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_evictableFileCache` | `/api/guide-file` | direct |
+| `_exportAllPhotos` | `/api/guide-file` | via `_getGuideFile` |
 | `_fbMonitorCard` | `/api/feedback` | via `_fbMonitorPost` |
 | `_fbMonitorKey` | `/api/feedback` | via `_fbMonitorPost` |
 | `_fbMonitorOff` | `/api/feedback` | via `_fbMonitorPost` |
@@ -1079,6 +1080,7 @@ saved anywhere", not "does this always call that".
 | `renderDataSetup` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderDeleteAccount` | `/api/clients` | via `syncClientEvents` |
 | `renderDeleteAccount` | `/api/delete-account` | via `_confirmDeleteAccount` |
+| `renderDeleteAccount` | `/api/guide-file` | via `_getGuideFile` |
 | `renderDeleteAccount` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderDeleteAccount` | `/api/store` | via `_confirmDeleteAccount` |
 | `renderDocDetail` | `/api/clients` | via `syncClientEvents` |
@@ -1091,6 +1093,7 @@ saved anywhere", not "does this always call that".
 | `renderEntry` | `/api/app-launch` | via `_alSend` |
 | `renderEntry` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderEntry` | `/api/client-code` | via `_clientSendCode` |
+| `renderExportCenter` | `/api/guide-file` | via `_getGuideFile` |
 | `renderFeedbackInbox` | `/api/feedback` | via `_loadFeedbackInbox` |
 | `renderFlaggedIntakes` | `/api/clients` | via `syncClientEvents` |
 | `renderFlaggedIntakes` | `/api/provider-form` | via `submitSignOnDevice` |

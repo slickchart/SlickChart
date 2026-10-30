@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-30b';
+const APP_BUILD='2026-10-30c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -12081,7 +12081,7 @@ function saveTreatment(id,screen){
     // modal) so the re-render after a treatment change never drops unsaved keystrokes.
     try{
       const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;const dateEl=document.getElementById('wn-date');
-      if(dateEl){const sections={};t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});providerNoteDrafts[id]={date:dateEl.value||_isoToday(),sections,templateId:activeNoteTemplate,ts:Date.now()};if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}
+      if(dateEl){const sections={};t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});const _fc=_faceChartOf(id);providerNoteDrafts[id]={date:dateEl.value||_isoToday(),sections,templateId:activeNoteTemplate,ts:Date.now()};if(_fc)providerNoteDrafts[id].faceChart=_fc;if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}
     }catch(e){}
     renderWriteNote(id);
   }
@@ -13289,6 +13289,7 @@ function renderWriteNote(id){
     <input id="wn-date" type="date" value="${dateVal}" oninput="_autosaveWriteNote('${id}')" style="background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:6px 10px;font-size:16px;font-family:inherit;">
     <span style="font-size:14px;color:var(--p-mut);">(change this if you're catching up on a note from another day)</span>
   </div>
+  ${_faceChartField(id)}
   <div style="padding:0 16px;">
     ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:14px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:${t.sections.length<=1?'300':'150'}px;resize:vertical;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')" onblur="try{_snapshotWriteNoteNow('${id}')}catch(e){}">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt2')?_inkScanField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt3')?_needlePresetField(id):''}</div>`).join('')}
   </div>
@@ -13315,7 +13316,9 @@ function _snapshotWriteNoteNow(id){
     const dateVal=dateEl.value||_isoToday();
     const sections={};
     t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});
+    const fc=_faceChartOf(id);   // the visit's face chart rides on its draft
     providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate,ts:Date.now()};
+    if(fc)providerNoteDrafts[id].faceChart=fc;
     if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
   }catch(e){}
 }
@@ -13389,7 +13392,7 @@ function _bmRender(){
     </div>
     <div style="background:var(--p-bg2);border:1px solid var(--p-line);border-radius:12px;height:300px;display:flex;align-items:center;justify-content:center;overflow:hidden;">${_bodySVG(d.side,d.pin)}</div>
     <div style="font-size:14px;color:var(--p-mut);text-align:center;margin:8px 0 6px;">Tap the ${d.side} of the body to mark the placement</div>
-    <div style="margin-bottom:10px;"><div style="font-size:14px;color:var(--p-mut);margin-bottom:4px;">Body area (tap to edit)</div><input id="bm-area" class="fi" value="${_jsAttr(d.area||'')}" placeholder="e.g. Left forearm" oninput="_bmDraft.area=this.value" style="font-size:16px;"></div>
+    <div style="margin-bottom:10px;"><div style="font-size:14px;color:var(--p-mut);margin-bottom:4px;">Body area (tap to edit)</div><input id="bm-area" class="fi" value="${_fileEsc(d.area||'')}" placeholder="e.g. Left forearm" oninput="_bmDraft.area=this.value" style="font-size:16px;"></div>
     <div style="display:flex;gap:8px;">
       ${d.pin?`<button onclick="_bmClear()" class="btng" style="flex:0 0 auto;">Clear</button>`:''}
       <button class="btnp" style="flex:1;border-radius:8px;${!d.pin?'opacity:.5;pointer-events:none;':''}" onclick="_bodyMapSave()"><i class="ti ti-check"></i> Save placement</button>
@@ -13416,6 +13419,163 @@ function _bodyMapField(id){
   return `<div id="bm-field-tt1" style="margin-top:-4px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
     <button type="button" onclick="_openBodyMap('${_jsAttr(id)}')" style="background:var(--p-purple-bg);border:1px solid var(--p-purple-line);color:var(--p-purple);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-map-pin"></i> ${bm?'Edit body map':'Body map'}</button>
     ${bm&&bm.pin?`<div style="display:flex;align-items:center;gap:6px;"><div style="width:26px;height:40px;background:var(--p-bg2);border:1px solid var(--p-line);border-radius:4px;position:relative;flex-shrink:0;"><div style="position:absolute;width:7px;height:7px;border-radius:50%;background:#e87070;border:1px solid #fff;left:${(bm.pin.x*26-3.5).toFixed(1)}px;top:${(bm.pin.y*40-3.5).toFixed(1)}px;"></div></div><span style="font-size:16px;color:var(--p-mut);">${_fileEsc(bm.area)} <span style="color:var(--p-mut);">· ${_fileEsc(bm.side)}</span></span></div>`:'<span style="font-size:14px;color:var(--p-mut);">Tap to mark where the tattoo goes</span>'}
+  </div>`;
+}
+
+// ── Face chart ── a face diagram she can mark up during a visit (a provider asked, 2026-10-30:
+// "there's no face diagram she can mark up, only the tattoo body map"). Tap the face to drop a
+// numbered mark, pick what it is (breakout, pigmentation, treated area…), add a word if she wants.
+// No new synced key: the marks ride on THIS visit's note draft (sc_note_drafts) and are copied onto
+// the visit's session record when the note is saved (sc_session_summaries, merged by entry), so each
+// visit keeps its own chart. A plain "Face chart:" line is also written into the note's first section,
+// so the chart reads in every export, in the summary composer and on a device still on an older build.
+const _FC_PROFS={esty:1,brow:1,pmu:1,makeup:1,lash:1,wax:1};
+const _FC_TYPES=[
+  {id:'acne',label:'Breakout',col:'#d9485a'},{id:'pigment',label:'Pigmentation',col:'#9a6a3a'},
+  {id:'redness',label:'Redness',col:'#e07a5f'},{id:'dry',label:'Dry / flaky',col:'#c99a2e'},
+  {id:'congest',label:'Congestion',col:'#3d9a96'},{id:'lines',label:'Fine lines',col:'#8366c9'},
+  {id:'scar',label:'Scarring',col:'#6f7480'},{id:'milia',label:'Milia',col:'#4a86d0'},
+  {id:'treat',label:'Treated area',col:'#3c9457'},{id:'avoid',label:'Avoid',col:'#b03a2e'},
+  {id:'other',label:'Other',col:'#b2508f'}];
+const _FC_LINE='Face chart: ';
+let _fcClientId='';
+let _fcDraft={marks:[],type:'acne'};
+function _fcType(id){return _FC_TYPES.find(t=>t.id===id)||_FC_TYPES[_FC_TYPES.length-1];}
+function _faceChartOf(id){try{const d=providerNoteDrafts[id];const fc=d&&d.faceChart;return (fc&&Array.isArray(fc.marks))?fc:null;}catch(e){return null;}}
+function _faceChartOn(id){
+  if(activeNoteTemplate==='tattooRecord')return false;
+  const fc=_faceChartOf(id);if(fc&&fc.marks.length)return true;   // a chart she already made always shows
+  try{return (selectedProfessions||[]).some(p=>_FC_PROFS[p]);}catch(e){return false;}
+}
+// Which part of the face a tap is on. x/y are 0..1 across the drawing; the client faces her, so the
+// left of the picture is the client's RIGHT.
+function _faceArea(nx,ny){
+  const LR=nx<0.5?'Right':'Left';const mid=Math.abs(nx-0.5);
+  if(ny>=0.86)return 'Neck';
+  if(mid>0.36&&ny>0.36&&ny<0.58)return LR+' ear';
+  if(ny<0.13)return 'Hairline';
+  if(ny<0.30)return mid>0.25?LR+' temple':'Forehead';
+  if(ny<0.36)return mid<0.08?'Between brows':LR+' brow';
+  if(ny<0.47)return mid<0.07?'Nose':(mid>0.30?LR+' temple':LR+' eye area');
+  if(ny<0.61)return mid<0.09?'Nose':LR+' cheek';
+  if(ny<0.68)return mid<0.14?'Upper lip':LR+' cheek';
+  if(ny<0.74)return mid<0.15?'Lips':LR+' jawline';
+  if(ny<0.86)return mid<0.17?'Chin':LR+' jawline';
+  return 'Neck';
+}
+function _faceSVG(marks,opts){
+  opts=opts||{};const W=200,H=260;
+  const pins=(marks||[]).map((m,i)=>{const t=_fcType(m.type);const cx=(m.x*W).toFixed(1),cy=(m.y*H).toFixed(1);
+    return `<circle cx="${cx}" cy="${cy}" r="8.5" fill="${t.col}" stroke="#fff" stroke-width="1.6"/><text x="${cx}" y="${(m.y*H+3.6).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" font-family="system-ui,sans-serif" pointer-events="none">${i+1}</text>`;}).join('');
+  return `<svg ${opts.interactive?'id="fc-svg" onclick="_faceChartPlace(event)" style="width:100%;height:100%;touch-action:manipulation;display:block;cursor:crosshair;"':'style="width:100%;height:100%;display:block;"'} viewBox="0 0 ${W} ${H}" role="img" aria-label="Face chart">
+    <g style="fill:var(--p-surf);stroke:var(--p-mut);" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M78 214 L76 252 M122 214 L124 252" fill="none"/>
+      <ellipse cx="27" cy="122" rx="9" ry="20"/><ellipse cx="173" cy="122" rx="9" ry="20"/>
+      <ellipse cx="100" cy="118" rx="72" ry="98"/>
+    </g>
+    <g style="fill:none;stroke:var(--p-mut);" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" opacity=".85">
+      <path d="M38 64 Q100 18 162 64"/>
+      <path d="M55 86 Q70 79 88 85 M112 85 Q130 79 145 86"/>
+      <path d="M57 104 Q71 96 85 104 Q71 111 57 104 Z M115 104 Q129 96 143 104 Q129 111 115 104 Z"/>
+      <path d="M100 100 L95 140 Q100 146 105 140"/><path d="M88 142 Q93 147 96 144 M104 144 Q107 147 112 142"/>
+      <path d="M80 170 Q90 164 100 167 Q110 164 120 170 Q110 182 100 182 Q90 182 80 170 Z M80 170 Q100 174 120 170"/>
+    </g>
+    <rect x="0" y="0" width="${W}" height="${H}" fill="transparent"/>${pins}
+  </svg>`;
+}
+function _faceChartPlace(ev){
+  const svg=document.getElementById('fc-svg');if(!svg)return;
+  const r=svg.getBoundingClientRect();if(!r.width||!r.height)return;
+  const t=(ev.touches&&ev.touches[0])||ev;
+  // The drawing keeps its shape inside the box, so measure against the drawn area, not the box.
+  const W=200,H=260,s=Math.min(r.width/W,r.height/H),ox=(r.width-W*s)/2,oy=(r.height-H*s)/2;
+  const nx=((t.clientX-r.left)-ox)/(W*s),ny=((t.clientY-r.top)-oy)/(H*s);
+  if(nx<0||nx>1||ny<0||ny>1)return;
+  if(_fcDraft.marks.length>=40){if(typeof proToast==='function')proToast('That is the most marks one chart can hold');return;}
+  _fcDraft.marks.push({x:+nx.toFixed(4),y:+ny.toFixed(4),type:_fcDraft.type,area:_faceArea(nx,ny),note:''});
+  _fcRender();
+}
+function _fcSetType(t){_fcDraft.type=t;_fcRender();}
+function _fcMarkType(i,t){const m=_fcDraft.marks[i];if(m){m.type=t;_fcRender();}}
+function _fcRemove(i){_fcDraft.marks.splice(i,1);_fcRender();}
+function _fcClearAll(){_fcDraft.marks=[];_fcRender();}
+function _fcLastVisit(id){
+  try{const h=(sessionSummaries[id]||[]).find(s=>s&&s.faceChart&&Array.isArray(s.faceChart.marks)&&s.faceChart.marks.length);return h?h.faceChart:null;}catch(e){return null;}
+}
+function _fcCopyLast(){const last=_fcLastVisit(_fcClientId);if(!last)return;_fcDraft.marks=last.marks.map(m=>({x:m.x,y:m.y,type:m.type,area:m.area||'',note:m.note||''}));_fcRender();}
+function _openFaceChart(id){
+  try{_snapshotWriteNoteNow(id);}catch(e){}   // keep what she typed before the chart opens
+  const ex=_faceChartOf(id);
+  _fcClientId=id;_fcDraft={marks:ex?ex.marks.map(m=>Object.assign({},m)):[],type:'acne'};
+  const ov=document.createElement('div');ov.id='face-chart-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:16px;padding:16px;width:380px;max-width:100%;max-height:94vh;overflow:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Face chart</div><button aria-label="Close" onclick="document.getElementById('face-chart-ov').remove()" style="border:none;background:none;color:var(--p-mut);font-size:22px;cursor:pointer;">✕</button></div>
+    <div id="fc-body"></div></div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _fcRender();
+}
+function _fcRender(){
+  const wrap=document.getElementById('fc-body');if(!wrap)return;const d=_fcDraft;
+  const chip=t=>`<button type="button" onclick="_fcSetType('${t.id}')" style="border:1.5px solid ${d.type===t.id?t.col:'var(--p-line-ctl)'};background:${d.type===t.id?'var(--surf2)':'none'};color:var(--p-ink);border-radius:999px;padding:5px 10px;font-size:14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:${t.col};"></span>${t.label}</button>`;
+  const last=!d.marks.length&&_fcLastVisit(_fcClientId);
+  wrap.innerHTML=`
+    <div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">Pick what you are marking, then tap the face</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">${_FC_TYPES.map(chip).join('')}</div>
+    <div style="background:var(--p-bg2);border:1px solid var(--p-line);border-radius:12px;height:320px;padding:6px;box-sizing:border-box;">${_faceSVG(d.marks,{interactive:true})}</div>
+    ${last?`<button type="button" onclick="_fcCopyLast()" class="btng" style="width:100%;margin-top:8px;"><i class="ti ti-copy"></i> Start from last visit's chart</button>`:''}
+    <div id="fc-list" style="margin:10px 0;">${d.marks.map((m,i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+      <span style="width:22px;height:22px;border-radius:50%;background:${_fcType(m.type).col};color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;">
+        <div style="display:flex;gap:4px;"><input class="fi" aria-label="Area" value="${_fileEsc(m.area||'')}" oninput="if(_fcDraft.marks[${i}])_fcDraft.marks[${i}].area=this.value" style="flex:1;min-width:0;font-size:16px;padding:6px 8px;">
+        <select aria-label="Type" class="fi" onchange="_fcMarkType(${i},this.value)" style="flex:0 0 auto;width:auto;font-size:14px;padding:6px;">${_FC_TYPES.map(t=>`<option value="${t.id}"${t.id===m.type?' selected':''}>${t.label}</option>`).join('')}</select></div>
+        <input class="fi" aria-label="Note" value="${_fileEsc(m.note||'')}" placeholder="Note (optional)" oninput="if(_fcDraft.marks[${i}])_fcDraft.marks[${i}].note=this.value" style="font-size:16px;padding:6px 8px;">
+      </div>
+      <button type="button" aria-label="Remove mark ${i+1}" onclick="_fcRemove(${i})" style="border:none;background:none;color:var(--p-mut);font-size:18px;cursor:pointer;flex-shrink:0;">✕</button>
+    </div>`).join('')}</div>
+    <div style="display:flex;gap:8px;">
+      ${d.marks.length?`<button onclick="_fcClearAll()" class="btng" style="flex:0 0 auto;">Clear all</button>`:''}
+      <button class="btnp" style="flex:1;border-radius:8px;" onclick="_faceChartSave()"><i class="ti ti-check"></i> Save chart</button>
+    </div>`;
+}
+// One line per chart, in words: "Face chart: 1. Left cheek, Breakout (healing); 2. Forehead, Treated area".
+function _faceChartText(marks){
+  if(!marks||!marks.length)return '';
+  return _FC_LINE+marks.map((m,i)=>(i+1)+'. '+String(m.area||'').trim()+(m.area?', ':'')+_fcType(m.type).label+(String(m.note||'').trim()?' ('+String(m.note).trim()+')':'')).join('; ');
+}
+function _faceChartSave(){
+  const id=_fcClientId;if(!id)return;
+  try{_snapshotWriteNoteNow(id);}catch(e){}
+  const marks=_fcDraft.marks.map(m=>({x:m.x,y:m.y,type:m.type,area:String(m.area||'').slice(0,60),note:String(m.note||'').slice(0,200)}));
+  const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;const first=t.sections&&t.sections[0];
+  // The chart's line goes at the top of the first section, replacing the one written last time.
+  try{const el=first&&document.getElementById('wn-sec-'+first.id);
+    if(el){const cleaned=(el.value||'').split('\n').filter(l=>l.indexOf(_FC_LINE)!==0).join('\n').trim();
+      const line=_faceChartText(marks);el.value=(line+(line&&cleaned?'\n':'')+cleaned).trim();}
+  }catch(e){}
+  try{_snapshotWriteNoteNow(id);}catch(e){}
+  const d=providerNoteDrafts[id];
+  if(d){d.faceChart={marks:marks,ts:Date.now()};d.ts=Date.now();if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}
+  const fld=document.getElementById('fc-field');if(fld)fld.outerHTML=_faceChartField(id);
+  const ov=document.getElementById('face-chart-ov');if(ov)ov.remove();
+  if(typeof proToast==='function')proToast(marks.length?'Face chart saved · '+marks.length+' mark'+(marks.length===1?'':'s'):'Face chart cleared');
+}
+function _faceChartField(id){
+  if(!_faceChartOn(id))return '';
+  const fc=_faceChartOf(id);const n=fc?fc.marks.length:0;
+  return `<div id="fc-field" style="padding:0 16px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <button type="button" onclick="_openFaceChart('${_jsAttr(id)}')" style="background:var(--p-purple-bg);border:1px solid var(--p-purple-line);color:var(--p-purple);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-mood-smile"></i> ${n?'Edit face chart':'Face chart'}</button>
+    ${n?`<div style="width:34px;height:44px;background:var(--p-bg2);border:1px solid var(--p-line);border-radius:6px;flex-shrink:0;overflow:hidden;">${_faceSVG(fc.marks)}</div><span style="font-size:16px;color:var(--p-mut);">${n} mark${n===1?'':'s'}</span>`:'<span style="font-size:14px;color:var(--p-mut);">Tap to mark areas on a face</span>'}
+  </div>`;
+}
+// The saved visit's chart, on its session record.
+function _faceChartBlock(s){
+  const fc=s&&s.faceChart;if(!fc||!Array.isArray(fc.marks)||!fc.marks.length)return '';
+  return `<div class="sh"><h2>Face chart</h2></div>
+  <div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;">
+    <div style="width:130px;height:170px;flex-shrink:0;">${_faceSVG(fc.marks)}</div>
+    <div style="flex:1;min-width:150px;">${fc.marks.map((m,i)=>`<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;"><span style="width:20px;height:20px;border-radius:50%;background:${_fcType(m.type).col};color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span><span style="font-size:16px;color:var(--p-ink);line-height:1.4;">${_fileEsc(m.area||'')}${m.area?' · ':''}${_fileEsc(_fcType(m.type).label)}${m.note?`<span style="color:var(--p-mut);"> · ${_fileEsc(m.note)}</span>`:''}</span></div>`).join('')}</div>
   </div>`;
 }
 
@@ -13574,13 +13734,16 @@ function _commitWriteNote(id){
   const dateVal=(dateEl&&dateEl.value)||_isoToday();
   const sections={};
   t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);sections[s.id]=el?el.value:'';});
+  const _fc=_faceChartOf(id);
   providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate,ts:Date.now(),committed:true,committedAt:Date.now()};
+  if(_fc)providerNoteDrafts[id].faceChart=_fc;
   saveProviderNoteDrafts();
   // Reflect this note in the client's real session history too, so it shows
   // under Previous sessions and stays sorted correctly by the date chosen.
   if(!sessionSummaries[id])sessionSummaries[id]=[];
   const hist=sessionSummaries[id];
-  const primaryText=t.sections.map(s=>sections[s.id]).find(v=>v&&v.trim())||'';
+  // The face chart's own line is for her record; it is not the client-facing note.
+  const primaryText=t.sections.map(s=>String(sections[s.id]||'').split('\n').filter(l=>l.indexOf(_FC_LINE)!==0).join('\n').trim()).find(v=>v)||'';
   const existing=hist.find(h=>h._draftDate===dateVal);
   const _wasNew=!existing;
   // Keep the raw structured note on `providerNotes` (feeds the "Provider notes" tab of the session
@@ -13588,6 +13751,7 @@ function _commitWriteNote(id){
   // card, two tabs) instead of two separate cards. Don't overwrite `note` once a client summary has
   // been saved onto this entry — that field holds the client-facing version.
   const entry={date:_fmtNoteDate(dateVal),treatment:_sessionNameFor(existing,id,dateVal),homecare:existing?existing.homecare:[],products:existing?existing.products:[],ts:(dateVal===(typeof _isoToday==='function'?_isoToday():'')?Date.now():new Date(dateVal+'T12:00:00').getTime()),_ts:Date.now(),_draftDate:dateVal,providerNotes:(typeof _providerNotesSnapshot==='function'?_providerNotesSnapshot(id):(existing&&existing.providerNotes)||{sections:[]})};
+  if(_fc){if(_fc.marks.length)entry.faceChart={marks:_fc.marks,ts:_fc.ts||Date.now()};else if(existing)delete existing.faceChart;}
   if(existing){Object.assign(existing,entry);if(!existing._clientSaved)existing.note=primaryText;}else{entry.note=primaryText;hist.unshift(entry);}
   hist.sort((a,b)=>(b.ts||0)-(a.ts||0));
   try{persistSessionSummaries();}catch(e){}  // was missing, treatment-note summaries were kept only in memory and lost on reload
@@ -14871,8 +15035,9 @@ function renderSessionDetail(arg){
   const pn=s.providerNotes||{sections:[]};
   const sectionBlock=(label,body,accent)=>`<div class="sh"><h2>${label}</h2></div><div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:13px 15px;font-size:16px;color:var(--p-ink);line-height:1.7;${accent?`border-left:3px solid ${accent};`:''}">${body}</div>`;
   // ── Provider-notes panel ──
-  const hasProvider=(pn.sections&&pn.sections.length)||s.obs;
+  const hasProvider=(pn.sections&&pn.sections.length)||s.obs||(s.faceChart&&s.faceChart.marks&&s.faceChart.marks.length);
   const providerPanel=`
+  ${_faceChartBlock(s)}
   ${(pn.sections&&pn.sections.length)?`
   <div class="sh"><h2>Provider treatment notes${pn.format?' · '+_fileEsc(pn.format):''}</h2></div>
   <div style="margin:0 16px 12px;">
@@ -29967,7 +30132,8 @@ function renderExportCenter(){
   ${card('ti-list-details','var(--p-purple-bg)','var(--p-purple)','Services &amp; Prices','Your full service menu',"_exportServicesCSV()")}
   ${card('ti-cash','var(--p-surf2)','var(--p-green)','Sales &amp; Payments','Every invoice &amp; payment, with tax','_exportPaymentsCSV()')}
   ${card('ti-users','var(--p-blue-bg)','var(--p-blue)','Client List','Contact info &amp; visit history','_exportClientsCSV()')}
-  ${card('ti-database-export','var(--accent-tint)','var(--accent)','Everything (Full Backup)','Complete JSON copy of all your data','_exportAllData()')}
+  ${card('ti-database-export','var(--accent-tint)','var(--accent)','Everything (Full Backup)','Complete copy of your clients, charts and notes (photos are their own download, below)','_exportAllData()')}
+  ${card('ti-photo','var(--p-purple-bg)','var(--p-purple)','All Photos','Every client photo in one .zip file, a folder for each client','_exportAllPhotos()')}
   <div style="height:20px;"></div>`;
 }
 // ── Team access (shared-login guidance for small teams) ──
@@ -30023,6 +30189,7 @@ function renderDeleteAccount(){
     <div style="background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:12px 14px;margin-bottom:16px;display:flex;gap:10px;align-items:center;">
       <i class="ti ti-download" aria-hidden="true" style="font-size:18px;color:var(--p-blue);flex-shrink:0;"></i>
       <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:#bcdcff;">Save a copy first?</div><div style="font-size:14px;color:#8fb4d8;line-height:1.5;">Download a full backup of your data before deleting. Strongly recommended.</div></div>
+      <button onclick="_exportAllPhotos()" style="background:var(--p-blue-bg);border:1px solid var(--p-blue-line);color:#bcdcff;border-radius:8px;padding:7px 11px;font-size:16px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:inherit;">Photos</button>
       <button onclick="_exportAllData()" style="background:var(--p-blue-bg);border:1px solid var(--p-blue-line);color:#bcdcff;border-radius:8px;padding:7px 11px;font-size:16px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:inherit;">Export</button>
     </div>
     <div style="font-size:16px;color:var(--p-mut);margin-bottom:6px;">Type <b style="color:var(--p-red);">DELETE</b> to confirm.</div>
@@ -30157,6 +30324,106 @@ try{if(_isNativeApp()){
     return _ac.apply(this,arguments);};
   if(_isAndroidApp()&&!_nativeFiles())window.print=function(){_nativeNoDownload();};
 }}catch(e){}
+// ── All photos, in one download ── Photos are backed up to the account one at a time
+// (_backupPhotosToServer), but the only way to get them OUT was "Save photo", one by one. This builds
+// a .zip with every photo on every client: what this device holds, plus anything the account has that
+// this device never downloaded (sc_photo_index -> /api/guide-file, her own files only). One folder per
+// client. Store-only zip (photos are already compressed), written as Blob parts so a big library is not
+// copied into one string. Nothing is changed or removed.
+let _zipCrcT=null;
+function _zipCrc(u8){
+  if(!_zipCrcT){_zipCrcT=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);_zipCrcT[n]=c>>>0;}}
+  let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=_zipCrcT[(c^u8[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;
+}
+function _zipBlob(files){
+  const enc=new TextEncoder();const parts=[];const central=[];let off=0;
+  const dosT=d=>((d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1))&0xFFFF;
+  const dosD=d=>((Math.max(0,d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate())&0xFFFF;
+  files.forEach(f=>{
+    const name=enc.encode(f.name);const data=f.bytes;const crc=_zipCrc(data);const d=f.date instanceof Date&&!isNaN(f.date)?f.date:new Date();
+    const h=new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(8,0,true);
+    h.setUint16(10,dosT(d),true);h.setUint16(12,dosD(d),true);h.setUint32(14,crc,true);
+    h.setUint32(18,data.length,true);h.setUint32(22,data.length,true);h.setUint16(26,name.length,true);h.setUint16(28,0,true);
+    parts.push(h.buffer,name,data);
+    const c=new DataView(new ArrayBuffer(46));
+    c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint16(10,0,true);
+    c.setUint16(12,dosT(d),true);c.setUint16(14,dosD(d),true);c.setUint32(16,crc,true);c.setUint32(20,data.length,true);c.setUint32(24,data.length,true);
+    c.setUint16(28,name.length,true);c.setUint16(30,0,true);c.setUint16(32,0,true);c.setUint16(34,0,true);c.setUint16(36,0,true);c.setUint32(38,0,true);c.setUint32(42,off,true);
+    central.push(c.buffer,name);
+    off+=30+name.length+data.length;
+  });
+  let csize=0;central.forEach(b=>{csize+=b.byteLength;});
+  const e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,csize,true);e.setUint32(16,off,true);
+  return new Blob(parts.concat(central,[e.buffer]),{type:'application/zip'});
+}
+function _dataURLBytes(u){
+  const s=String(u||'');const i=s.indexOf(',');if(i<0||!/^data:/i.test(s))return null;
+  const mime=(/^data:([^;,]+)/i.exec(s)||[])[1]||'image/jpeg';
+  try{const bin=atob(s.slice(i+1));const u8=new Uint8Array(bin.length);for(let k=0;k<bin.length;k++)u8[k]=bin.charCodeAt(k);return {mime:mime,bytes:u8};}catch(e){return null;}
+}
+function _photoExt(mime){mime=String(mime||'').toLowerCase();return mime.indexOf('png')>=0?'png':mime.indexOf('webp')>=0?'webp':mime.indexOf('heic')>=0?'heic':mime.indexOf('gif')>=0?'gif':mime.indexOf('mp4')>=0?'mp4':mime.indexOf('quicktime')>=0?'mov':'jpg';}
+function _zipSafe(s,max){return String(s==null?'':s).replace(/[\\\/:*?"<>|\x00-\x1f]+/g,'-').replace(/\s+/g,' ').trim().slice(0,max||60)||'';}
+let _photoExportRunning=false;
+async function _exportAllPhotos(){
+  if(_photoExportRunning){if(typeof proToast==='function')proToast('Your photos are still being gathered…');return;}
+  if(_nativeNoDownload())return;
+  _photoExportRunning=true;
+  try{
+    // Every photo, once, by client: this device's copies first, then the account's index for the rest.
+    const gone=(typeof _prDismissed==='function')?_prDismissed():new Set();
+    const removed=(typeof _deletedClientIds!=='undefined'&&_deletedClientIds)||{};
+    const seen=new Set();const jobs=[];
+    Object.keys(capturedPhotos||{}).forEach(function(cid){
+      if(cid==='__recovered__'||removed[cid])return;
+      (capturedPhotos[cid]||[]).forEach(function(p){
+        if(!p)return;const pid=p.pid||'';if(pid&&(seen.has(pid)||gone.has(pid)))return;if(pid)seen.add(pid);
+        jobs.push({cid:cid,ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',url:p.url||'',pid:pid});
+      });
+    });
+    let idx={};try{const raw=_lsGet('sc_photo_index');if(raw)idx=JSON.parse(raw)||{};}catch(e){}
+    Object.keys(idx||{}).forEach(function(cid){
+      if(cid==='__recovered__'||removed[cid])return;
+      (Array.isArray(idx[cid])?idx[cid]:[]).forEach(function(m){
+        if(!m||!m.pid||seen.has(m.pid)||gone.has(m.pid))return;seen.add(m.pid);
+        jobs.push({cid:cid,ts:m.ts||0,phase:m.phase||'',angle:m.angle||'',url:'',pid:m.pid});
+      });
+    });
+    if(!jobs.length){if(typeof proToast==='function')proToast('No photos to save yet');return;}
+    if(typeof proToast==='function')proToast('Gathering '+jobs.length+' photo'+(jobs.length===1?'':'s')+'…',0);
+    const files=[];const names=new Set();let missing=0,done=0;
+    const one=async function(j){
+      let got=/^data:/i.test(j.url)?_dataURLBytes(j.url):null;
+      if(!got&&j.pid){let f=null;try{f=await _getGuideFile(j.pid);}catch(e){}if(f&&f.data)got=_dataURLBytes(f.data);}
+      done++;
+      if(done%10===0&&typeof proToast==='function')proToast('Gathering photos… '+done+' of '+jobs.length,0);
+      if(!got){missing++;return;}
+      const c=CL[j.cid];const folder=_zipSafe(c&&c.name,50)||'Client';
+      const d=new Date(Number(j.ts)||Date.now());
+      const day=isNaN(d)?'undated':d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      const base=[day,_zipSafe(j.phase,20),_zipSafe(j.angle,20)].filter(Boolean).join(' ');
+      let name=folder+'/'+base+'.'+_photoExt(got.mime);let n=2;
+      while(names.has(name.toLowerCase()))name=folder+'/'+base+' ('+(n++)+').'+_photoExt(got.mime);
+      names.add(name.toLowerCase());
+      files.push({name:name,bytes:got.bytes,date:d});
+    };
+    // A few at a time from the account; this device's own copies need no network.
+    for(let i=0;i<jobs.length;i+=4){await Promise.all(jobs.slice(i,i+4).map(one));}
+    if(!files.length){if(typeof proToast==='function')proToast('Could not reach your photos. Check your connection and try again.',0,'error');return;}
+    files.sort(function(a,b){return a.name<b.name?-1:a.name>b.name?1:0;});
+    const stamp=new Date().toISOString().slice(0,10);
+    const blob=_zipBlob(files);const fname='slickchart-photos-'+stamp+'.zip';
+    if(_nativeFiles()){await _nativeSaveBlob(blob,fname);}
+    else{
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fname;
+      (document.querySelector('.shell')||document.body).appendChild(a);a.click();
+      setTimeout(function(){try{a.remove();}catch(e){}try{URL.revokeObjectURL(url);}catch(e){}},60000);
+    }
+    if(typeof proToast==='function')proToast('Saved '+files.length+' photo'+(files.length===1?'':'s')+(missing?(' · '+missing+' could not be reached, try again when online'):' ✓'),missing?0:undefined);
+  }catch(e){if(typeof proToast==='function')proToast('Could not build the photo download. Please try again.',0,'error');}
+  finally{_photoExportRunning=false;}
+}
 // ── Self-serve full data export (privacy / portability) ──
 // Produces one JSON file containing every piece of data the app stores for this account.
 // This is the same set the cloud sync backs up: all sc_* localStorage keys, minus the three
@@ -30185,7 +30452,7 @@ function _exportAllData(){
     _export:'SlickChart account data',
     _generated:new Date().toISOString(),
     _account:(function(){try{return localStorage.getItem('sc_login_email')||'(local account)';}catch(e){return '(local account)';}})(),
-    _note:'This is a complete copy of the data SlickChart stores for your account, including your client list, charts and notes. Keep it somewhere safe. You can keep working normally, exporting does not change or remove anything. Session photos are not included \u2014 they stay on this device.',
+    _note:'This is a complete copy of the data SlickChart stores for your account, including your client list, charts and notes. Keep it somewhere safe. You can keep working normally, exporting does not change or remove anything. Photos are backed up to your account too, but they are not inside this file. To download every photo at once, use All Photos on the Download your data screen.',
     _keys:count,
     data
   };
@@ -31625,7 +31892,7 @@ function renderMore(){
   ${_moreRow('ti-help-circle','var(--p-blue-bg)','var(--p-blue)','Help','Search how-tos &amp; troubleshooting','help')}
   <div class="card" onclick="openStoragePanel()"><div class="row"><div style="width:44px;height:44px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-database" style="font-size:22px;color:var(--p-blue);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Storage &amp; backups</div><div style="font-size:16px;color:var(--p-mut);">Free up space, or put back a lost course</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>
   <div class="card" onclick="_previewClientApp()"><div class="row"><div style="width:44px;height:44px;border-radius:12px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile-check" style="font-size:22px;color:var(--accent-strong);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Preview what your client sees</div><div style="font-size:16px;color:var(--p-mut);">Opens a sample of the client app</div></div><i aria-hidden="true" class="ti ti-external-link" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>
-  ${_moreRow('ti-download','var(--p-surf2)','var(--p-green)','Download your data','Services, sales &amp; clients as a spreadsheet','export-data')}
+  ${_moreRow('ti-download','var(--p-surf2)','var(--p-green)','Download your data','Spreadsheets, a full backup &amp; all your photos','export-data')}
   <div class="card" onclick="replayOnboarding()"><div class="row"><div style="width:44px;height:44px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-refresh" style="font-size:22px;color:var(--p-green);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Setup walkthrough</div><div style="font-size:16px;color:var(--p-mut);">Replay the quick first-run setup</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>
   ${_moreRow('ti-compass','var(--accent-tint)','var(--accent-strong)','Full walkthrough','A guided tour of everything the app can do','walkthrough')}
   <div class="sh"><h2>Feedback</h2></div>
