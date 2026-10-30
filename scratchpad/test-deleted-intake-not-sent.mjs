@@ -28,6 +28,16 @@ const r = await P.p.evaluate(async () => {
   // the package itself: assigns the next intake, never the deleted one
   try { await sendFirstVisitPackage('c3', {}); } catch (e) { out.err = String(e); }
   out.c3 = (CL.c3.pendingForms || []).map(p => p.formId);
+  // Maddie, round 2: she also deleted the generic intake, and the fallback picked the SPRAY TAN intake
+  deleteFormCard('intake'); deleteFormCard('wax-consent');
+  out.round2 = { intake: _ncIntakeFormId(), consent: _ncConsentId() };
+  // every intake of hers deleted: nothing from another profession, ever
+  deleteFormCard('ec-intake');
+  out.none = _ncIntakeFormId();
+  // a custom intake she made herself is used
+  formTmpls['my-facial-intake'] = { name: 'Facial intake', qs: [], _ts: Date.now() + 5000 };
+  customForms.push({ id: 'my-facial-intake', name: 'Facial intake' });
+  out.custom = _ncIntakeFormId();
   // a deleted form no client has open asks nothing more
   asks.length = 0; deleteFormCard('peel'); out.peelAsks = asks.length;
   return out;
@@ -40,5 +50,9 @@ T.check('suggested forms skip the deleted intake', !r.suggested.includes('wax-in
 T.check('delete offers to take it back from the 2 clients who have it open', r.asks.length === 2 && /2 clients/.test(r.asks[1]), JSON.stringify(r.asks));
 T.check('take back removes only that form, from both, and records when', JSON.stringify(r.c1) === '[]' && JSON.stringify(r.c2) === '["intake"]' && r.w1 > 1000 && r.w2 > 1200, JSON.stringify(r));
 T.check('deleting a form nobody has open asks nothing extra', r.peelAsks === 1, String(r.peelAsks));
+T.check('round 2: generic intake deleted too -> her Esthetician Collection intake, never spray tan', r.round2.intake === 'ec-intake', JSON.stringify(r.round2));
+T.check('round 2: consent stays in her professions', r.round2.consent && !/spraytan|tattoo|hair|nail|equine|coach/.test(r.round2.consent), JSON.stringify(r.round2));
+T.check('every intake of hers deleted: none from another profession', r.none === null, String(r.none));
+T.check('her own custom intake is picked when the built-in ones are deleted', r.custom === 'my-facial-intake', String(r.custom));
 T.check('no page errors', !P.errs.length, P.errs.join(' | '));
 await b.close(); process.exit(T.done() ? 1 : 0);

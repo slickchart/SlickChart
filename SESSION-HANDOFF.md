@@ -8563,3 +8563,21 @@ stated. Not yet known: her profession order (the founder Recover clients screen 
   deletes one gets the next. Not changed: the first profession still decides the default intake.
 - Test: `scratchpad/test-deleted-intake-not-sent.mjs` 9/9 Chromium; `sweep3-takeback.mjs` 7/7.
   WebKit was not installed in this container, so not run in Safari (pure form-picking logic, no storage).
+
+### 2026-10-30 late: build 2026-10-30e, Maddie round 2 (preview)
+
+Maddie Campbell replied by email after 2026-10-30d went live. **Her observations (§1b):** "Now it's
+showing spray tan instead"; she has not finished setting up forms; asks to control the "invite client to
+app" message; asks to not send the check-in, or fully customize it ("I don't change bed heat or music").
+
+- **Spray tan.** With the wax intake AND the generic intake deleted, `_ncIntakeFormId`'s last fallback
+  took the first intake in `formTmpls`, which is `spraytan-intake` (every profession's forms are in the
+  object). Fallbacks now only reach her professions' forms (`_ncProfIds`, `_NC_COLL` maps each to its
+  collection: esty/wax -> ec-intake, ...) or a form she made; same for the consent. None left -> null
+  (the package says to add an intake). Test: `test-deleted-intake-not-sent.mjs` 13/13.
+- **Invite message.** The invite sheet has "Use this for every client": her edit becomes
+  `app_invite` / `app_invite_forms` in `sc_msg_templates` with {client}/{business}/{when}; the link is
+  always appended. "Back to the original" tombstones it. Test: `test-maddie-invite-checkin.mjs` 6/6.
+- **Check-in.** Forms -> Pre-visit check-in has a "Comfort questions" switch (chairComfortOn), which the
+  client app already honours by dropping the whole comfort step; "Send check-in automatically" already
+  turns auto-send off.

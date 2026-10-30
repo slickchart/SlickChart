@@ -378,6 +378,10 @@ saved anywhere", not "does this always call that".
 | `_initDeepLinks` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_initDeepLinks` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_inkScanField` | `/api/ai` | via `_aiComplete` |
+| `_inviteResetDefault` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_inviteResetDefault` | `/api/logout` | via `_doLogout` |
+| `_inviteResetDefault` | `/api/native-push` | via `_doLogout` |
+| `_inviteResetDefault` | `/api/provider-push` | via `_doLogout` |
 | `_libSafeToPersist` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_libSafeToPersist` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_libSafeToPersist` | `/api/square/orders` | via `_autoHomecareFromPurchases` |

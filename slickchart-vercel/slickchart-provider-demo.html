@@ -571,7 +571,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-30d';
+const APP_BUILD='2026-10-30e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -20444,6 +20444,18 @@ function seedCheckinCfgOnce(){
 // that could not be typed into at all (Jessica, Sep 22: "it just says new question and will not allow
 // me to edit what it says"). Every check-in option is now a text box; this lands her in the new one.
 function _ciFocusLast(kind){try{const els=document.querySelectorAll('input[data-ci-edit="'+kind+'"]');const el=els[els.length-1];if(el){el.focus();el.select();try{el.scrollIntoView({block:'center'});}catch(e){}}}catch(e){}}
+// Maddie (Feedback, 2026-10-30): "I don't change bed heat or music for clients but it would be super
+// helpful to have it be a short form". The client app already drops the whole comfort step (drinks,
+// snacks, music, heat, covering) when chairComfortOn is false; this makes that one switch, and turning
+// it back on restores any list she emptied.
+function _ciToggleComfort(){
+  if(checkinCfg.chairComfortOn!==false){checkinCfg.chairComfortOn=false;}
+  else{
+    checkinCfg.chairComfortOn=true;
+    if(!checkinCfg.blankets||!checkinCfg.blankets.length)checkinCfg.blankets=[{id:'bl1',emoji:'🛏️',label:'Light blanket'},{id:'bl2',emoji:'🪨',label:'Weighted blanket'},{id:'bl3',emoji:'🚫',label:'No blanket'}];
+  }
+  renderCheckinSettings();
+}
 function renderCheckinSettings(){
   setNav('pro');
   document.getElementById('tt').textContent='Edit Check-in';
@@ -20483,6 +20495,14 @@ function renderCheckinSettings(){
     <div style="padding:8px 12px;border-top:1px solid var(--p-line2);"><button onclick="checkinCfg.skinQ.push({id:'sq'+Date.now(),label:'',on:true});renderCheckinSettings();_ciFocusLast('skinQ')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;">+ Add question</button></div>
   </div>
 
+  <div class="sh"><h2>Comfort questions</h2></div>
+  <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
+    <div style="padding:11px 12px;display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">Ask about drinks, snacks, music and comfort</div><div style="font-size:14px;color:var(--p-mut);margin-top:2px;line-height:1.4;">Turn off for a short check-in with only your questions</div></div>
+      ${togBtn(checkinCfg.chairComfortOn!==false,'_ciToggleComfort()','Toggle comfort questions')}
+    </div>
+  </div>
+  ${checkinCfg.chairComfortOn!==false?`
   <div class="sh"><h2>Drink options</h2></div>
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:10px 12px;">${checkinCfg.drinks.map((d,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--p-line2);">
@@ -20519,6 +20539,7 @@ function renderCheckinSettings(){
     </div>
   </div>
 
+`:''}
   ${checkinCfg.chairComfortOn!==false?`
   <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 4px;">
     <div>
@@ -23639,6 +23660,38 @@ function _promptReSignIn(){
   try{if(typeof proToast==='function')proToast('Your session ended on this device — please sign in again. Nothing is lost.',0);}catch(e){}
   setTimeout(function(){try{_doLogout();}catch(e){}},1500);
 }
+// Save the invite as she edited it, as her wording for every client: the link comes off (it is added
+// back per client) and this client's name, her business and the visit date become {client},
+// {business} and {when}, so the next client gets their own.
+function _inviteToTemplate(text,id){
+  const c=CL[id]||{};let t=String(text||'');
+  const link=_clientAppLink(id);if(link)t=t.split(link).join('');
+  const esc=function(x){return String(x).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');};
+  const first=String(c.name||'').split(' ')[0];
+  const biz=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)?bizInfo.name:'';
+  const when=(typeof _apptWhenForMsg==='function')?_apptWhenForMsg(id):'';
+  if(biz)t=t.split(biz).join('{business}');
+  if(when)t=t.split(when).join('{when}');
+  if(first)t=t.replace(new RegExp('\\b'+esc(first)+'\\b','g'),'{client}');
+  return t.replace(/\s+$/,'');
+}
+function _inviteSaveDefault(id,key){
+  const ta=document.getElementById('invite-msg-text');if(!ta)return;
+  const t=_inviteToTemplate(ta.value,id);if(!t.trim())return;
+  try{if(typeof _libUnforget==='function')_libUnforget('sc_msg_templates',key);}catch(e){}
+  const i=msgTemplates.findIndex(x=>x&&x.id===key);
+  if(i>=0)msgTemplates[i]={...msgTemplates[i],text:t,_ts:Date.now()};else msgTemplates.push({id:key,text:t,_ts:Date.now()});
+  saveMsgTemplates();
+  if(typeof proToast==='function')proToast('Saved. Every client gets this message now');
+  const b=document.getElementById('invite-save-default');if(b)b.innerHTML='<i class="ti ti-check" aria-hidden="true"></i> Saved for every client';
+}
+function _inviteResetDefault(id,key){
+  try{_libForget('sc_msg_templates',key);}catch(e){}
+  msgTemplates=(msgTemplates||[]).filter(x=>x&&x.id!==key);saveMsgTemplates();
+  const ov=document.getElementById('invite-sheet');if(ov)ov.remove();
+  if(typeof proToast==='function')proToast('Back to the original message');
+  inviteClientToApp(id);
+}
 function inviteClientToApp(id){
   const c=CL[id];if(!c)return;
   if(!c._token){
@@ -23668,7 +23721,12 @@ function inviteClientToApp(id){
   // forms) keeps the friendly general wording.
   const _hasPendingForms=Array.isArray(c.pendingForms)&&c.pendingForms.length>0;
   const _when=_hasPendingForms?_apptWhenForMsg(id):'';
-  const msg=_hasPendingForms
+  // Her own wording, when she has saved one with "Use this for every client" (Maddie, Feedback
+  // 2026-10-30: "Is there a way to control what is in the invite client to app message?"). It rides
+  // sc_msg_templates like her consult messages; the link is always added after it, so it can't be lost.
+  const _ivKey=_hasPendingForms?'app_invite_forms':'app_invite';
+  const _own=(typeof _msgIsEdited==='function'&&_msgIsEdited(_ivKey))?_msgText(_ivKey,id,{when:_when||'your visit'}):'';
+  const msg=_own?(_own.replace(/\s+$/,'')+'\n\n'+link):_hasPendingForms
     ? ('Hi '+first+'! Getting you ready for your visit'+(biz?(' at '+biz):'')+(_when?(' on '+_when):'')+' \u2014 tap to finish your 2 quick forms (intake + check-in). Looking forward to seeing you!\n\n'+link)
     : ('Hi '+first+'! '+who+' invited you to SlickChart'+(biz?(' \u2014 '+biz):'')+'. See your session summary, aftercare, forms, and rebook anytime:\n\n'+link);
   // The message below seeds an editable textarea; the actual sms/mailto bodies are built from its live
@@ -23680,7 +23738,8 @@ function inviteClientToApp(id){
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:38px;height:38px;border-radius:8px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile" style="font-size:18px;color:var(--p-purple);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Invite ${_fileEsc(first)} to the app</div><div style="font-size:16px;color:var(--p-mut);">Opens in any browser \u00b7 installable on their phone</div></div><button onclick="this.closest('#invite-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:22px;color:var(--p-mut);cursor:pointer;line-height:1;">\u2715</button></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;"><span style="font-size:14px;font-weight:600;color:var(--p-mut2);letter-spacing:.05em;text-transform:uppercase;">Your message</span><span style="font-size:14px;color:var(--p-mut);">Tap to edit</span></div>
     <textarea id="invite-msg-text" rows="6" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px 12px;margin-bottom:6px;font-size:16px;color:var(--p-ink);line-height:1.55;font-family:inherit;resize:vertical;outline:none;">${msg.replace(/</g,'&lt;')}</textarea>
-    <div style="font-size:14px;color:var(--p-mut);margin-bottom:12px;line-height:1.45;">Edit anything you like — just keep the link so ${_fileEsc(first)} can open their app.</div>
+    <div style="font-size:14px;color:var(--p-mut);margin-bottom:8px;line-height:1.45;">Edit anything you like — just keep the link so ${_fileEsc(first)} can open their app.</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;"><button id="invite-save-default" onclick="_inviteSaveDefault('${id}','${_ivKey}')" style="background:none;border:none;padding:4px 0;color:var(--accent-strong);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-device-floppy" aria-hidden="true"></i> Use this for every client</button>${_own?`<button onclick="_inviteResetDefault('${id}','${_ivKey}')" style="background:none;border:none;padding:4px 0;color:var(--p-mut);font-size:15px;cursor:pointer;font-family:inherit;">Back to the original</button>`:''}</div>
     <div style="display:flex;gap:7px;align-items:flex-start;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:8px;padding:8px 11px;margin-bottom:12px;"><i class="ti ti-info-circle" style="font-size:16px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:14px;color:#8fbce8;line-height:1.5;">On an iPhone, the link may not be tappable until they save your number to their Contacts — that’s Apple blocking links from unknown senders, not a broken link.</span></div>
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:8px;">
       <button onclick="_copyInviteMsgAndConfirm('${id}',this)" class="btnp" style="border-radius:8px;padding:11px;"><i class="ti ti-copy"></i> Copy message</button>
@@ -36336,7 +36395,8 @@ function _ncConsentId(){
   const cands=[special[id],'consent-'+id,id+'-consent'].filter(Boolean);
   for(const k of cands){if(_ncUsable(k))return k;}
   if(_ncUsable('consent-esty'))return 'consent-esty';
-  return Object.keys(formTmpls).find(k=>/consent|liability|waiver/i.test(k)&&_ncUsable(k))||null;
+  for(const p of _ncProfIds()){for(const k of [special[p],'consent-'+p,p+'-consent',_NC_COLL[p]&&(_NC_COLL[p]+'-general-consent')]){if(_ncUsable(k))return k;}}
+  return Object.keys(formTmpls).find(k=>/consent|liability|waiver/i.test(k)&&_ncUsable(k)&&_ncOwnForm(k))||null;
 }
 // A form she DELETED is only hidden: a bundled one stays in formTmpls so the merge can keep it, which
 // meant the first-visit package and "Add a client" went on sending it. Maddie (Feedback, 2026-10-30):
@@ -36344,10 +36404,20 @@ function _ncConsentId(){
 // delete it and I can't figure out where it is or how to get rid of it." Her first profession's intake
 // was the wax one, and deleting it changed nothing. Deleted now means never picked here.
 function _ncUsable(k){return !!(k&&formTmpls[k]&&!(typeof _formHidden==='function'&&_formHidden(k)));}
+// Her professions in her order, and the collection each one's forms come from. The library holds every
+// profession's built-in forms, so a fallback over ALL of it picked whatever came first in the object:
+// Maddie deleted the wax intake (and the generic one) and her facial clients got the SPRAY TAN intake,
+// a profession she does not have. A fallback may only reach forms that belong to her professions.
+var _NC_COLL={esty:'ec',wax:'ec',lash:'lb',brow:'lb',hair:'hs',barber:'hs',pmu:'pm',nail:'na',massage:'mt',headspa:'hd',tattoo:'tt'};
+function _ncProfIds(){const a=(Array.isArray(selectedProfessions)&&selectedProfessions.length?selectedProfessions:['esty']).slice();if(a.indexOf(_ncProf().id)<0)a.unshift(_ncProf().id);return a;}
+function _ncOwnForm(k){const ps=_ncProfIds();return ps.some(function(p){return k.indexOf(p+'-')===0||k.slice(-(p.length+1))==='-'+p||(_NC_COLL[p]&&k.indexOf(_NC_COLL[p]+'-')===0);});}
 function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';if(_ncUsable(fid))return fid;if(_ncUsable('intake'))return 'intake';
-  // Final fallback: any intake-style template that exists, so a first-visit package is never sent
-  // without an intake just because the generic "intake" was renamed or removed from the library.
-  const any=Object.keys(formTmpls).find(function(k){return (/(^|-)intake$/.test(k)||/intake/i.test((formTmpls[k]&&formTmpls[k].name)||''))&&_ncUsable(k);});
+  const ps=_ncProfIds();
+  for(const p of ps){if(_ncUsable(p+'-intake'))return p+'-intake';if(_NC_COLL[p]&&_ncUsable(_NC_COLL[p]+'-intake'))return _NC_COLL[p]+'-intake';}
+  // Final fallback: any intake of HER professions (or one she made herself), so a first-visit package is
+  // never sent without an intake just because the usual one was renamed or deleted.
+  const isCustom=function(k){return typeof customForms!=='undefined'&&Array.isArray(customForms)&&customForms.some(function(cf){return cf&&cf.id===k;});};
+  const any=Object.keys(formTmpls).find(function(k){return (/(^|-)intake$/.test(k)||/intake/i.test((formTmpls[k]&&formTmpls[k].name)||''))&&_ncUsable(k)&&(_ncOwnForm(k)||isCustom(k));});
   return any||null;}
 function _ncIntakeQs(){const fid=_ncIntakeFormId();const t=fid&&formTmpls[fid];if(!t)return [];return t.qs.filter(q=>{if(q.type==='Signature'||q.type==='Contraindications')return false;const l=(q.label||'').toLowerCase();if(/full name|^name$/.test(l))return false;if(/date of birth|^dob$/.test(l))return false;if(/phone|mobile number/.test(l))return false;if(/e-?mail/.test(l))return false;if(/how did you hear|referred by|referral|hear about us/.test(l))return false;return true;});}
 function _ncQHTML(q,i){
