@@ -145,8 +145,8 @@ She asked for this after an edit disturbed providers who were using the app. **D
    `workflow_dispatch` on that workflow is the "ship it now" button.
    **Since 2026-10-30 a Claude scheduled task also starts it at 12:15am Pacific every night** (Ashley
    chose this after GitHub started the scheduled run after 6am five nights running, so nothing she
-   approved shipped). It is "Overnight update start" (`trig_01KogRim1WbHZEXV9qHmejpQ`), bound to the
-   feedback-monitor session; it dispatches only when `release` differs from `main`, and the workflow's
+   approved shipped). It is "Overnight update start" (`trig_01CbjAJdSZZRkAxgWgf5yDg5`), bound to the
+   "Automate provider feedback replies" thread's session, which also runs the daily brief; it dispatches only when `release` differs from `main`, and the workflow's
    own green-check and fast-forward gates still decide. That nightly start is HER standing choice;
    it is still never a reason to dispatch by hand during the day.
 
