@@ -116,7 +116,11 @@ export async function runSweep(q) {
 
   // 3. Settings stored as an empty value (§2q: hours saved as `null` reset every device).
   await check('settings-empty', 'No settings saved as empty', async () => {
-    const rows = await q`SELECT owner, k FROM kv WHERE k = ANY(${SETTINGS_KEYS}) AND (v IS NULL OR btrim(v) IN ('null', '', '""'))`;
+    // Only accounts in use (signed in on some device in the last 2 days). The app repairs an empty
+    // copy from the device the moment it opens (_healAvailability, _mergeStamped), so an empty value
+    // on an account nobody has opened is harmless and waits for that; on an account in use it is a bug.
+    const rows = await q`SELECT owner, k FROM kv WHERE k = ANY(${SETTINGS_KEYS}) AND (v IS NULL OR btrim(v) IN ('null', '', '""'))
+      AND EXISTS (SELECT 1 FROM sessions s WHERE s.provider_id = kv.owner AND s.last_seen_at > now() - interval '2 days' AND NOT coalesce(s.revoked, false))`;
     return { items: rows.map(r => who(r.owner) + ': ' + r.k + ' is empty on the server') };
   });
 
@@ -155,16 +159,21 @@ export async function runSweep(q) {
   // 6. Scheduled jobs (client reminders, check-ins, automations): ran recently and finished OK.
   await check('scheduled-jobs', 'Every scheduled job is running', async () => {
     await ensureCronRunsTable(q);
-    const rows = await q`SELECT DISTINCT ON (name) name, finished_at, ok, status, summary FROM cron_runs ORDER BY name, finished_at DESC`;
+    const rows = await q`SELECT DISTINCT ON (name) name, finished_at, ok, status, summary FROM cron_runs WHERE finished_at IS NOT NULL ORDER BY name, finished_at DESC`;
     const okRows = await q`SELECT name, max(finished_at) AS last_ok, count(*) FILTER (WHERE NOT ok AND finished_at > now() - interval '26 hours') AS fails
-      FROM cron_runs GROUP BY name`;
+      FROM cron_runs WHERE finished_at IS NOT NULL GROUP BY name`;
+    // Started and never finished (lib/cron-runs.js writes a row at the start): stopped for time.
+    const stuck = {};
+    try { (await q`SELECT name, count(*)::int AS n FROM cron_runs WHERE finished_at IS NULL
+      AND started_at < now() - interval '15 minutes' AND started_at > now() - interval '26 hours' GROUP BY name`).forEach(r => { stuck[r.name] = r.n; }); } catch (e) {}
     const last = {}; rows.forEach(r => { last[r.name] = r; });
     const lastOk = {}; okRows.forEach(r => { lastOk[r.name] = r; });
     const anyRecorded = rows.length > 0;
     const items = []; let level = 'ok';
     for (const [name, maxMin] of Object.entries(CRONS)) {
       const r = last[name];
-      if (!r) { if (anyRecorded) { items.push(name + ': no run recorded'); level = 'alert'; } continue; }
+      if (stuck[name]) { items.push(name + ': started ' + stuck[name] + 'x in the last day and never finished (stopped for running too long?)'); level = 'alert'; }
+      if (!r) { if (anyRecorded && !stuck[name]) { items.push(name + ': no run recorded'); level = 'alert'; } continue; }
       const mins = Math.round((Date.now() - new Date(r.finished_at).getTime()) / 60000);
       if (mins > maxMin) { items.push(name + ': last ran ' + mins + ' minutes ago'); level = 'alert'; }
       if (!r.ok) { items.push(name + ': last run failed (status ' + r.status + ')'); if (level === 'ok') level = 'warn'; }
@@ -268,7 +277,9 @@ export async function runSweep(q) {
     rows.forEach(r => { let o = null; try { o = JSON.parse(r.v); } catch (e) {} if (o && typeof o === 'object' && !Array.isArray(o)) (r.k === 'sc_deleted_clients' ? del : und)[r.owner] = o; });
     const items = [];
     for (const owner of Object.keys(del)) {
-      const ids = Object.keys(del[owner]).filter(id => { const d = Math.abs(Number(del[owner][id]) || 0); const u = Math.abs(Number((und[owner] || {})[id]) || 0); return d && d > u; });
+      const st = v => (typeof v === 'number' && Number.isFinite(v)) ? v : (v ? 1 : 0);
+      // Same rule as the app and lib/clients.js reconcileDeletedClients: a negative stamp is a put-back.
+      const ids = Object.keys(del[owner]).filter(id => { const d = st(del[owner][id]), u = st((und[owner] || {})[id]); return d > 0 && d > u; });
       if (!ids.length) continue;
       const live = await q`SELECT count(*)::int AS n FROM clients WHERE provider_id = ${owner} AND deleted_at IS NULL AND id = ANY(${ids.slice(0, 2000)})`;
       if (live[0] && live[0].n > 0) items.push(who(owner) + ': ' + live[0].n + ' client(s) she deleted are still live on the server');

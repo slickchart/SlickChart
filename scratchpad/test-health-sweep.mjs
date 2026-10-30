@@ -65,10 +65,13 @@ const { withCronRun } = await import(pathToFileURL(path.join(dir, 'lib/cron-runs
 const fakeRes = () => { const r = { code: 200, body: null, status(c) { r.code = c; return r; }, json(b) { r.body = b; return r; }, setHeader() {} }; return r; };
 await withCronRun('cron-reminders', async (req, res) => res.status(200).json({ ok: true, sent: 3, providers: ['a@b.com', 'c@d.com'], note: 'Ann Private' }))({ headers: {} }, fakeRes());
 await withCronRun('cron-checkins', async (req, res) => res.status(401).json({ error: 'Unauthorized' }))({ headers: {} }, fakeRes());
-const runs = (await db.query('SELECT name, ok, status, summary FROM cron_runs')).rows;
+// A run that started and never finished (the platform stopped it): only the START row exists.
+await db.query("INSERT INTO cron_runs (name, started_at, finished_at) VALUES ('cron-events', now()-interval '2 hours', NULL)");
+const runs = (await db.query('SELECT name, ok, status, summary FROM cron_runs WHERE finished_at IS NOT NULL')).rows;
 ok(runs.length === 1 && runs[0].name === 'cron-reminders' && runs[0].ok, 'a cron run is recorded; a refused caller is not', JSON.stringify(runs));
 ok(JSON.stringify(runs[0].summary) === JSON.stringify({ ok: true, sent: 3, providers_count: 2 }), 'the run record keeps numbers only (no emails or names)', JSON.stringify(runs[0].summary));
 
+ok((await db.query("SELECT count(*)::int AS n FROM cron_runs WHERE name='cron-checkins'")).rows[0].n === 0, 'a refused caller leaves no start row behind');
 globalThis.__keyOk = false;
 const denied = fakeRes(); await handler({ method: 'GET', headers: {} }, denied);
 ok(denied.code === 403, 'no key, no founder session: refused');
@@ -83,6 +86,7 @@ ok(by['settings-empty'].items.length === 1 && /sc_availability/.test(by['setting
 ok(by['founder-alerts'].level === 'alert' && by['founder-alerts'].items.some(i => /feedback alert/.test(i)) && !by['founder-alerts'].items.some(i => /paid-signup|provider-signup/.test(i)), 'the skipped feedback alert is flagged; a good one and a deliberate de-dup are not', JSON.stringify(by['founder-alerts'].items));
 ok(/7 changes not yet saved/.test(by['device-health'].items.join()) && /storage not working/.test(by['device-health'].items.join()) && by['device-health'].items.length === 1, 'the failing device is flagged; 2 unsent (save in its delay) is not');
 ok(by['scheduled-jobs'].level === 'alert' && by['scheduled-jobs'].items.some(i => /cron-checkins: no run recorded/.test(i)) && !by['scheduled-jobs'].items.some(i => /cron-reminders/.test(i)), 'a job with no run is flagged once recording has started', JSON.stringify(by['scheduled-jobs'].items));
+ok(by['scheduled-jobs'].items.some(i => /cron-events: started 1x in the last day and never finished/.test(i)) && !by['scheduled-jobs'].items.some(i => /cron-events: no run recorded/.test(i)), 'a run that started and never finished is named as such', JSON.stringify(by['scheduled-jobs'].items));
 ok(by['square-tokens'].level === 'alert' && by['square-tokens'].items.length === 1 && /EXPIRED/.test(by['square-tokens'].items[0]), 'the expired Square sign-in is an ALERT');
 ok(by['billing'].level === 'alert' && by['billing'].items.some(i => /past due/.test(i)) && by['billing'].items.some(i => /gho…@paid.com: paid but has no SlickChart account/.test(i)), 'past-due-but-using and paid-with-no-account are flagged', JSON.stringify(by['billing'].items));
 ok(by['sign-in'].items.length === 1 && /5 failed sign-ins/.test(by['sign-in'].items[0]), 'someone stuck at sign-in is flagged');

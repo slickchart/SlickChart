@@ -143,6 +143,12 @@ She asked for this after an edit disturbed providers who were using the app. **D
    between 12:00am and 5:59am Pacific; the first one in that window promotes, the rest do nothing. It is fast-forward only, it refuses a commit whose
    checks are not green, and it does nothing at all when `release` and `main` already match.
    `workflow_dispatch` on that workflow is the "ship it now" button.
+   **Since 2026-10-30 a Claude scheduled task also starts it at 12:15am Pacific every night** (Ashley
+   chose this after GitHub started the scheduled run after 6am five nights running, so nothing she
+   approved shipped). It is "Overnight update start" (`trig_01KogRim1WbHZEXV9qHmejpQ`), bound to the
+   feedback-monitor session; it dispatches only when `release` differs from `main`, and the workflow's
+   own green-check and fast-forward gates still decide. That nightly start is HER standing choice;
+   it is still never a reason to dispatch by hand during the day.
 
 **`release` IS her approval.** Nothing may be pushed to it that she has not said yes to. That is the
 whole mechanism — treat a push to `release` exactly as seriously as a push to `main` used to be.

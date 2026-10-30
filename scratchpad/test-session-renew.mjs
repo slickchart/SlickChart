@@ -22,6 +22,7 @@ export function sql() { return async (strs, ...v) => { const t = strs.join('?').
   if (/SELECT k, v FROM kv WHERE owner = \\?/.test(t)) return S.kv.filter(r => r.owner === v[0]);
   throw new Error('unhandled SQL: ' + t); }; }`);
 fs.writeFileSync(path.join(dir, 'lib/kv-history.js'), 'export async function snapshotBeforeWrite(){} export async function rescueDeviceCopy(){}');
+fs.writeFileSync(path.join(dir, 'lib/clients.js'), 'export async function reconcileDeletedClients(){ globalThis.__recon = (globalThis.__recon||0)+1; return {removed:0,restored:0}; }');
 process.env.SESSION_SECRET = 'sec';
 const { default: handler } = await import(pathToFileURL(path.join(dir, 'api/store.js')));
 const { signToken, verifyToken } = await import(pathToFileURL(path.join(dir, 'lib/auth.js')));

@@ -20,6 +20,7 @@ import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
 import { enforceFounderMerchantIsolation } from '../lib/square.js';
 import { withCronRun } from '../lib/cron-runs.js';
+import { reconcileDeletedClients } from '../lib/clients.js';
 
 const HOUR = 3600 * 1000;
 // How often Vercel Cron invokes this (vercel.json). Client-set routine reminders need finer than
@@ -66,6 +67,20 @@ function authorized(req) {
 async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
+  // Once an hour: make every account's clients rows agree with its delete record (lib/clients.js,
+  // 2026-10-30). Runs here because this job is known to run every 15 minutes; each account is
+  // scoped to its own rows. Never holds up the reminders: bounded and wrapped.
+  let deleteSync = null;
+  if (new Date().getUTCMinutes() < 15) {
+    deleteSync = { accounts: 0, removed: 0, restored: 0 };
+    try {
+      const owners = await sql()`SELECT DISTINCT owner FROM kv WHERE k IN ('sc_deleted_clients', 'sc_undeleted_clients') LIMIT 500`;
+      for (const o of owners) {
+        try { const r = await reconcileDeletedClients(o.owner); deleteSync.accounts++; deleteSync.removed += r.removed; deleteSync.restored += r.restored; }
+        catch (e) { console.error('[cron-reminders] delete sync failed for an account:', e && e.message); }
+      }
+    } catch (e) { console.error('[cron-reminders] delete sync failed:', e && e.message); }
+  }
   // DATA ISOLATION (top priority): every hour, forcibly remove any foreign account connected to a
   // founder's Square merchant and (re)install the one-merchant-one-provider DB lock. This self-heals the
   // cross-account leak continuously — a duplicate connection can't survive longer than one tick — and runs
@@ -277,7 +292,7 @@ async function handler(req, res) {
       }
       } catch (e) { console.error('[cron-reminders] client failed:', row && row.client_id, e && e.message); }
     }
-    res.status(200).json({ ok: true, ...summary });
+    res.status(200).json({ ok: true, ...summary, deleteSync });
   } catch (e) {
     console.error('[cron-reminders] failed:', e && e.stack || e);
     console.error('[cron-reminders] failed:', e && e.message); res.status(500).json({ error: 'cron failed' });

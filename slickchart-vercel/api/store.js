@@ -7,6 +7,7 @@
 import { sql, ensureTable, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { verifyToken, signToken, isSessionValid } from '../lib/auth.js';
 import { snapshotBeforeWrite, rescueDeviceCopy } from '../lib/kv-history.js';
+import { reconcileDeletedClients } from '../lib/clients.js';
 
 async function requireLogin(req, res, q) {
   const secret = process.env.SESSION_SECRET || '';
@@ -232,6 +233,13 @@ export default async function handler(req, res) {
         await q`INSERT INTO kv (owner, k, v, updated_at)
                 VALUES (${owner}, ${k}, ${val}, now())
                 ON CONFLICT (owner, k) DO UPDATE SET v = EXCLUDED.v, updated_at = now()`;
+      }
+      // The delete record just changed: make this account's clients rows agree with it, so a delete
+      // whose own request was lost still closes that client's link (lib/clients.js). Owner is the
+      // verified session's. Best-effort: the save has already succeeded.
+      if (items.sc_deleted_clients != null || items.sc_undeleted_clients != null) {
+        try { await reconcileDeletedClients(owner); }
+        catch (e) { console.error('[store] client delete reconcile failed (save kept):', e && e.message); }
       }
       res.status(200).json({ ok: true, saved: entries.length });
       return;

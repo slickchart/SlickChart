@@ -8502,3 +8502,21 @@ expired on that same call (stale `row.expires_at`). Tests: `test-square-refresh.
   /api/store saves `sc_deleted_clients`, soft-delete (deleted_at only, recoverable) that owner's rows
   whose delete stamp is newer than the put-back stamp; and make put-back clear deleted_at, which
   upsertClient currently never does.
+
+### 2026-10-30 later: build 2026-10-30b (Ashley: "fix everything from the health sweep too" / "push it out tonight")
+
+- **Deleted clients stay deleted on the server.** `reconcileDeletedClients(owner)` (lib/clients.js)
+  soft-deletes this owner's live rows whose delete stamp beats the put-back stamp, and clears
+  deleted_at for a client she put back (never a revoked token, never a tombstoned id). Runs after
+  every /api/store save of sc_deleted_clients / sc_undeleted_clients, and once an hour from
+  cron-reminders for every account (`deleteSync` in its run summary), which also backfills the 148
+  rows the sweep found. test-delete-reconcile.mjs (PGlite, 10).
+- **Cron runs that never finish are visible.** withCronRun writes a row at the START and updates it
+  at the end; the sweep names "started Nx and never finished". The first sweep showed five hourly
+  jobs with no run at all while the 15-minute jobs recorded; this tells a time-out from "never
+  called". Read it in the next brief before changing anything.
+- **settings-empty** only counts accounts signed in somewhere in the last 2 days (the app heals an
+  empty copy on open).
+- **Overnight start:** "Overnight update start" scheduled task at 12:15am Pacific (CLAUDE.md §1a).
+- Ashley gave standing permission: fix health-sweep findings within reason and report after
+  (recorded in /mnt/project-files/feedback-monitor/routine-prompt.md §2b).

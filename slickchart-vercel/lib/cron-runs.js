@@ -44,23 +44,44 @@ export function countsOnly(body) {
 export function withCronRun(name, handler) {
   return async function cronWithRunLog(req, res) {
     const started = new Date();
-    let status = 200, body = null, threw = false;
+    let status = 200, body = null, threw = false, rowId = null;
     const origStatus = res.status ? res.status.bind(res) : null;
     const origJson = res.json ? res.json.bind(res) : null;
     if (origStatus) res.status = (c) => { status = c; return origStatus(c); };
     if (origJson) res.json = (b) => { body = b; return origJson(b); };
+    // A row at the START too (2026-10-30). The first live sweep found five hourly jobs with no run
+    // recorded at all, while the 15-minute ones recorded fine. A job the platform stops for running
+    // too long never reaches `finally`, so without this a time-out and "never called" look the same.
+    // A started row with no finished_at is a run that did not finish. Refused callers are removed.
+    if (dbEnabled()) {
+      try {
+        const q = sql();
+        await ensureCronRunsTable(q);
+        const r = await q`INSERT INTO cron_runs (name, started_at, finished_at) VALUES (${name}, ${started.toISOString()}, NULL) RETURNING id`;
+        rowId = r && r[0] ? r[0].id : null;
+      } catch (e) { rowId = null; }
+    }
     try { await handler(req, res); }
     catch (e) { threw = true; status = 500; throw e; }
     finally {
-      // A refused caller (no CRON_SECRET) is not a run.
-      if (status !== 401 && status !== 403 && dbEnabled()) {
+      if (dbEnabled()) {
         try {
           const q = sql();
           await ensureCronRunsTable(q);
-          const ok = !threw && status < 400 && !(body && body.ok === false);
-          await q`INSERT INTO cron_runs (name, started_at, status, ok, summary)
-                  VALUES (${name}, ${started.toISOString()}, ${status}, ${ok}, ${JSON.stringify(countsOnly(body))}::jsonb)`;
-          if (Math.random() < 0.02) await q`DELETE FROM cron_runs WHERE finished_at < now() - interval '30 days'`;
+          if (status === 401 || status === 403) {
+            // A refused caller (no CRON_SECRET) is not a run.
+            if (rowId != null) await q`DELETE FROM cron_runs WHERE id = ${rowId}`;
+          } else {
+            const ok = !threw && status < 400 && !(body && body.ok === false);
+            const summary = JSON.stringify(countsOnly(body));
+            if (rowId != null) {
+              await q`UPDATE cron_runs SET finished_at = now(), status = ${status}, ok = ${ok}, summary = ${summary}::jsonb WHERE id = ${rowId}`;
+            } else {
+              await q`INSERT INTO cron_runs (name, started_at, status, ok, summary)
+                      VALUES (${name}, ${started.toISOString()}, ${status}, ${ok}, ${summary}::jsonb)`;
+            }
+          }
+          if (Math.random() < 0.02) await q`DELETE FROM cron_runs WHERE started_at < now() - interval '30 days'`;
         } catch (e) { /* never let the record fail the cron */ }
       }
     }

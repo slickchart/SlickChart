@@ -593,3 +593,49 @@ export async function wantsPush(q, clientId) {
     return !(n && n.enabled === false);
   } catch (e) { return true; }
 }
+
+// Make the clients rows agree with the account's delete record (2026-10-30). The app tells the server
+// about a delete with one fire-and-forget request; when that is lost (offline, app closed straight
+// after) the delete RECORD still reaches the account through the retrying sync queue, but the row
+// stays live, so that client's link kept opening. The daily sweep found 148 such rows across three
+// accounts. Same rule the app uses on load: deleted when the delete stamp is newer than any put-back.
+// Soft only (deleted_at), so the founder Recover screen can still put any of them back. Also the
+// other way: a client she PUT BACK gets its row back, which upsertClient never did (it skips a row
+// with deleted_at). Never revives a client who deleted their own data (revoked token) or a purged id.
+// Scoped to this provider's rows only (§0.1); providerId must come from the verified session.
+const _stamp = v => (typeof v === 'number' && Number.isFinite(v)) ? v : (v ? 1 : 0);
+export async function reconcileDeletedClients(providerId) {
+  const p = String(providerId || '');
+  const out = { removed: 0, restored: 0 };
+  if (!p) return out;
+  await ensureClientTables();
+  const q = sql();
+  const rows = await q`SELECT k, v FROM kv WHERE owner=${p} AND k IN ('sc_deleted_clients', 'sc_undeleted_clients')`;
+  const del = {}, und = {};
+  for (const r of rows) {
+    let o = null; try { o = JSON.parse(r.v); } catch (e) {}
+    if (o && typeof o === 'object' && !Array.isArray(o)) Object.assign(r.k === 'sc_deleted_clients' ? del : und, o);
+  }
+  const gone = [], backIds = [], backAt = [];
+  for (const id of new Set([...Object.keys(del), ...Object.keys(und)])) {
+    const d = _stamp(del[id]), u = _stamp(und[id]);
+    if (d > 0 && d > u) gone.push(String(id));
+    else if (u > 1 && u > d) { backIds.push(String(id)); backAt.push(Math.round(u)); }
+  }
+  const now = Date.now();
+  for (let i = 0; i < gone.length; i += 1000) {
+    const r = await q`UPDATE clients SET deleted_at=${now}
+      WHERE provider_id=${p} AND deleted_at IS NULL AND id = ANY(${gone.slice(i, i + 1000)}::text[]) RETURNING id`;
+    out.removed += r.length;
+  }
+  for (let i = 0; i < backIds.length; i += 1000) {
+    const r = await q`UPDATE clients c SET deleted_at=NULL, updated_at=${now}
+      FROM unnest(${backIds.slice(i, i + 1000)}::text[], ${backAt.slice(i, i + 1000)}::bigint[]) AS x(id, u)
+      WHERE c.provider_id=${p} AND c.id = x.id AND c.deleted_at IS NOT NULL AND c.deleted_at < x.u
+        AND coalesce(c.token, '') NOT LIKE 'revoked_%'
+        AND NOT EXISTS (SELECT 1 FROM client_tombstones t WHERE t.provider_id=${p} AND t.id = c.id)
+      RETURNING c.id`;
+    out.restored += r.length;
+  }
+  return out;
+}
