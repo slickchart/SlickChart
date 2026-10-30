@@ -8542,3 +8542,24 @@ Asked for by a provider (Jennie Milla, JEM House of Glam) via Ashley. Ashley has
   (`_zipBlob`), skips removed clients, dismissed photos and `__recovered__`. Says how many could not be
   reached. The full backup's `_note` no longer says photos "stay on this device".
   Test: `scratchpad/test-photo-export.mjs`. Both tests pass in Chromium and WebKit.
+
+### 2026-10-30 evening: build 2026-10-30d, a deleted form stops being sent (preview, NOT approved yet)
+
+Reported by Maddie Campbell (MNC Aesthetics) by Feedback email, 2026-10-30 1:55pm.
+**Her observations (§1b):** "For all my facial clients it's trying to get them to fill out a wax consent
+form and I've tried to delete it and I can't figure out where it is or how to get rid of it." Device not
+stated. Not yet known: her profession order (the founder Recover clients screen would show it).
+
+- **Cause.** The first-visit package and "Add a client" pick the intake/consent from her FIRST
+  profession (`_ncProf()` = `selectedProfessions[0]`). Waxer first means `wax-intake` ("Wax intake &
+  consent") and `consent-wax` for every client, facials included. Deleting a bundled form only hides it
+  (`hiddenForms`); it stays in `formTmpls`, and `_ncIntakeFormId`/`_ncConsentId` only checked
+  `formTmpls`, so the deleted form went on being sent.
+- **Fix.** `_ncUsable(k)` = present and not `_formHidden`; both resolvers use it (consent can now return
+  null when every consent is deleted; "Add a client" then just adds the client). Deleting a form that is
+  still open in clients' apps now asks once "Take it back from N clients too?" and does it for all of
+  them (`_takeBackFormFrom`, same `withdrawn['f:'+id]` record as the single-client Take back).
+- Note: `wax-consent` ("Waxing consent") is a separate form from `consent-wax`; a wax-first provider who
+  deletes one gets the next. Not changed: the first profession still decides the default intake.
+- Test: `scratchpad/test-deleted-intake-not-sent.mjs` 9/9 Chromium; `sweep3-takeback.mjs` 7/7.
+  WebKit was not installed in this container, so not run in Safari (pure form-picking logic, no storage).

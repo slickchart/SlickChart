@@ -469,6 +469,7 @@ saved anywhere", not "does this always call that".
 | `_noteEditCancel` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_notifyBookingClient` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_offerCourseRecovery` | `/api/course-versions` | via `_cvFetchList` |
+| `_offerTakeBackDeleted` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_openBillingPortal` | `/api/create-portal-session` | direct |
 | `_openLessonView` | `/api/clients` | via `syncClientEvents` |
 | `_openLessonView` | `/api/guide-file` | via `_getGuideFile` |
@@ -812,6 +813,7 @@ saved anywhere", not "does this always call that".
 | `_syncSquareClientsNow` | `/api/clients` | via `_serverMergeClients` |
 | `_syncSquareClientsNow` | `/api/square/appointments` | direct |
 | `_syncSquareClientsNow` | `/api/square/customers` | direct |
+| `_takeBackFormFrom` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_takeBackSave` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_takeBackSave` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_takeBackSent` | `/api/clients` | via `_syncSpecificClientsToServer` |

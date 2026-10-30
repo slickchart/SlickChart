@@ -571,7 +571,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-30c';
+const APP_BUILD='2026-10-30d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -25350,8 +25350,37 @@ function deleteFormCard(id){
   hiddenForms[id]=Date.now();_saveHiddenForms();
   if(typeof proToast==='function')proToast('Form deleted');
   if(typeof renderForms==='function')renderForms();
+  _offerTakeBackDeleted(id,nm);
   };
   if(typeof confirmModal==='function')confirmModal({title:'Delete this form?',body:'“'+String(nm).replace(/\s+/g,' ').trim()+'” will be removed from your forms library. This can’t be undone.',action:'Delete'},_go);else _go();
+}
+// Deleting a form leaves it in the apps of clients it was already sent to ("sent = permanent"), which
+// is right for one she simply tidied away but not for one she never wanted sent. Ask once, and take
+// it back from every one of them in the same tap, the same way Take back does on a single client.
+function _openClientsWithForm(fid){return Object.keys(CL||{}).filter(cid=>{const c=CL[cid];return c&&Array.isArray(c.pendingForms)&&c.pendingForms.some(pf=>pf&&String(pf.formId)===String(fid));});}
+function _offerTakeBackDeleted(fid,nm){
+  const ids=_openClientsWithForm(fid);if(!ids.length||typeof confirmModal!=='function')return;
+  const n=ids.length,one=n===1,name=String(nm||'this form').replace(/\s+/g,' ').trim();
+  const who=one?(String((CL[ids[0]]||{}).name||'1 client').split(' ')[0]):(n+' clients');
+  confirmModal({title:'Take it back from '+who+' too?',body:'“'+name+'” is still open in '+(one?'their app':'the apps of '+n+' clients')+'. Take it back and it leaves '+(one?'their app':'every one of them')+'. Anything they already sent you stays on their file.',action:'Take back'},function(){
+    _takeBackFormFrom(fid,ids);
+    if(typeof proToast==='function')proToast('“'+name+'” taken back from '+who);
+  });
+}
+function _takeBackFormFrom(fid,ids){
+  const now=Date.now();let done=[];
+  (ids||[]).forEach(cid=>{
+    const c=CL[cid];if(!c||!Array.isArray(c.pendingForms))return;
+    const gone=c.pendingForms.filter(pf=>pf&&String(pf.formId)===String(fid));if(!gone.length)return;
+    c.pendingForms=c.pendingForms.filter(pf=>!(pf&&String(pf.formId)===String(fid)));
+    if(!c.withdrawn||typeof c.withdrawn!=='object')c.withdrawn={};
+    const wk='f:'+fid;c.withdrawn[wk]=Math.max(now,...gone.map(pf=>(Number(pf.assignedAt)||0)+1),Number(c.withdrawn[wk])||0);
+    done.push(cid);
+  });
+  if(!done.length)return 0;
+  try{saveClients();}catch(e){}
+  done.forEach(cid=>{try{if(typeof _pushClientNow==='function')_pushClientNow(cid);}catch(e){}});
+  return done.length;
 }
 function deleteGuideCard(id){
   const g=(typeof resources!=='undefined')?resources.find(x=>x.id===id):null;
@@ -36305,14 +36334,20 @@ function _ncConsentId(){
   // esty family, never for a profession that has its own legal doc.
   const special={coach:'coach-liability',tattoo:'tattoo-consent',movement:'movement-liability'};
   const cands=[special[id],'consent-'+id,id+'-consent'].filter(Boolean);
-  for(const k of cands){if(formTmpls[k])return k;}
-  if(formTmpls['consent-esty'])return 'consent-esty';
-  return Object.keys(formTmpls).find(k=>/consent|liability|waiver/i.test(k))||'consent-esty';
+  for(const k of cands){if(_ncUsable(k))return k;}
+  if(_ncUsable('consent-esty'))return 'consent-esty';
+  return Object.keys(formTmpls).find(k=>/consent|liability|waiver/i.test(k)&&_ncUsable(k))||null;
 }
-function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';if(formTmpls[fid])return fid;if(formTmpls['intake'])return 'intake';
+// A form she DELETED is only hidden: a bundled one stays in formTmpls so the merge can keep it, which
+// meant the first-visit package and "Add a client" went on sending it. Maddie (Feedback, 2026-10-30):
+// "For all my facial clients it's trying to get them to fill out a wax consent form and I've tried to
+// delete it and I can't figure out where it is or how to get rid of it." Her first profession's intake
+// was the wax one, and deleting it changed nothing. Deleted now means never picked here.
+function _ncUsable(k){return !!(k&&formTmpls[k]&&!(typeof _formHidden==='function'&&_formHidden(k)));}
+function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';if(_ncUsable(fid))return fid;if(_ncUsable('intake'))return 'intake';
   // Final fallback: any intake-style template that exists, so a first-visit package is never sent
   // without an intake just because the generic "intake" was renamed or removed from the library.
-  const any=Object.keys(formTmpls).find(function(k){return /(^|-)intake$/.test(k)||/intake/i.test((formTmpls[k]&&formTmpls[k].name)||'');});
+  const any=Object.keys(formTmpls).find(function(k){return (/(^|-)intake$/.test(k)||/intake/i.test((formTmpls[k]&&formTmpls[k].name)||''))&&_ncUsable(k);});
   return any||null;}
 function _ncIntakeQs(){const fid=_ncIntakeFormId();const t=fid&&formTmpls[fid];if(!t)return [];return t.qs.filter(q=>{if(q.type==='Signature'||q.type==='Contraindications')return false;const l=(q.label||'').toLowerCase();if(/full name|^name$/.test(l))return false;if(/date of birth|^dob$/.test(l))return false;if(/phone|mobile number/.test(l))return false;if(/e-?mail/.test(l))return false;if(/how did you hear|referred by|referral|hear about us/.test(l))return false;return true;});}
 function _ncQHTML(q,i){
@@ -36620,6 +36655,8 @@ function finishNewClient(){
   const cid=_ncConsentId();const mode=_ncDeliver;const first=name.split(' ')[0];
   const pend=_pendingBookingDraft;_pendingBookingDraft=null;
   newClientStep=0;newClientData={};_ncDeliver='app';
+  // Every consent she has is deleted: nothing to sign here, so she just gets the client added.
+  if(!cid&&(mode==='device'||mode==='link')){proToast(first+' added');nav('client',id);return;}
   if(mode==='device'){proToast(first+' added');renderSignOnDevice(cid,id);return;}
   if(mode==='link'){proToast(first+' added');nav('clients');shareFormLink(cid,id);return;}
   if(mode==='invite'){proToast(first+' added');nav('clients');inviteClientToApp(id);return;}
