@@ -52,7 +52,9 @@ export default async function handler(req, res) {
     } catch (e) { /* no catalog published yet — client shows recommended only */ }
     try {
       const rawCfg = await getKVValue(c.provider_id, 'sc_checkin_cfg');
-      if (rawCfg) data.checkinCfg = JSON.parse(rawCfg);
+      // Her live config wins (so a change reaches clients without re-saving each one), but the comfort
+      // parts a welcome package hid for THIS client (checkinHide, stamped in the blob) stay hidden.
+      if (rawCfg) data.checkinCfg = applyCheckinHide(JSON.parse(rawCfg), data.checkinHide);
     } catch (e) { /* no saved check-in config yet, client falls back to defaults */ }
     // THE SERVICES THIS CLIENT MAY REQUEST — her real catalog and nothing invented.
     //
@@ -78,4 +80,15 @@ export default async function handler(req, res) {
       client: { id: c.id, name: c.name || '', email: c.email || '', data }
     });
   } catch (e) { console.error('[client-data] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
+}
+
+// Same rule as _ciCfgForClient in slickchart.html.
+function applyCheckinHide(cfg, hide) {
+  if (!cfg || typeof cfg !== 'object' || !Array.isArray(hide) || !hide.length) return cfg;
+  const o = Object.assign({}, cfg);
+  if (hide.indexOf('warmth') >= 0) { o.blankets = []; o.heat = []; }
+  if (hide.indexOf('drinks') >= 0) { o.drinks = []; o.snacksOn = false; }
+  if (hide.indexOf('music') >= 0) { o.music = []; o.musicCustom = false; }
+  if (!((o.drinks || []).length || (o.snacksOn && (o.snacks || []).length) || (o.music || []).length || (o.heat || []).filter(h => h && h.on !== false).length || (o.blankets || []).length)) o.chairComfortOn = false;
+  return o;
 }

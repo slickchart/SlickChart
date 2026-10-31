@@ -382,6 +382,11 @@ saved anywhere", not "does this always call that".
 | `_inviteResetDefault` | `/api/logout` | via `_doLogout` |
 | `_inviteResetDefault` | `/api/native-push` | via `_doLogout` |
 | `_inviteResetDefault` | `/api/provider-push` | via `_doLogout` |
+| `_inviteToTemplate` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_inviteToTemplate` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_inviteToTemplate` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_inviteToTemplate` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_inviteToTemplate` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_libSafeToPersist` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_libSafeToPersist` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_libSafeToPersist` | `/api/square/orders` | via `_autoHomecareFromPurchases` |

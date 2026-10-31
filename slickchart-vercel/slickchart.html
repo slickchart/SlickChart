@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-30f';
+const APP_BUILD='2026-10-31a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -22804,7 +22804,7 @@ function _assembleClientData(id){
   // only in this blob) were replaced by whichever device posted last. See lib/clients.js.
   // photosShared travels with the list so the server lets an emptied list through (sharing turned off)
   // instead of protecting the old photos, which kept them visible to the client.
-  return {_uAt:(Number(c._uAt)||0),photosShared:_photosShared(c),animals,studio,studioAddress,studioPhone,website,formStyle:_scfStyle(),providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:(typeof _nextVisitSvc==='function'?_nextVisitSvc(id):(c.treatment||'')),lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,routineReview,withdrawn:_withdrawnOut(c),checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
+  return {_uAt:(Number(c._uAt)||0),photosShared:_photosShared(c),animals,studio,studioAddress,studioPhone,website,formStyle:_scfStyle(),providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:(typeof _nextVisitSvc==='function'?_nextVisitSvc(id):(c.treatment||'')),lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,routineReview,withdrawn:_withdrawnOut(c),checkinCfg:checkinCfgOut,checkinHide:(Array.isArray(c.checkinHide)&&c.checkinHide.length)?c.checkinHide.slice():undefined,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 // Sync bookkeeping: have we pushed the whole roster at least once this session, is the next flush
@@ -23419,15 +23419,20 @@ function _promptReSignIn(){
 function _inviteToTemplate(text,id){
   const c=CL[id]||{};let t=String(text||'');
   const link=_clientAppLink(id);if(link)t=t.split(link).join('');
+  t=_inviteStripLinks(t);
   const esc=function(x){return String(x).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');};
   const first=String(c.name||'').split(' ')[0];
   const biz=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)?bizInfo.name:'';
   const when=(typeof _apptWhenForMsg==='function')?_apptWhenForMsg(id):'';
   if(biz)t=t.split(biz).join('{business}');
   if(when)t=t.split(when).join('{when}');
-  if(first)t=t.replace(new RegExp('\\b'+esc(first)+'\\b','g'),'{client}');
-  return t.replace(/\s+$/,'');
+  // \b does not see an accented letter as part of a word, so "Zoë" stayed in and every client was "Zoë".
+  if(first){let re;try{re=new RegExp('(?<![\\p{L}\\p{N}_])'+esc(first)+'(?![\\p{L}\\p{N}_])','gu');}catch(e){re=new RegExp('\\b'+esc(first)+'\\b','g');}t=t.replace(re,'{client}');}
+  return t.replace(/[ \t]{2,}/g,' ').replace(/\s+$/,'');
 }
+// A client's app link carries that client's private token. A saved message goes to EVERY client, so no
+// such link may ever be kept in it, hers or one pasted from another client (CLAUDE.md §0.3).
+function _inviteStripLinks(t){return String(t||'').replace(/(?:https?:\/\/)?[^\s()<>]*[?&]c=[^\s()<>]+/gi,'');}
 function _inviteSaveDefault(id,key){
   const ta=document.getElementById('invite-msg-text');if(!ta)return;
   const t=_inviteToTemplate(ta.value,id);if(!t.trim())return;
@@ -23479,7 +23484,7 @@ function inviteClientToApp(id){
   // sc_msg_templates like her consult messages; the link is always added after it, so it can't be lost.
   const _ivKey=_hasPendingForms?'app_invite_forms':'app_invite';
   const _own=(typeof _msgIsEdited==='function'&&_msgIsEdited(_ivKey))?_msgText(_ivKey,id,{when:_when||'your visit'}):'';
-  const msg=_own?(_own.replace(/\s+$/,'')+'\n\n'+link):_hasPendingForms
+  const msg=_own?(_inviteStripLinks(_own).replace(/\s+$/,'')+'\n\n'+link):_hasPendingForms
     ? ('Hi '+first+'! Getting you ready for your visit'+(biz?(' at '+biz):'')+(_when?(' on '+_when):'')+' \u2014 tap to finish your 2 quick forms (intake + check-in). Looking forward to seeing you!\n\n'+link)
     : ('Hi '+first+'! '+who+' invited you to SlickChart'+(biz?(' \u2014 '+biz):'')+'. See your session summary, aftercare, forms, and rebook anytime:\n\n'+link);
   // The message below seeds an editable textarea; the actual sms/mailto bodies are built from its live
@@ -36156,11 +36161,17 @@ function _ncConsentId(){
   // real doc first (special-cased, then either naming order), and only fall back to esty for the
   // esty family, never for a profession that has its own legal doc.
   const special={coach:'coach-liability',tattoo:'tattoo-consent',movement:'movement-liability'};
-  const cands=[special[id],'consent-'+id,id+'-consent'].filter(Boolean);
+  const cands=[special[id],'consent-'+id,id+'-consent',_NC_COLL[id]&&_NC_COLL_CONSENT[_NC_COLL[id]]].filter(Boolean);
   for(const k of cands){if(_ncUsable(k))return k;}
-  if(_ncUsable('consent-esty'))return 'consent-esty';
-  for(const p of _ncProfIds()){for(const k of [special[p],'consent-'+p,p+'-consent',_NC_COLL[p]&&(_NC_COLL[p]+'-general-consent')]){if(_ncUsable(k))return k;}}
-  return Object.keys(formTmpls).find(k=>/consent|liability|waiver/i.test(k)&&_ncUsable(k)&&_ncOwnForm(k))||null;
+  // The esthetics consent is a skincare document: only for a provider who does skin (a sweep on
+  // 2026-10-31 found every spray tan and head spa provider's new clients signing it).
+  if(_ncSkinPro()&&_ncUsable('consent-esty'))return 'consent-esty';
+  for(const p of _ncProfIds()){for(const k of [special[p],'consent-'+p,p+'-consent',_NC_COLL[p]&&_NC_COLL_CONSENT[_NC_COLL[p]]]){if(_ncUsable(k))return k;}}
+  const own=Object.keys(formTmpls).find(k=>/consent|liability|waiver/i.test(k)&&_ncUsable(k)&&_ncOwnForm(k));
+  if(own)return own;
+  // Spray tan has no separate consent: its "Spray tan intake & consent" is the signed document.
+  const ik=_ncIntakeFormId();
+  return (ik&&/consent|waiver|release/i.test((formTmpls[ik]&&formTmpls[ik].name)||''))?ik:null;
 }
 // A form she DELETED is only hidden: a bundled one stays in formTmpls so the merge can keep it, which
 // meant the first-visit package and "Add a client" went on sending it. Maddie (Feedback, 2026-10-30):
@@ -36173,9 +36184,12 @@ function _ncUsable(k){return !!(k&&formTmpls[k]&&!(typeof _formHidden==='functio
 // Maddie deleted the wax intake (and the generic one) and her facial clients got the SPRAY TAN intake,
 // a profession she does not have. A fallback may only reach forms that belong to her professions.
 var _NC_COLL={esty:'ec',wax:'ec',lash:'lb',brow:'lb',hair:'hs',barber:'hs',pmu:'pm',nail:'na',massage:'mt',headspa:'hd',tattoo:'tt'};
+var _NC_COLL_CONSENT={ec:'ec-general-consent',lb:'lb-service-consent',hd:'hd-service-consent',na:'na-service-consent',pm:'pm-consent',tt:'tt-consent',mt:'mt-consent',hs:'hs-chem-consent'};
+// The generic "New client intake & consent" and "Esthetics consent" ask about skin and skincare.
+function _ncSkinPro(){return _ncProfIds().some(function(p){return p==='esty'||p==='wax';});}
 function _ncProfIds(){const a=(Array.isArray(selectedProfessions)&&selectedProfessions.length?selectedProfessions:['esty']).slice();if(a.indexOf(_ncProf().id)<0)a.unshift(_ncProf().id);return a;}
 function _ncOwnForm(k){const ps=_ncProfIds();return ps.some(function(p){return k.indexOf(p+'-')===0||k.slice(-(p.length+1))==='-'+p||(_NC_COLL[p]&&k.indexOf(_NC_COLL[p]+'-')===0);});}
-function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';if(_ncUsable(fid))return fid;if(_ncUsable('intake'))return 'intake';
+function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';if(_ncUsable(fid))return fid;if(_ncSkinPro()&&_ncUsable('intake'))return 'intake';
   const ps=_ncProfIds();
   for(const p of ps){if(_ncUsable(p+'-intake'))return p+'-intake';if(_NC_COLL[p]&&_ncUsable(_NC_COLL[p]+'-intake'))return _NC_COLL[p]+'-intake';}
   // Final fallback: any intake of HER professions (or one she made herself), so a first-visit package is
@@ -36422,7 +36436,9 @@ function renderNCStep(){
     <span class="fl-lbl">Additional notes <span style="color:var(--p-mut);font-weight:400;">· internal only</span></span><textarea class="fi" id="nc-notes" style="height:58px;resize:none;margin-bottom:8px;line-height:1.5;" placeholder="Preferences, reminders, internal notes…">${tv('nc-notes')}</textarea>`;
   } else {
     const name=(newClientData['nc-name']||'New client');
-    const cid=_ncConsentId();const tmpl=formTmpls[cid];
+    const cid=_ncConsentId();const tmpl=cid&&formTmpls[cid];
+    // No consent of hers left to send (all deleted): say so, and offer only what still makes sense.
+    if(!cid&&['device','link','app'].indexOf(_ncDeliver)>=0)_ncDeliver='none';
     const opt=(m,icon,title,sub)=>`<button onclick="ncSetDeliver('${m}')" style="display:flex;width:100%;align-items:flex-start;gap:10px;padding:12px 13px;border:1px solid ${_ncDeliver===m?'var(--accent)':'var(--p-line-ctl)'};background:${_ncDeliver===m?'var(--accent-a08)':'var(--p-surf3)'};border-radius:12px;margin-bottom:8px;cursor:pointer;text-align:left;font-family:inherit;">
       <i class="ti ${icon}" style="font-size:18px;color:${_ncDeliver===m?'var(--accent)':'#999'};flex-shrink:0;margin-top:1px;"></i>
       <span style="flex:1;min-width:0;"><span style="font-size:16px;font-weight:600;color:var(--p-ink);display:block;">${title}</span><span style="font-size:14px;color:var(--p-mut);display:block;margin-top:2px;">${sub}</span></span>
@@ -36433,13 +36449,14 @@ function renderNCStep(){
       <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">${name}</div>
       ${[['Phone','nc-phone'],['Email','nc-email'],['Date of birth','nc-dob']].filter(([l,k])=>newClientData[k]).map(([l,k])=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:16px;padding:5px 0;border-bottom:1px solid var(--p-line2);"><span style="color:var(--p-mut);">${l}</span><span style="color:var(--p-mut);text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;">${String(newClientData[k]).replace(/</g,'&lt;')}</span></div>`).join('')}
     </div>
-    <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Send "${tmpl?tmpl.name:'consent'}", how?</div>
+    ${tmpl?`<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Send "${_fileEsc(tmpl.name)}", how?</div>
     ${opt('device','ti-device-tablet','Sign on this device','Hand them your phone to sign right now')}
     ${opt('link','ti-link','Send a link','They sign in any browser, no app needed')}
-    ${opt('app','ti-send','Send to their app','Delivered to their SlickChart client app')}
+    ${opt('app','ti-send','Send to their app','Delivered to their SlickChart client app')}`
+    :`<div id="nc-no-consent" style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:10px;">You have no consent form to send yet. You can make one in Forms any time.</div>`}
     ${opt('invite','ti-device-mobile','Invite to the app','Send a link so they can join their client app')}
-    ${opt('none','ti-clock','Skip for now','Just add the client; send consent later')}
-    <button onclick="nav('form-preview','${cid}')" style="width:100%;background:none;border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px;font-size:16px;color:var(--p-mut);cursor:pointer;margin:4px 0 0;"><i class="ti ti-eye" style="font-size:16px;"></i> Preview consent</button>`;
+    ${opt('none','ti-clock','Skip for now',tmpl?'Just add the client; send consent later':'Just add the client')}
+    ${tmpl?`<button onclick="nav('form-preview','${_jsAttr(cid)}')" style="width:100%;background:none;border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px;font-size:16px;color:var(--p-mut);cursor:pointer;margin:4px 0 0;"><i class="ti ti-eye" style="font-size:16px;"></i> Preview consent</button>`:''}`;
   }
   const isLast=newClientStep===steps.length-1;
   const lastLabel={device:'<i class="ti ti-device-tablet"></i> Add & sign now',link:'<i class="ti ti-link"></i> Add & get link',app:'<i class="ti ti-check"></i> Add & send consent',invite:'<i class="ti ti-device-mobile"></i> Add & invite',none:'<i class="ti ti-check"></i> Add client'}[_ncDeliver];

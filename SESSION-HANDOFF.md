@@ -8564,6 +8564,28 @@ stated. Not yet known: her profession order (the founder Recover clients screen 
 - Test: `scratchpad/test-deleted-intake-not-sent.mjs` 9/9 Chromium; `sweep3-takeback.mjs` 7/7.
   WebKit was not installed in this container, so not run in Safari (pure form-picking logic, no storage).
 
+### 2026-10-31: build 2026-10-31a, deep test of this week's features (preview)
+
+Ashley: "please test all new functions deeply and thoroughly" (before the What's new post). Found and fixed:
+- **Consent for the wrong profession.** A spray tan or head spa provider's new clients signed the
+  ESTHETICS consent (`consent-esty` came before her own). The generic skin intake/consent now only go to
+  a skin pro (`_ncSkinPro`: esty or wax); a collection's main consent is tried (`_NC_COLL_CONSENT`);
+  spray tan's "Spray tan intake & consent" is its consent. `sweep-nc-forms-by-prof` checks all 18
+  professions and deletes picks one by one; nothing ever reaches another profession.
+- **No consent left:** the Add a client review step showed `Send "consent"` and a Preview that opened
+  nothing. It now says there is none and offers Invite / Skip only (`test-nc-consent-ui`).
+- **Privacy: a client's private link could be saved into the invite for everyone.** `_inviteToTemplate`
+  only removed THIS client's link; one pasted from another client stayed and went to every client.
+  `_inviteStripLinks` removes any `?c=` link on save AND on send. Accented first names (Zoë, René)
+  were not turned into {client}; fixed with Unicode lookarounds (`test-invite-default-deep`).
+- **Welcome-package hides were undone server-side.** `api/client-data.js` replaced the blob's check-in
+  config with her live `sc_checkin_cfg`, dropping the comfort parts a package hid for that client. The
+  blob now carries `checkinHide` and the server applies it (`applyCheckinHide`). Clients whose blob
+  predates this keep the old behaviour until their record is next pushed.
+- Verified, no change needed: short check-in in the real client wizard and package
+  (`test-short-checkin-client`); Ashley's live config reaches every client without re-saving each one;
+  stay-signed-in and change-email tests pass. Chromium only (WebKit not installed in this container).
+
 ### 2026-10-30 late: build 2026-10-30e, Maddie round 2 (preview)
 
 Maddie Campbell replied by email after 2026-10-30d went live. **Her observations (§1b):** "Now it's
