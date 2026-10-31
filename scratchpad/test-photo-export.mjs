@@ -42,5 +42,17 @@ const [dl2] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }),
 const p2 = path.replace('photos.zip', 'full.json'); await dl2.saveAs(p2);
 const note = JSON.parse((await import('fs')).readFileSync(p2, 'utf8'))._note;
 T.check('backup note no longer says photos stay on this device', !/stay on this device/.test(note) && /All Photos/.test(note), note);
+// inside the app: a big library is handed to the share sheet in parts of about 40 MB, every photo once
+const nat = await p.evaluate(async () => {
+  const big = n => { const u = new Uint8Array(n); for (let i = 0; i < n; i += 4096) u[i] = i & 255; let s = ''; for (let i = 0; i < n; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return 'data:image/jpeg;base64,' + btoa(s); };
+  Object.keys(capturedPhotos).forEach(k => delete capturedPhotos[k]);
+  capturedPhotos.c1 = Array.from({ length: 9 }, (_, i) => ({ url: big(5e6), ts: Date.now() - i * 864e5, phase: 'before', angle: 'Front', pid: 'ph_big' + i }));
+  localStorage.setItem('sc_photo_index', '{}');
+  const saved = []; const oF = _nativeFiles, oS = _nativeSaveBlob;
+  window._nativeFiles = () => ({}); window._nativeSaveBlob = async (blob, name) => { saved.push([name, blob.size]); return true; };
+  try { await _exportAllPhotos(); } finally { window._nativeFiles = oF; window._nativeSaveBlob = oS; }
+  return saved;
+});
+T.check('in the app: saved in parts under ~45 MB, all 9 photos', nat.length === 2 && nat.every(x => x[1] < 46e6) && /part 1 of 2\.zip$/.test(nat[0][0]), JSON.stringify(nat));
 T.check('no page errors', !errs.length, errs.join(' | '));
 await b.close(); process.exit(T.done() ? 1 : 0);

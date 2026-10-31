@@ -8581,3 +8581,18 @@ app" message; asks to not send the check-in, or fully customize it ("I don't cha
 - **Check-in.** Forms -> Pre-visit check-in has a "Comfort questions" switch (chairComfortOn), which the
   client app already honours by dropping the whole comfort step; "Send check-in automatically" already
   turns auto-send off.
+
+### 2026-10-31: build 2026-10-30f, face chart full-flow test + fixes (preview)
+
+Ashley asked whether the whole face chart flow was tested before she announces it. New
+`scratchpad/test-face-chart-flow.mjs` (37 checks, Chromium + WebKit): 320/390/1280 widths, all 11
+types, reopen/edit/delete, close without Save, two visits with separate charts, format switch,
+client-facing text, summary sent first, odd text, a second device, full backup. Fixed what it found:
+- The "Face chart:" line reached the CLIENT summary (no-AI clean-up, preview, AI prompt all read
+  `_activeNotesText`). That function now leaves the line out.
+- A summary sent before "Just save" made the visit record without its chart (`_storeSummary`).
+- Closing the chart with the X or a tap outside threw the marks away. `_fcClose` now saves changes.
+- All Photos inside the app: handed to the share sheet in ~40 MB parts (a whole library as one base64
+  string could run a phone out of memory). Covered in `test-photo-export.mjs`.
+Known limit, not a bug: a past visit's chart is read-only on its record; the chart is edited on the
+visit's open note.

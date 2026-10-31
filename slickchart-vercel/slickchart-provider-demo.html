@@ -571,7 +571,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-30e';
+const APP_BUILD='2026-10-30f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -13331,7 +13331,9 @@ function _activeNotesText(id){
   const draft=(id!=null&&providerNoteDrafts[id])?providerNoteDrafts[id]:null;
   if(draft&&draft.sections){
     const secMap=_noteSectionsFor(id,tmpl);
-    return (tmpl.sections||[]).map(sec=>{const v=String(secMap[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
+    // The face chart's own "Face chart: ..." line is for her record. Everything client-facing (the
+    // summary preview, the plain clean-up, the AI rewrite) is built from this, so it is left out here.
+    return (tmpl.sections||[]).map(sec=>{const v=String(secMap[sec.id]||'').split('\n').filter(l=>l.indexOf('Face chart: ')!==0).join('\n').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
   }
   // A REAL client with no notes yet in this format returns empty — never fall through to the
   // global per-template store below, which is demo-seeded (Maya) and would otherwise bleed another
@@ -13753,6 +13755,12 @@ function _faceChartPlace(ev){
   _fcDraft.marks.push({x:+nx.toFixed(4),y:+ny.toFixed(4),type:_fcDraft.type,area:_faceArea(nx,ny),note:''});
   _fcRender();
 }
+// Closing the chart (the X, or a tap outside it) keeps what she marked: a stray tap must never lose marks.
+function _fcClose(){
+  let changed=false;try{changed=JSON.stringify(_fcDraft.marks)!==_fcDraft._orig;}catch(e){}
+  if(changed){_faceChartSave();return;}
+  const ov=document.getElementById('face-chart-ov');if(ov)ov.remove();
+}
 function _fcSetType(t){_fcDraft.type=t;_fcRender();}
 function _fcMarkType(i,t){const m=_fcDraft.marks[i];if(m){m.type=t;_fcRender();}}
 function _fcRemove(i){_fcDraft.marks.splice(i,1);_fcRender();}
@@ -13765,11 +13773,12 @@ function _openFaceChart(id){
   try{_snapshotWriteNoteNow(id);}catch(e){}   // keep what she typed before the chart opens
   const ex=_faceChartOf(id);
   _fcClientId=id;_fcDraft={marks:ex?ex.marks.map(m=>Object.assign({},m)):[],type:'acne'};
+  _fcDraft._orig=JSON.stringify(_fcDraft.marks);
   const ov=document.createElement('div');ov.id='face-chart-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px;';
-  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.onclick=e=>{if(e.target===ov)_fcClose();};
   ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:16px;padding:16px;width:380px;max-width:100%;max-height:94vh;overflow:auto;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Face chart</div><button aria-label="Close" onclick="document.getElementById('face-chart-ov').remove()" style="border:none;background:none;color:var(--p-mut);font-size:22px;cursor:pointer;">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Face chart</div><button aria-label="Close" onclick="_fcClose()" style="border:none;background:none;color:var(--p-mut);font-size:22px;cursor:pointer;">✕</button></div>
     <div id="fc-body"></div></div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
   _fcRender();
@@ -15137,6 +15146,8 @@ function _storeSummary(id){
   const _exName=(_dd?sessionSummaries[id].find(h=>h._draftDate===_dd):null);
   const _name=_sessionNameFor(_exName,id,_dd);
   const _rec={date,treatment:_name,note,obs,homecare,products,productDetail,providerNotes,guides:_guides,ts,_ts:Date.now(),_draftDate:_dd,_clientSaved:true};
+  // A summary sent before "Just save" still records the visit's face chart.
+  try{const _fc=_faceChartOf(id);if(_fc&&_fc.marks.length)_rec.faceChart={marks:_fc.marks,ts:_fc.ts||Date.now()};}catch(e){}
   const _ex=_dd?sessionSummaries[id].find(h=>h._draftDate===_dd):null;
   if(_ex)Object.assign(_ex,_rec);else sessionSummaries[id].unshift(_rec);
   sessionSummaries[id].sort((a,b)=>(b.ts||0)-(a.ts||0));
@@ -30759,9 +30770,20 @@ async function _exportAllPhotos(){
     if(!files.length){if(typeof proToast==='function')proToast('Could not reach your photos. Check your connection and try again.',0,'error');return;}
     files.sort(function(a,b){return a.name<b.name?-1:a.name>b.name?1:0;});
     const stamp=new Date().toISOString().slice(0,10);
-    const blob=_zipBlob(files);const fname='slickchart-photos-'+stamp+'.zip';
-    if(_nativeFiles()){await _nativeSaveBlob(blob,fname);}
+    const fname='slickchart-photos-'+stamp+'.zip';
+    if(_nativeFiles()){
+      // Inside the app a file goes to the share sheet as text (base64), so a whole library at once can
+      // run the phone out of memory. Hand it over in parts of about 40 MB, one share sheet each.
+      const parts=[];let cur=[],size=0;
+      files.forEach(function(f){if(cur.length&&size+f.bytes.length>40e6){parts.push(cur);cur=[];size=0;}cur.push(f);size+=f.bytes.length;});
+      if(cur.length)parts.push(cur);
+      for(let i=0;i<parts.length;i++){
+        if(parts.length>1&&typeof proToast==='function')proToast('Saving part '+(i+1)+' of '+parts.length+'…',0);
+        await _nativeSaveBlob(_zipBlob(parts[i]),parts.length>1?fname.replace('.zip',' part '+(i+1)+' of '+parts.length+'.zip'):fname);
+      }
+    }
     else{
+      const blob=_zipBlob(files);
       const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fname;
       (document.querySelector('.shell')||document.body).appendChild(a);a.click();
       setTimeout(function(){try{a.remove();}catch(e){}try{URL.revokeObjectURL(url);}catch(e){}},60000);
