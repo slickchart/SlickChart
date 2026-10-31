@@ -8643,3 +8643,14 @@ client-facing text, summary sent first, odd text, a second device, full backup. 
   string could run a phone out of memory). Covered in `test-photo-export.mjs`.
 Known limit, not a bug: a past visit's chart is read-only on its record; the chart is edited on the
 visit's open note.
+
+### 2026-10-31: build 2026-10-31d, "Send it again" is her setting (preview)
+31c went live with a fixed rule: skip the form if filled in the last 90 days. Ashley: "we should not
+decide on that duration and it should be fully customizable/editable." Each form's "Send when booked
+for" card now has **Send it again**: "Every time they book" (the default, nothing stored) or "Not if they
+filled it out recently" with her own number of days (`formTmpls[fid].svcSkipDays`, 1-3650, starts at 30
+and she edits it). Stored only while the form has a service. A form already waiting for the client is
+still never sent twice. A device still on 31c applies 90 days until it relaunches.
+Tests: test-service-forms.mjs 17/17, new test-service-forms-flows.mjs 13/13 (bundled form, bad input,
+past/removed bookings, two bookings one copy, remove the service, other device, phone width).
+Also: CLAUDE.md §1f, her rule to research first, never decide a setting for her, sweep every flow.

@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-31c';
+const APP_BUILD='2026-10-31d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -19464,7 +19464,7 @@ function _fbSig(tid){
   try{
     const r=_readFormBuilder(tid);
     const hide=document.getElementById('form-emoji-hide'),ei=document.getElementById('form-emoji-input');
-    return JSON.stringify([r.name,r.qs,!!(hide&&hide.checked),(ei&&ei.value)||'',_formIconImgDraft||'',_fbSvcDraft]);
+    return JSON.stringify([r.name,r.qs,!!(hide&&hide.checked),(ei&&ei.value)||'',_formIconImgDraft||'',_fbSvcDraft,_fbSvcSkip]);
   }catch(e){return null;}
 }
 function _formEmoji(fid){return (fid in formEmojis)?formEmojis[fid]:undefined;}
@@ -21829,7 +21829,7 @@ function _qRowHTML(q){
   </div>`;
 }
 // "Send when booked for": the services this form goes with (see _svcFormsSweep).
-let _fbSvcDraft=[];
+let _fbSvcDraft=[],_fbSvcSkip=0;   // _fbSvcSkip: her own 'skip if filled in the last N days' (0 = send every booking)
 function _fbSvcCardInner(){
   const chips=_fbSvcDraft.map(function(n,i){return '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--accent-tint);color:var(--accent-strong);border-radius:999px;padding:5px 6px 5px 11px;font-size:16px;margin:0 6px 6px 0;">'+_fileEsc(n)+'<button type="button" onclick="_fbSvcRemove('+i+')" aria-label="Remove '+_fileEsc(n)+'" style="border:none;background:none;color:inherit;cursor:pointer;font-size:16px;padding:0 4px;"><i class="ti ti-x" aria-hidden="true"></i></button></span>';}).join('');
   const have={};_fbSvcDraft.forEach(function(n){have[_svcNorm(n)]=1;});
@@ -21840,7 +21840,18 @@ function _fbSvcCardInner(){
     +'<div style="display:flex;gap:8px;">'
     +(opts.length?'<select id="fb-svc-pick" class="fi" aria-label="Pick a service" style="flex:1;margin:0;" onchange="if(this.value){_fbSvcAdd(this.value);}"><option value="">Pick a service…</option>'+opts.map(function(n){return '<option>'+_fileEsc(n)+'</option>';}).join('')+'</select>':'')
     +'<input id="fb-svc-type" class="fi" aria-label="Or type a service" placeholder="'+(opts.length?'Or type one':'Type a service, e.g. Chemical peel')+'" style="flex:1;margin:0;" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_fbSvcAdd(this.value);}">'
-    +'<button type="button" class="btng" onclick="_fbSvcAdd(document.getElementById(\'fb-svc-type\').value)" style="flex-shrink:0;">Add</button></div>';
+    +'<button type="button" class="btng" onclick="_fbSvcAdd(document.getElementById(\'fb-svc-type\').value)" style="flex-shrink:0;">Add</button></div>'
+    +(_fbSvcDraft.length?_fbSvcSkipHTML():'');
+}
+// How often it goes again is HER choice, never ours (Ashley, 2026-10-31: "we should not decide on that
+// duration and it should be fully customizable/editable"). Default is every booking.
+function _fbSvcSkipHTML(){
+  const on=_fbSvcSkip>0;
+  return '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin:14px 0 6px;">Send it again</div>'
+    +'<select id="fb-svc-again" class="fi" aria-label="Send it again" style="margin:0 0 8px;" onchange="_fbSvcSkip=this.value===\'skip\'?(_fbSvcSkip||30):0;const el=document.getElementById(\'fb-svc-card\');if(el)el.innerHTML=_fbSvcCardInner();">'
+    +'<option value="every"'+(on?'':' selected')+'>Every time they book</option>'
+    +'<option value="skip"'+(on?' selected':'')+'>Not if they filled it out recently</option></select>'
+    +(on?'<div style="display:flex;align-items:center;gap:8px;font-size:16px;color:var(--p-ink);">Skip if filled out in the last <input id="fb-svc-days" class="fi" type="number" inputmode="numeric" min="1" max="3650" value="'+_fbSvcSkip+'" aria-label="Number of days" style="width:84px;margin:0;" oninput="const v=Math.round(Number(this.value));if(v>=1)_fbSvcSkip=Math.min(v,3650);"> days</div>':'');
 }
 function _fbSvcAdd(n){n=String(n||'').trim();if(!n)return;if(!_fbSvcDraft.some(function(x){return _svcNorm(x)===_svcNorm(n);}))_fbSvcDraft.push(n);const el=document.getElementById('fb-svc-card');if(el)el.innerHTML=_fbSvcCardInner();}
 function _fbSvcRemove(i){_fbSvcDraft.splice(i,1);const el=document.getElementById('fb-svc-card');if(el)el.innerHTML=_fbSvcCardInner();}
@@ -21850,6 +21861,7 @@ function renderFormBuilder(tid){
   const tmpl=formTmpls[tid]||formTmpls.new;
   document.getElementById('tt').textContent=tid==='new'?'New form':'Edit form';
   _fbSvcDraft=(tid!=='new'&&formTmpls[tid]&&Array.isArray(formTmpls[tid].services))?formTmpls[tid].services.slice():[];
+  _fbSvcSkip=(tid!=='new'&&formTmpls[tid])?_formSkipDays(tid):0;
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:8px;"><button onclick="saveFormBuilder('${tid}',true)" style="border:1px solid var(--p-line-ctl);background:none;border-radius:8px;padding:6px 12px;font-size:16px;color:var(--p-mut);cursor:pointer;"><i class="ti ti-eye" style="font-size:16px;"></i> Preview</button><button onclick="saveFormBuilder('${tid}')" style="border:1px solid var(--btn-edge);background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:600;">Save</button></div>
@@ -21976,7 +21988,7 @@ function saveFormBuilder(tid,thenPreview,quiet){
   // Stamp the edit here rather than relying on a diff against a snapshot that may not exist: this is
   // a deliberate save of THIS form, and it must win any merge against an older copy elsewhere.
   formTmpls[id]={name,qs,_ts:Date.now()};
-  if(_fbSvcDraft.length)formTmpls[id].services=_fbSvcDraft.slice();
+  if(_fbSvcDraft.length){formTmpls[id].services=_fbSvcDraft.slice();if(_fbSvcSkip>0)formTmpls[id].svcSkipDays=_fbSvcSkip;}
   // Emoji override: checkbox = hide icon (''); a typed emoji sets it; blank+unchecked reverts to the default tile.
   try{const hide=document.getElementById('form-emoji-hide');const ei=document.getElementById('form-emoji-input');
     if(_formIconImgDraft){formEmojis[id]=_formIconImgDraft;}
@@ -35754,9 +35766,11 @@ function _stampClientNextVisit(reconcile){
 // form?"). Each form can name the services it goes with (formTmpls[fid].services, set in the form
 // editor, synced with the form itself). When a client is booked for one of those in the next 14 days,
 // the form is put in their app on its own, once per booking, unless it is already waiting for them or
-// they filled it in the last 90 days. She gets a bell note either way it could need her.
+// they filled it within the number of days SHE set on that form (svcSkipDays; none set = every booking).
+// She gets a bell note either way it could need her.
 function _svcNorm(s){return String(s||'').toLowerCase().replace(/\s*[-–—·|(,]\s*\d+\s*(min|mins|minutes|hr|hrs|hour|hours)\b.*$/,'').replace(/\b\d+\s*(min|mins|minutes)\b/g,' ').replace(/[^a-z0-9]+/g,' ').trim();}
 function _svcMatches(apptSvc,name){const n=_svcNorm(name);if(!n)return false;return (' '+_svcNorm(apptSvc)+' ').indexOf(' '+n+' ')>=0;}
+function _formSkipDays(fid){const t=formTmpls[fid];const v=Math.round(Number(t&&t.svcSkipDays));return v>=1?Math.min(v,3650):0;}
 function _formServices(fid){const t=formTmpls[fid];return (t&&Array.isArray(t.services))?t.services.filter(function(x){return String(x||'').trim();}):[];}
 function _formsForService(svc){
   if(!String(svc||'').trim())return [];
@@ -35785,7 +35799,7 @@ function _svcFormsSweep(){
   if(typeof Cloud!=='undefined'&&Cloud&&(Cloud._booting||(Cloud.token&&!Cloud._pulledOnce)))return [];
   if(!CL||typeof CL!=='object'||!formTmpls)return [];
   if(!Object.keys(formTmpls).some(function(fid){return _formServices(fid).length;}))return [];
-  const now=Date.now(),horizon=now+14*86400000,recent=now-90*86400000;
+  const now=Date.now(),horizon=now+14*86400000;
   const did=[],touched={};
   let appts=[];try{appts=_allApptsUnified();}catch(e){return [];}
   appts.forEach(function(a){
@@ -35802,7 +35816,8 @@ function _svcFormsSweep(){
       const pf=(c.pendingForms||[]).find(function(p){return p&&p.formId===fid;});
       const subs=(c.submittedForms||[]).filter(function(x){return x&&x.formId===fid;});
       const open=pf&&!subs.some(function(x){return (Number(x.at)||0)>=(Number(pf.assignedAt)||0);});
-      const fresh=subs.some(function(x){return (Number(x.at)||0)>recent;});
+      const skip=_formSkipDays(fid);
+      const fresh=skip>0&&subs.some(function(x){return (Number(x.at)||0)>now-skip*86400000;});
       if(open||fresh)return;
       _assignFormsToClient(c,[fid]);
       did.push({cid:cid,fid:fid,when:a.when,svc:svc});
