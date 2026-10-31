@@ -8564,6 +8564,22 @@ stated. Not yet known: her profession order (the founder Recover clients screen 
 - Test: `scratchpad/test-deleted-intake-not-sent.mjs` 9/9 Chromium; `sweep3-takeback.mjs` 7/7.
   WebKit was not installed in this container, so not run in Safari (pure form-picking logic, no storage).
 
+### 2026-10-31: build 2026-10-31c, forms sent automatically for a booked service (preview)
+
+Maddie (2026-10-30, email): "how do I attach certain forms to certain appointment types? ... if a client
+is booked for a chemical Peel, how can I send them my custom chem peel form? Or have it prompt me".
+Ashley: build requested features rather than reply that they can't be done (reply-agent.md).
+- Form editor: "Send when booked for" card (her Square catalog, service menu, booking-link services and
+  upcoming appointment names, or typed). Stored as `formTmpls[fid].services`, so it syncs with the form;
+  no new synced key.
+- `_svcFormsSweep()`: upcoming Square/manual/confirmed bookings in the next 14 days whose service
+  matches (normalised, whole-phrase: "Chemical Peel" matches "Express Chemical Peel - 60 min") put the
+  form in the client's app once per booking (`c.svcFormsSent[source:id|fid]`). Skips a form already
+  waiting, one filled in the last 90 days, deleted forms, sample clients, and anything before the
+  account is read. Bell note; a client without the app gets "Tap to invite them to the app".
+  Runs when appointments change (`_stampClientNextVisit`), after saving a form, and every 30 min.
+- `scratchpad/test-service-forms.mjs` 14/14 (Chromium; WebKit not installed in this container).
+
 ### 2026-10-31: build 2026-10-31b, Claude can post What's new updates (preview)
 
 Ashley: "yes please build that" (Claude posting the What's new board for her). `POST /api/announcements`

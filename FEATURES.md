@@ -45,6 +45,7 @@ saved anywhere", not "does this always call that".
 | `_animalOwnerHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_apptCancelSquare` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_apptCancelSquare` | `/api/square/cancel-booking` | via `_doCancelSquare` |
+| `_apptClientIdOf` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_apptRescheduleSquare` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_apptRescheduleSquare` | `/api/square/reschedule-booking` | direct |
 | `_askBookRun` | `/api/ai` | via `_aiComplete` |
@@ -809,6 +810,8 @@ saved anywhere", not "does this always call that".
 | `_stopAftercareDrip` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_stopAftercareDrip` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_storeSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_svcFormsSoon` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_svcFormsSweep` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_syncClientsToServer` | `/api/clients` | direct |
 | `_syncClientsToServer` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_syncInventoryFromSquare` | `/api/square/inventory` | direct |

@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-31b';
+const APP_BUILD='2026-10-31c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -19464,7 +19464,7 @@ function _fbSig(tid){
   try{
     const r=_readFormBuilder(tid);
     const hide=document.getElementById('form-emoji-hide'),ei=document.getElementById('form-emoji-input');
-    return JSON.stringify([r.name,r.qs,!!(hide&&hide.checked),(ei&&ei.value)||'',_formIconImgDraft||'']);
+    return JSON.stringify([r.name,r.qs,!!(hide&&hide.checked),(ei&&ei.value)||'',_formIconImgDraft||'',_fbSvcDraft]);
   }catch(e){return null;}
 }
 function _formEmoji(fid){return (fid in formEmojis)?formEmojis[fid]:undefined;}
@@ -21828,11 +21828,28 @@ function _qRowHTML(q){
     ${q.type==='Signature'?`<div style="border-top:1px solid var(--p-line2);padding:8px 12px;font-size:14px;color:var(--p-mut);display:flex;align-items:center;gap:5px;"><i class="ti ti-info-circle" style="font-size:16px;color:var(--p-blue);"></i> Always shown last, clients sign after reviewing everything above.</div>`:''}
   </div>`;
 }
+// "Send when booked for": the services this form goes with (see _svcFormsSweep).
+let _fbSvcDraft=[];
+function _fbSvcCardInner(){
+  const chips=_fbSvcDraft.map(function(n,i){return '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--accent-tint);color:var(--accent-strong);border-radius:999px;padding:5px 6px 5px 11px;font-size:16px;margin:0 6px 6px 0;">'+_fileEsc(n)+'<button type="button" onclick="_fbSvcRemove('+i+')" aria-label="Remove '+_fileEsc(n)+'" style="border:none;background:none;color:inherit;cursor:pointer;font-size:16px;padding:0 4px;"><i class="ti ti-x" aria-hidden="true"></i></button></span>';}).join('');
+  const have={};_fbSvcDraft.forEach(function(n){have[_svcNorm(n)]=1;});
+  const opts=_svcNamesForPicker().filter(function(n){return !have[_svcNorm(n)];});
+  return '<div style="font-size:16px;font-weight:600;color:var(--p-ink);">Send when booked for</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.45;margin:2px 0 10px;">When a client books one of these, this form goes to their app on its own.</div>'
+    +(chips?'<div id="fb-svc-chips" style="display:flex;flex-wrap:wrap;">'+chips+'</div>':'')
+    +'<div style="display:flex;gap:8px;">'
+    +(opts.length?'<select id="fb-svc-pick" class="fi" aria-label="Pick a service" style="flex:1;margin:0;" onchange="if(this.value){_fbSvcAdd(this.value);}"><option value="">Pick a service…</option>'+opts.map(function(n){return '<option>'+_fileEsc(n)+'</option>';}).join('')+'</select>':'')
+    +'<input id="fb-svc-type" class="fi" aria-label="Or type a service" placeholder="'+(opts.length?'Or type one':'Type a service, e.g. Chemical peel')+'" style="flex:1;margin:0;" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_fbSvcAdd(this.value);}">'
+    +'<button type="button" class="btng" onclick="_fbSvcAdd(document.getElementById(\'fb-svc-type\').value)" style="flex-shrink:0;">Add</button></div>';
+}
+function _fbSvcAdd(n){n=String(n||'').trim();if(!n)return;if(!_fbSvcDraft.some(function(x){return _svcNorm(x)===_svcNorm(n);}))_fbSvcDraft.push(n);const el=document.getElementById('fb-svc-card');if(el)el.innerHTML=_fbSvcCardInner();}
+function _fbSvcRemove(i){_fbSvcDraft.splice(i,1);const el=document.getElementById('fb-svc-card');if(el)el.innerHTML=_fbSvcCardInner();}
 function renderFormBuilder(tid){
   setNav('pro');
   _fbSavedTid=null;_fbInitialSig=null;
   const tmpl=formTmpls[tid]||formTmpls.new;
   document.getElementById('tt').textContent=tid==='new'?'New form':'Edit form';
+  _fbSvcDraft=(tid!=='new'&&formTmpls[tid]&&Array.isArray(formTmpls[tid].services))?formTmpls[tid].services.slice():[];
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:8px;"><button onclick="saveFormBuilder('${tid}',true)" style="border:1px solid var(--p-line-ctl);background:none;border-radius:8px;padding:6px 12px;font-size:16px;color:var(--p-mut);cursor:pointer;"><i class="ti ti-eye" style="font-size:16px;"></i> Preview</button><button onclick="saveFormBuilder('${tid}')" style="border:1px solid var(--btn-edge);background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:600;">Save</button></div>
@@ -21846,6 +21863,7 @@ function renderFormBuilder(tid){
     <label style="display:flex;align-items:center;gap:6px;font-size:16px;color:var(--p-mut);cursor:pointer;"><input type="checkbox" id="form-emoji-hide" ${hidden?'checked':''} onchange="var i=document.getElementById('form-emoji-input');if(i){i.disabled=this.checked;if(this.checked)i.value='';}if(this.checked){_formIconImgDraft=null;var p=document.getElementById('form-icon-prev');if(p)p.innerHTML='';}" style="width:16px;height:16px;accent-color:var(--accent-strong);"> No icon</label>
     <span style="font-size:14px;color:var(--p-mut);flex:1;min-width:120px;">Emoji or an image in front of this form, leave blank to keep the default.</span>
   </div>`;})()}
+  <div id="fb-svc-card" style="margin:6px 16px 12px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 13px;">${_fbSvcCardInner()}</div>
   ${aiEnabled?`<div style="margin:2px 16px 10px;background:var(--accent-a08);border:1px solid var(--accent);border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
     <i class="ti ti-sparkles" style="font-size:18px;color:var(--accent-strong);flex-shrink:0;"></i>
     <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">AI Form Assist</div><div style="font-size:14px;color:var(--p-mut);line-height:1.4;">Suggest contraindications + consent language for this service.</div></div>
@@ -21958,6 +21976,7 @@ function saveFormBuilder(tid,thenPreview,quiet){
   // Stamp the edit here rather than relying on a diff against a snapshot that may not exist: this is
   // a deliberate save of THIS form, and it must win any merge against an older copy elsewhere.
   formTmpls[id]={name,qs,_ts:Date.now()};
+  if(_fbSvcDraft.length)formTmpls[id].services=_fbSvcDraft.slice();
   // Emoji override: checkbox = hide icon (''); a typed emoji sets it; blank+unchecked reverts to the default tile.
   try{const hide=document.getElementById('form-emoji-hide');const ei=document.getElementById('form-emoji-input');
     if(_formIconImgDraft){formEmojis[id]=_formIconImgDraft;}
@@ -21967,6 +21986,7 @@ function saveFormBuilder(tid,thenPreview,quiet){
   }catch(e){}
   _formIconImgDraft=null;
   persistForms();
+  if(_fbSvcDraft.length){try{_svcFormsSoon();}catch(e){}}
   _fbSavedTid=tid;_fbInitialSig=_fbSig(tid);
   // She tapped Save. Confirm it really reached the account rather than telling her it did.
   try{ if(!quiet)_verifyFormSave(id,name); }catch(e){}
@@ -35726,6 +35746,84 @@ function _stampClientNextVisit(reconcile){
     });
     if(changed.length){try{if(typeof saveClients==='function')saveClients({noSync:true});}catch(e){}changed.forEach(function(cid){try{if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);}catch(e){}});}
   }catch(e){}
+  // Appointments just changed (or the calendar opened): put any forms tied to a booked service in that client's app.
+  try{_svcFormsSoon();}catch(e){}
+}
+// Forms for a service (Maddie, Feedback 2026-10-30: "how do I attach certain forms to certain appointment
+// types? For example if a client is booked for a chemical Peel, how can I send them my custom chem peel
+// form?"). Each form can name the services it goes with (formTmpls[fid].services, set in the form
+// editor, synced with the form itself). When a client is booked for one of those in the next 14 days,
+// the form is put in their app on its own, once per booking, unless it is already waiting for them or
+// they filled it in the last 90 days. She gets a bell note either way it could need her.
+function _svcNorm(s){return String(s||'').toLowerCase().replace(/\s*[-–—·|(,]\s*\d+\s*(min|mins|minutes|hr|hrs|hour|hours)\b.*$/,'').replace(/\b\d+\s*(min|mins|minutes)\b/g,' ').replace(/[^a-z0-9]+/g,' ').trim();}
+function _svcMatches(apptSvc,name){const n=_svcNorm(name);if(!n)return false;return (' '+_svcNorm(apptSvc)+' ').indexOf(' '+n+' ')>=0;}
+function _formServices(fid){const t=formTmpls[fid];return (t&&Array.isArray(t.services))?t.services.filter(function(x){return String(x||'').trim();}):[];}
+function _formsForService(svc){
+  if(!String(svc||'').trim())return [];
+  return Object.keys(formTmpls).filter(function(fid){return _ncUsable(fid)&&_formServices(fid).some(function(n){return _svcMatches(svc,n);});});
+}
+// Every service name she has anywhere, for the picker: her Square catalog, her own menu, her booking
+// link, and what her upcoming appointments are actually called.
+function _svcNamesForPicker(){
+  const out=[],seen={};const add=function(n){n=String(n||'').trim();const k=_svcNorm(n);if(!n||!k||seen[k])return;seen[k]=1;out.push(n);};
+  try{((typeof squareCatalog!=='undefined'&&squareCatalog&&squareCatalog.services)||[]).forEach(function(x){add(x&&x.name);});}catch(e){}
+  try{((typeof _svcMenu!=='undefined'&&_svcMenu)||[]).forEach(function(x){add(x&&x.name);});}catch(e){}
+  try{((typeof bookCfg!=='undefined'&&bookCfg&&bookCfg.services)||[]).forEach(function(x){add(x&&x.name);});}catch(e){}
+  try{_allApptsUnified().forEach(function(a){if(a&&a.raw&&a.raw.tx&&a.raw.tx!=='Appointment')add(String(a.raw.tx).replace(/\s*[-–—·]\s*\d+\s*min.*$/i,''));});}catch(e){}
+  return out;
+}
+function _apptClientIdOf(a){
+  const r=(a&&a.raw)||{};
+  if(r.clientId&&CL[r.clientId])return r.clientId;
+  if(r.sqcid){const k=Object.keys(CL).find(function(id){return CL[id]&&CL[id].squareId&&String(CL[id].squareId)===String(r.sqcid);});if(k)return k;}
+  try{return _clientIdByName(a.title)||null;}catch(e){return null;}
+}
+setInterval(function(){try{_svcFormsSweep();}catch(e){}},30*60000);   // a booking moving into the 14-day window
+function _svcFormsSoon(){try{clearTimeout(_svcFormsSoon._t);_svcFormsSoon._t=setTimeout(function(){try{_svcFormsSweep();}catch(e){}},1500);}catch(e){}}
+function _svcFormsSweep(){
+  // Never while her account is still being read in: CL then holds stale or starter data (CLAUDE.md, boot).
+  if(typeof Cloud!=='undefined'&&Cloud&&(Cloud._booting||(Cloud.token&&!Cloud._pulledOnce)))return [];
+  if(!CL||typeof CL!=='object'||!formTmpls)return [];
+  if(!Object.keys(formTmpls).some(function(fid){return _formServices(fid).length;}))return [];
+  const now=Date.now(),horizon=now+14*86400000,recent=now-90*86400000;
+  const did=[],touched={};
+  let appts=[];try{appts=_allApptsUnified();}catch(e){return [];}
+  appts.forEach(function(a){
+    if(!a||!(a.when instanceof Date)||['square','manual','confirmed'].indexOf(a.source)<0)return;
+    const t=a.when.getTime();if(isNaN(t)||t<now-3600000||t>horizon)return;
+    const svc=(a.raw&&a.raw.tx)||a.sub||'';
+    const fids=_formsForService(svc);if(!fids.length)return;
+    const cid=_apptClientIdOf(a);const c=cid&&CL[cid];if(!c||c._sample)return;
+    const key=a.source+':'+(a.id||(a.raw&&a.raw.id)||t);
+    if(!c.svcFormsSent||typeof c.svcFormsSent!=='object')c.svcFormsSent={};
+    fids.forEach(function(fid){
+      const mk=key+'|'+fid;if(c.svcFormsSent[mk])return;
+      c.svcFormsSent[mk]=now;touched[cid]=1;
+      const pf=(c.pendingForms||[]).find(function(p){return p&&p.formId===fid;});
+      const subs=(c.submittedForms||[]).filter(function(x){return x&&x.formId===fid;});
+      const open=pf&&!subs.some(function(x){return (Number(x.at)||0)>=(Number(pf.assignedAt)||0);});
+      const fresh=subs.some(function(x){return (Number(x.at)||0)>recent;});
+      if(open||fresh)return;
+      _assignFormsToClient(c,[fid]);
+      did.push({cid:cid,fid:fid,when:a.when,svc:svc});
+    });
+  });
+  const ids=Object.keys(touched);
+  if(ids.length){
+    try{if(typeof saveClients==='function')saveClients({noSync:true});}catch(e){}
+    ids.forEach(function(cid){try{_scheduleSpecificClientSync(cid);}catch(e){}});
+  }
+  did.forEach(function(d){
+    const c=CL[d.cid]||{};const nm=c.name||'Your client';const fn=(formTmpls[d.fid]&&formTmpls[d.fid].name)||'form';
+    const day=d.when.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    const hasApp=!!c.appInvited;
+    try{notifFeed.unshift({id:'svcf-'+d.cid+'-'+d.fid+'-'+d.when.getTime(),type:'form',icon:'ti-clipboard-plus',col:'var(--p-surf2)',ic:'var(--accent)',
+      title:hasApp?'Form sent for a booking':'Form ready, send the app link',
+      body:hasApp?(nm+' is booked for '+d.svc+' on '+day+'. '+_bizFill(fn)+' is waiting in their app.'):(nm+' is booked for '+d.svc+' on '+day+'. '+_bizFill(fn)+' is ready for them. Tap to invite them to the app.'),
+      time:'Just now',ts:Date.now(),read:false,action:'client',data:d.cid});}catch(e){}
+  });
+  if(did.length){try{updateBadge();}catch(e){}}
+  return did;
 }
 function renderCalendar(){
   setNav('calendar');
