@@ -1379,7 +1379,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/admin/test-push` | POST | founder, provider session | POST /api/admin/test-push — FOUNDER-ONLY. Sends a test push to the founder's phone and reports what |
 | `/api/aftercare-drip` | POST | provider session | Provider-authed: start (or cancel) the automated tattoo aftercare drip for one of the |
 | `/api/ai` | POST | provider session, client link token | POST /api/ai   body: { messages, max_tokens?, model? } |
-| `/api/announcements` | POST | provider session | GET  /api/announcements            → { items, canPost, you, ownerSet } |
+| `/api/announcements` | POST | founder, provider session | GET  /api/announcements            → { items, canPost, you, ownerSet } |
 | `/api/app-launch` | POST | **public** | POST /api/app-launch — the phone app's own launch log (lib/app-launch-log.js). Works signed in or |
 | `/api/apple-app-site-association` | — | **public** | GET /.well-known/apple-app-site-association  (served here via a vercel.json rewrite) |
 | `/api/assetlinks` | — | **public** | GET /.well-known/assetlinks.json  (served here via a vercel.json rewrite) |

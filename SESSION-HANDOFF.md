@@ -8564,6 +8564,15 @@ stated. Not yet known: her profession order (the founder Recover clients screen 
 - Test: `scratchpad/test-deleted-intake-not-sent.mjs` 9/9 Chromium; `sweep3-takeback.mjs` 7/7.
   WebKit was not installed in this container, so not run in Safari (pure form-picking logic, no storage).
 
+### 2026-10-31: build 2026-10-31b, Claude can post What's new updates (preview)
+
+Ashley: "yes please build that" (Claude posting the What's new board for her). `POST /api/announcements`
+now also accepts `Authorization: Monitor <key>` (the feedback-brief key, `monitorKeyOk`). Guards: max 3
+posts per 24h by key (`source='claude'`, new column), every key post is emailed to her at once, the
+existing 10-minute duplicate guard, Switch off in Feedback Inbox kills it. A failed POST now answers 500
+instead of 200. GET by key lists the board so a repeat can be checked first.
+`scratchpad/test-announce-monitor-post.mjs` 14/14. How to post: `reply-agent.md` in feedback-monitor.
+
 ### 2026-10-31: build 2026-10-31a, deep test of this week's features (preview)
 
 Ashley: "please test all new functions deeply and thoroughly" (before the What's new post). Found and fixed:
