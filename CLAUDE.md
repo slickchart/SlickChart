@@ -385,6 +385,24 @@ The Esthetician (`ec-*`), Lash & Brow (`lb-*`), Hair Stylist (`hs-*`), PMU (`pm-
 8. **Release train as always**: the one preview branch, out at 2am unless she says "push it live
    early" for that change.
 
+## 1f. A new feature or fix: research the best way, then sweep EVERY flow (her rule, 2026-10-31)
+
+Her words: *"when adding features for fixes be sure to do deep reserch on the best possible way and do
+a whole sweep of checks and bugs before finishing. as a rule ... and check every single flow."* It came
+right after a feature shipped with a fixed "90 days" built into it that she had never chosen.
+
+1. **Research before building.** How do the best booking/charting apps handle it, what would a busy
+   provider expect, what are the edge cases. Pick the best way, not the first way that works.
+2. **Never decide a number, a duration or a rule FOR her or a provider.** If the behaviour has a
+   setting in it (how many days, how often, who gets it), it is a setting she can see and change,
+   with a sensible starting value she can edit. Her words: *"we should not decide on that duration
+   and it should be fully customizable/editable."*
+3. **Sweep every flow before saying done:** create, edit, remove, undo, a second device, phone and
+   computer width, an old build still running, empty / bad input, the client's side, and anything
+   the change sits next to (boot, sync, delete records). Write the test for each one, and run the
+   existing sweeps for the area (forms: `sweep-all-forms`, `sweep-form-mirror`, `test-contra-ticks`).
+4. **Then the usual gates** (§2, `check-generated.cjs`, the CI sweeps) and the release train (§1a).
+
 ## 2. Verify before claiming "fixed"
 
 Never tell the owner something is fixed without proof. For JS/UI changes, drive the app headless with the
