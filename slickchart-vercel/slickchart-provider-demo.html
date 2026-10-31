@@ -571,7 +571,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-31d';
+const APP_BUILD='2026-10-31e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -9874,6 +9874,52 @@ function _getAppBannerHTML(){
 // at a placeholder workspace with nowhere to go. Hidden on a genuine local-only install (no account
 // has ever existed in this browser and the server confirmed cloud sync is off), where sign-in is
 // meaningless. Not dismissible: being signed out is the one thing worth interrupting for.
+// Her Square sign-in expired and could not renew (Ashley 2026-10-31: tif… went two months without
+// knowing, because an expired connection read as "not connected" everywhere). Home shows it with one
+// Reconnect button, and the bell gets one note per expiry. Checked after her account has loaded, on
+// coming back to the app, and at most every 30 minutes.
+let _sqExpired=null,_sqExpiredAt=null,_sqExpChecked=0;
+function _sqExpiredBannerHTML(){
+  if(!_sqExpired||typeof Cloud==='undefined'||!Cloud||!Cloud.token)return '';
+  return `<div id="sq-exp-banner" style="margin:0 16px 12px;background:var(--p-amber-bg);border:1px solid var(--p-line-ctl);border-radius:16px;padding:13px 14px;">
+      <div style="display:flex;align-items:flex-start;gap:11px;">
+        <i class="ti ti-plug-connected-x" aria-hidden="true" style="font-size:18px;color:var(--p-amber);flex-shrink:0;margin-top:1px;"></i>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:16px;font-weight:600;color:var(--p-ink);">Square needs you to sign in again</div>
+          <div style="font-size:16px;color:var(--p-amber);line-height:1.45;margin-top:2px;">Your bookings and clients from Square stopped updating. Reconnect to bring them back. Nothing in SlickChart is lost.</div>
+        </div>
+      </div>
+      <button onclick="_sqConnect()" class="btnp" style="width:100%;border-radius:12px;padding:11px;margin-top:11px;justify-content:center;"><i class="ti ti-refresh"></i> Reconnect Square</button>
+    </div>`;
+}
+function _sqExpiredPaint(){
+  try{const slot=document.getElementById('sq-exp-slot');if(slot)slot.innerHTML=_sqExpiredBannerHTML();}catch(e){}
+}
+async function _sqCheckExpiry(force){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token||Cloud._booting||!Cloud._pulledOnce)return;
+    if(!force&&Date.now()-_sqExpChecked<30*60000)return;
+    _sqExpChecked=Date.now();
+    const st=await _sqConnState();if(!st||typeof st!=='object'||st.error)return;
+    _sqExpired=!!st.expired&&!st.oauth;_sqExpiredAt=st.expiredAt||null;
+    _sqExpiredPaint();
+    if(_sqExpired){
+      const nid='sq-expired-'+String(_sqExpiredAt||'x').slice(0,10);
+      const _cl=(typeof _notifCleared!=='undefined'&&_notifCleared&&_notifCleared.has)?_notifCleared.has(nid):false;
+      if(!_cl&&!notifFeed.some(function(n){return n&&n.id===nid;})){
+        notifFeed.unshift({id:nid,type:'square',icon:'ti-plug-connected-x',col:'var(--p-amber-bg)',ic:'var(--p-amber)',title:'Reconnect Square',body:'Your Square sign-in expired, so bookings and clients from Square stopped updating. Tap to reconnect.',time:'Just now',ts:Date.now(),read:false,action:'square-guide'});
+        try{updateBadge();}catch(e){}
+      }
+    }else{
+      // Reconnected: the bell note has done its job.
+      const before=notifFeed.length;
+      for(let i=notifFeed.length-1;i>=0;i--){if(notifFeed[i]&&/^sq-expired-/.test(String(notifFeed[i].id||'')))notifFeed.splice(i,1);}
+      if(notifFeed.length!==before){try{updateBadge();}catch(e){}}
+    }
+  }catch(e){}
+}
+setInterval(function(){try{_sqCheckExpiry();}catch(e){}},15000);   // cheap: returns at once until 30 min have passed
+try{document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'){try{_sqCheckExpiry(!!_sqExpired);}catch(e){}}});}catch(e){}
 function _signedOutBannerHTML(){
   try{
     if(typeof Cloud==='undefined'||!Cloud)return '';
@@ -9907,6 +9953,7 @@ function renderHome(){
     </div>
   </div>
   ${(function(){try{return _signedOutBannerHTML();}catch(e){return '';}})()}
+  <div id="sq-exp-slot">${(function(){try{return _sqExpiredBannerHTML();}catch(e){return '';}})()}</div>
   ${(function(){try{return _getAppBannerHTML();}catch(e){return '';}})()}
   ${(function(){try{const gs=_gettingStartedHTML();return gs?`<div id="getting-started-card" style="padding:0 16px;margin-bottom:12px;">${gs}</div>`:'';}catch(e){return '';}})()}
   <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">
@@ -28455,7 +28502,7 @@ function _notifClientId(n){
 function notifCard(n,bare){
   const _cid=_notifClientId(n);
   const _viewFile=_cid?`<button onclick="event.stopPropagation();nav('client','${_cid}')" style="margin-top:7px;background:none;border:1px solid var(--p-line-ctl);color:var(--accent-strong);border-radius:8px;padding:4px 10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-user" style="font-size:16px;"></i> View file</button>`:'';
-  return`<div onclick="markRead('${_jsAttr(n.id)}');${n.action==='client'?`nav('client','${_jsAttr(n.data)}')`:n.action==='form'?`openFormNotif('${_jsAttr(n.data)}','${_jsAttr(n.formEvId||'')}')`:n.action==='chat'?`nav('chat','${_jsAttr(n.data)}')`:n.action==='checkin'?`nav('checkin-detail','${_jsAttr(n.data)}')`:n.action==='vault'?`nav('vault')`:n.action==='inventory'?`nav('inventory')`:n.action==='requests'?`nav('requests')`:n.action==='home'?`nav('home')`:n.action==='whats-new'?`nav('whats-new')`:''}" style="background:var(--surf2);border:1px solid ${n.read?'var(--p-line-ctl)':'var(--accent-tint2)'};border-radius:12px;${bare?'':'margin:0 16px 8px;'}overflow:hidden;cursor:pointer;${n.read?'':'background:var(--p-amber-bg);'}">
+  return`<div onclick="markRead('${_jsAttr(n.id)}');${n.action==='client'?`nav('client','${_jsAttr(n.data)}')`:n.action==='form'?`openFormNotif('${_jsAttr(n.data)}','${_jsAttr(n.formEvId||'')}')`:n.action==='chat'?`nav('chat','${_jsAttr(n.data)}')`:n.action==='checkin'?`nav('checkin-detail','${_jsAttr(n.data)}')`:n.action==='vault'?`nav('vault')`:n.action==='inventory'?`nav('inventory')`:n.action==='requests'?`nav('requests')`:n.action==='home'?`nav('home')`:n.action==='whats-new'?`nav('whats-new')`:n.action==='square-guide'?`nav('square-guide')`:''}" style="background:var(--surf2);border:1px solid ${n.read?'var(--p-line-ctl)':'var(--accent-tint2)'};border-radius:12px;${bare?'':'margin:0 16px 8px;'}overflow:hidden;cursor:pointer;${n.read?'':'background:var(--p-amber-bg);'}">
     <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
       <div style="position:relative;flex-shrink:0;">
         <div style="width:40px;height:40px;border-radius:12px;background:${_fileEsc(n.col)};display:flex;align-items:center;justify-content:center;">
@@ -31580,6 +31627,7 @@ async function _sqRenderConnState(){
   const el=document.getElementById('sqg-oauth-body');if(!el)return;
   const st=await _sqConnState();
   if(st&&st.oauth){el.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;"><span style="font-size:16px;color:var(--p-green);font-weight:600;"><i class="ti ti-check" style="font-size:16px;"></i> Connected to Square'+(st.merchantId?(' \u00b7 '+st.merchantId):'')+'</span><button onclick="_sqDisconnect()" style="background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:8px;padding:6px 11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Disconnect</button></div>';}
+  else if(st&&st.expired){el.innerHTML='<div style="font-size:16px;color:var(--p-amber);line-height:1.5;margin-bottom:10px;"><i class="ti ti-plug-connected-x" style="font-size:16px;"></i> Your Square sign-in expired. Reconnect to bring your bookings and clients back.</div><button onclick="_sqConnect()" class="btnp" style="width:100%;border-radius:12px;padding:11px;justify-content:center;"><i class="ti ti-refresh"></i> Reconnect Square</button>';}
   else if(st&&!st.oauthConfigured){el.innerHTML='<div style="font-size:16px;color:var(--p-mut2);line-height:1.5;">One-tap connect isn\u2019t enabled on this deployment yet. The owner needs to add <span style="font-family:monospace;">SQUARE_APP_ID</span> and <span style="font-family:monospace;">SQUARE_APP_SECRET</span> in Vercel (see setup guide). You can still use the manual access-token steps below.</div>';}
 }
 function _sqStatusBadge(label,ok){return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:14px;font-weight:600;padding:3px 9px;border-radius:24px;background:${ok?'var(--p-green-bg)':'var(--p-red-bg)'};color:${ok?'var(--p-green)':'var(--p-red)'};"><i class="ti ${ok?'ti-check':'ti-x'}" style="font-size:16px;"></i> ${label}</span>`;}
@@ -31762,6 +31810,10 @@ async function _sqCheckStatus(){
         <span style="font-size:14px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;">${_fileEsc(env)}</span>
         <span style="font-size:14px;font-weight:700;color:var(--p-green);border:1px solid var(--p-green-line);border-radius:24px;padding:3px 9px;"><i class="ti ti-check" style="font-size:14px;"></i> Connected with your Square login</span>
       </div><div style="font-size:14px;color:var(--p-green);margin-top:8px;line-height:1.5;">You're linked through your own Square login — no token to set up. Head to Import clients below to pull your data in.</div>`;
+    }else if(c&&c.expired){
+      el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span style="font-size:14px;font-weight:700;color:var(--p-amber);border:1px solid var(--p-line-ctl);border-radius:24px;padding:3px 9px;">Sign-in expired</span>
+      </div><div style="font-size:14px;color:var(--p-amber);margin-top:8px;line-height:1.5;">Square asked you to sign in again. Tap <b>Reconnect Square</b> below to bring your bookings and clients back.</div>`;
     }else{
       el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
         <span style="font-size:14px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;">${_fileEsc(env)}</span>

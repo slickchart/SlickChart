@@ -1,6 +1,6 @@
 // GET    /api/square/connection  → { connected, merchantId, env, oauth }
 // DELETE /api/square/connection  → disconnects this provider's Square
-import { getConnection, disconnect, providerFromReqChecked, squareConfig } from '../../lib/square.js';
+import { getConnection, connectionExpiry, disconnect, providerFromReqChecked, squareConfig } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   const providerId = await providerFromReqChecked(req);
@@ -17,6 +17,9 @@ export default async function handler(req, res) {
     let conn = null;
     if (providerId) conn = await getConnection(providerId);
     const hasOwn = !!(conn && conn.token);
+    // Her own connection exists but expired: say so, so the app can ask her to reconnect.
+    let exp = { expired: false, expiredAt: null };
+    if (providerId && !hasOwn) { try { exp = await connectionExpiry(providerId); } catch (e) {} }
     // "Connected" means this account has its OWN Square OAuth connection — nothing else. There is no
     // deployment-wide/shared token anymore, so an account is never reported connected off someone else's.
     res.status(200).json({
@@ -24,7 +27,9 @@ export default async function handler(req, res) {
       oauth: hasOwn,
       oauthConfigured,
       env: cfg.env,
-      merchantId: conn ? conn.merchantId : null
+      merchantId: conn ? conn.merchantId : null,
+      expired: !!exp.expired,
+      expiredAt: exp.expiredAt || null
     });
   } catch (e) { console.error('[connection] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

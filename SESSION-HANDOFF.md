@@ -8661,3 +8661,16 @@ day with nothing changing; a shared email is usually family members. Now it warn
 became shared in the last day (with how many have the same name, likely one person twice); the standing
 totals move to the check's `note`, split same name / different names. Burst check unchanged.
 test-health-sweep.mjs ALL PASS (PGLITE=/tmp/pgl after `npm i @electric-sql/pglite@0.2.17` there).
+
+### 2026-10-31: build 2026-10-31e, "Reconnect Square" notice (preview)
+Ashley chose this after the brief showed tif…'s Square sign-in expired since 2026-08-29 with no sign
+in her app: an expired connection made getConnection() return null, so every screen said "not
+connected". `GET /api/square/connection` now adds `expired`/`expiredAt` (lib/square.js
+`connectionExpiry`, the caller's own row only; additive, old builds ignore it). The app checks after
+her account loads, on coming back to the app (forced while expired, so a reconnect clears at once)
+and at most every 30 min: Home shows "Square needs you to sign in again" with one Reconnect Square
+button, the bell gets one note per expiry (never re-added after she clears it), and the Square screen
+says "Sign-in expired". Reconnecting clears both.
+Tests: test-square-expired.mjs 12/12, test-square-expiry-api.mjs ALL PASS (PGLITE=/tmp/pgl), plus
+test-square-refresh, test-square-purge-ui, test-booking-toast-boot, test-sample-purge-boot,
+test-busy-courses-boot (chromium), test-service-forms(-flows). WebKit is not installed in this container.

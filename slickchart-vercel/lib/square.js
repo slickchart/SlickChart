@@ -303,6 +303,17 @@ export async function disconnect(providerId) {
   await q`DELETE FROM square_connections WHERE provider_id = ${providerId}`;
 }
 
+// Is THIS provider's own Square connection past its expiry (refresh failed, so only a reconnect fixes
+// it)? getConnection() returns null for that, which the app used to read as "never connected", so a
+// provider went two months not knowing (tif…, expired 2026-08-29). Scoped to the caller's own row.
+export async function connectionExpiry(providerId) {
+  if (!dbEnabled() || !providerId) return { expired: false };
+  await ensureProvidersTable();
+  const rows = await sql()`SELECT expires_at FROM square_connections WHERE provider_id = ${providerId}`;
+  const at = rows.length && rows[0].expires_at ? new Date(rows[0].expires_at).getTime() : 0;
+  return { expired: !!at && at <= Date.now(), expiredAt: at && at <= Date.now() ? new Date(at).toISOString() : null };
+}
+
 // Read a provider's connection; refresh the token if it expires within 7 days.
 export async function getConnection(providerId) {
   if (!dbEnabled() || !providerId) return null;

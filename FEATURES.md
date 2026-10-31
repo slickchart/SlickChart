@@ -423,6 +423,7 @@ saved anywhere", not "does this always call that".
 | `_loadSquareAppts` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_loadSquareAppts` | `/api/square/appointments` | direct |
 | `_loadSquareAppts` | `/api/square/booking-options` | via `openSquareBook` |
+| `_loadSquareAppts` | `/api/square/connect` | via `_sqConnect` |
 | `_loadSquareHistory` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_loadSquareHistory` | `/api/square/appointments` | direct |
 | `_loadSquareHistory` | `/api/square/booking-options` | via `openSquareBook` |
@@ -568,6 +569,7 @@ saved anywhere", not "does this always call that".
 | `_putFileWithRetry` | `/api/guide-file` | via `_putFileBody` |
 | `_reRenderAttn` | `/api/clients` | via `syncClientEvents` |
 | `_reRenderAttn` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_reRenderAttn` | `/api/square/connect` | via `_sqConnect` |
 | `_recSearch` | `/api/admin/client-recover` | via `_recoverConsolidateAll` |
 | `_recSearch` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recSearch` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
@@ -752,6 +754,8 @@ saved anywhere", not "does this always call that".
 | `_sqApptsErrHTML` | `/api/clients` | via `syncClientEvents` |
 | `_sqApptsErrHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_sqApptsErrHTML` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_sqCheckExpiry` | `/api/square/connect` | via `_sqConnect` |
+| `_sqCheckExpiry` | `/api/square/connection` | via `_sqConnState` |
 | `_sqCheckPerms` | `/api/square/token-status` | direct |
 | `_sqCheckStatus` | `/api/square/connection` | direct |
 | `_sqConnState` | `/api/square/connection` | direct |
@@ -764,11 +768,14 @@ saved anywhere", not "does this always call that".
 | `_sqDoBook` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_sqDoBook` | `/api/square/book` | direct |
 | `_sqDoBook` | `/api/square/booking-options` | via `openSquareBook` |
+| `_sqExpiredBannerHTML` | `/api/square/connect` | via `_sqConnect` |
+| `_sqExpiredPaint` | `/api/square/connect` | via `_sqConnect` |
 | `_sqGuideStatus` | `/api/health` | direct |
 | `_sqLoadAppointments` | `/api/square/appointments` | direct |
 | `_sqLoadCatalog` | `/api/square/catalog` | direct |
 | `_sqLoadCustomers` | `/api/square/customers` | direct |
 | `_sqLoadSlots` | `/api/square/availability` | direct |
+| `_sqRenderConnState` | `/api/square/connect` | via `_sqConnect` |
 | `_sqRenderConnState` | `/api/square/connection` | via `_sqConnState` |
 | `_sqp_all` | `/api/square/delete-customers` | via `_sqp_execute` |
 | `_sqp_confirm` | `/api/clients` | via `_serverDeleteClients` |
@@ -1127,6 +1134,7 @@ saved anywhere", not "does this always call that".
 | `renderHome` | `/api/clients` | via `syncClientEvents` |
 | `renderHome` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderHome` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `renderHome` | `/api/square/connect` | via `_sqConnect` |
 | `renderIntegrations` | `/api/clients` | via `syncClientEvents` |
 | `renderIntegrations` | `/api/google-cal` | via `_gcalStatus` |
 | `renderIntegrations` | `/api/provider-form` | via `submitSignOnDevice` |
