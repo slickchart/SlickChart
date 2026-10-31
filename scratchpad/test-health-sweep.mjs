@@ -52,6 +52,9 @@ INSERT INTO app_launch_logs (device_key,provider_id,email,platform,build,events,
 INSERT INTO native_push_log (owner_id,outcome,reason,at) VALUES ('good','linked','',now()),('bad','send failed','UNREGISTERED',now());
 INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead','bad','t1','Cooper Secretname','cooper@client.com',${now - 30 * 24 * H}),('c_ok','good','t2','Ann Private','ann@client.com',${now - H});
 `);
+// shared emails: 'other' has 30 old ones (family members), 'bad' gets 6 made today (same person twice)
+for (let i = 0; i < 30; i++) for (const n of ['Mum', 'Kid']) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', ['o' + i + n, 'other', 'to' + i + n, n + ' Fam' + i, 'fam' + i + '@home.com', now - 40 * 24 * H]);
+for (let i = 0; i < 6; i++) for (const k of ['a', 'b']) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', ['b' + i + k, 'bad', 'tb' + i + k, 'Twice Person' + i, 'twice' + i + '@c.com', k === 'b' ? now - H : now - 20 * 24 * H]);
 let fail = 0; const ok = (c, m, d) => { console.log((c ? 'PASS ' : 'FAIL ') + m + (c || !d ? '' : '  :: ' + d)); if (!c) fail++; };
 
 // 2026-10-30: a forms shrink must say WHAT shrank (one form edited shorter, one she deleted, one gone).
@@ -96,8 +99,9 @@ ok(by['phone-push'].items.length === 1 && /send failed: UNREGISTERED/.test(by['p
 ok(by['new-setup'].items.length === 1 && /fre…@new.com/.test(by['new-setup'].items[0]), 'the new provider who never finished setup is flagged');
 { const f = by['data-shrink'].items.find(i => /oth…@x.com: sc_forms/.test(i)) || '';
   ok(/Shrank: tmpls 3\u21921 entries/.test(f) && /Forms: 2 gone \(1 deleted by her\), 1 edited much shorter/.test(f) && !/f_long|f_del|qqq/.test(f), 'a forms shrink says which part shrank and how many forms she deleted, with no ids or content', f); }
+ok(by['duplicates'].items.length === 1 && /tro…@x.com: 6 emails newly on more than one client today \(6 with the same name\)/.test(by['duplicates'].items[0]) && /oth…@x.com 30 \(0 same name\)/.test(by['duplicates'].note || ''), 'shared emails warn only when new today; the standing family ones are a note, not a warning', JSON.stringify(by['duplicates']));
 ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-live'].items[0]), 'a deleted client still live on the server is flagged');
-ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|locked@out|ghost@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
+ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|fam0@home|twice0@c|Twice Person|locked@out|ghost@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
 ok(j.problems.length > 0 && j.problems[0].startsWith('ALERT'), 'problems list is worst first');
 ok(!JSON.stringify(j).match(/hea…@ok\.com/), 'the healthy account appears nowhere');
 console.log(fail ? fail + ' FAILED' : 'ALL PASS'); process.exit(fail ? 1 : 0);

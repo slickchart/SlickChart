@@ -264,10 +264,23 @@ export async function runSweep(q) {
     const burst = await q`SELECT c.provider_id, count(*)::int AS n FROM clients c JOIN providers p ON p.id = c.provider_id
       WHERE c.created_at > ${dayAgo} AND c.deleted_at IS NULL AND p.created_at < now() - interval '7 days'
       GROUP BY c.provider_id HAVING count(*) > 40`;
-    const dup = await q`SELECT provider_id, count(*)::int AS n FROM (SELECT provider_id, lower(email) FROM clients
-      WHERE deleted_at IS NULL AND coalesce(email, '') <> '' GROUP BY provider_id, lower(email) HAVING count(*) > 1) d GROUP BY provider_id HAVING count(*) >= 25`;
+    // A shared email on its own is normal (a mum booking for her daughters, a couple), and a standing
+    // count repeated it as a warning every morning without anything changing (2026-10-31: six accounts,
+    // 31-79 each, the same numbers day after day). Warn only on what is NEW: a shared email whose newest
+    // copy was made in the last day. The standing totals stay in the note, split into same name (likely
+    // one person twice) and different names (family members), so nothing is hidden.
+    const dup = await q`SELECT provider_id, count(*)::int AS n,
+        sum(CASE WHEN names = 1 THEN 1 ELSE 0 END)::int AS same,
+        sum(CASE WHEN newest > ${dayAgo} THEN 1 ELSE 0 END)::int AS fresh,
+        sum(CASE WHEN newest > ${dayAgo} AND names = 1 THEN 1 ELSE 0 END)::int AS fresh_same
+      FROM (SELECT provider_id, count(DISTINCT lower(trim(coalesce(name, '')))) AS names, max(created_at) AS newest FROM clients
+        WHERE deleted_at IS NULL AND coalesce(email, '') <> '' GROUP BY provider_id, lower(email) HAVING count(*) > 1) d
+      GROUP BY provider_id`;
+    const fresh = dup.filter(r => r.fresh >= 5);
+    const standing = dup.filter(r => r.n >= 25);
     return { items: burst.map(r => who(r.provider_id) + ': ' + r.n + ' clients added in the last day')
-      .concat(dup.map(r => who(r.provider_id) + ': ' + r.n + ' emails appear on more than one client')) };
+      .concat(fresh.map(r => who(r.provider_id) + ': ' + r.fresh + ' emails newly on more than one client today (' + r.fresh_same + ' with the same name)')),
+      note: standing.length ? 'Shared emails, standing (not new): ' + standing.map(r => who(r.provider_id) + ' ' + r.n + ' (' + r.same + ' same name)').join(', ') : undefined };
   });
 
   // 15. A client the provider deleted that is still live on the server (Cooper Howard, 2026-10-21).

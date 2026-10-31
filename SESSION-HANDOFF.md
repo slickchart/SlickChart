@@ -8654,3 +8654,10 @@ still never sent twice. A device still on 31c applies 90 days until it relaunche
 Tests: test-service-forms.mjs 17/17, new test-service-forms-flows.mjs 13/13 (bundled form, bad input,
 past/removed bookings, two bookings one copy, remove the service, other device, phone width).
 Also: CLAUDE.md §1f, her rule to research first, never decide a setting for her, sweep every flow.
+
+### 2026-10-31: health sweep "duplicates" warns only on NEW shared emails (preview)
+The morning brief repeated "N emails appear on more than one client" for six accounts (31-79 each) every
+day with nothing changing; a shared email is usually family members. Now it warns only when 5+ emails
+became shared in the last day (with how many have the same name, likely one person twice); the standing
+totals move to the check's `note`, split same name / different names. Burst check unchanged.
+test-health-sweep.mjs ALL PASS (PGLITE=/tmp/pgl after `npm i @electric-sql/pglite@0.2.17` there).
