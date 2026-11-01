@@ -8674,3 +8674,21 @@ says "Sign-in expired". Reconnecting clears both.
 Tests: test-square-expired.mjs 12/12, test-square-expiry-api.mjs ALL PASS (PGLITE=/tmp/pgl), plus
 test-square-refresh, test-square-purge-ui, test-booking-toast-boot, test-sample-purge-boot,
 test-busy-courses-boot (chromium), test-service-forms(-flows). WebKit is not installed in this container.
+
+### 2026-11-01: build 2026-11-01a, photo consult buttons on a real client id (preview)
+
+**Observed (ground truth):** Jennie's iPhone, build 31d, 2026-10-31, on the photo consult review
+screen (`virtual-client`) logged `SyntaxError: Unexpected identifier 'c1793373011636lm1zn'. Expected
+')' to end an argument list.` Found by the app-launch error log, not reported by her.
+
+**Cause:** "Can't read these" and "Suggest they see a doctor" passed `confirmModal` a STRING action
+written as `'()=>vcAskForRetake(\'${id}\')'` inside a template literal, where `\'` is just `'`, so
+the handler became `'()=>vcAskForRetake('c179…')'` and did not compile. Tapping either button did
+nothing for every client. Both now pass a real arrow function.
+
+**Test:** `scratchpad/test-vc-handlers.mjs` (5/5) compiles every inline handler on 13 client
+screens with a real-shaped id and an apostrophe in the name, and taps both buttons through their
+confirm. On the old file it fails 4 of 5. VC sweeps green (layout, reprocess, subs-wiped,
+xdevice-fewer, blob, product-consult 37/37). `sweep3-vc-provider-flow` 7/8, the same on HEAD: its
+"retake keeps the first set" check counts photos on the new submission, but the first set is kept
+as `prev` by `_keepPrevConsult`, so that assertion is stale, not a regression.
