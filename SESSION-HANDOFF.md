@@ -8722,3 +8722,16 @@ the Square isolation sweep).
 - **Two stale tests fixed** (no app change): `sweep3-vc-provider-flow` now counts the first set kept
   as `prev` (8/8), and `sweep2-photo-xaccount` checks that the photo store left after sign-out is
   owner-stamped instead of expecting it emptied, which is the 2026-10 design (6/6).
+
+### 2026-11-02: why are there same-name duplicate clients? The sweep now says where they are (preview)
+
+Ashley asked to find out why (after the Oct 31 brief wrongly called them family members). The
+standing note shows same-name shared emails on 10 accounts (cry… 263, don… 81, hel… 56, hea… 44,
+jaz… 46, mis… 42, pat… 37, ski… 35, tif… 28, bot… 20). Those counts come from the SERVER `clients`
+table, not from her app's list, so they do not yet say whether a provider SEES two copies. For each
+account with same-name copies the note now adds, counts only: how many pairs have both ids in her
+app's own list (`kv sc_clients`) vs only one (merged in the app, server row left over), when the
+newest copy of each pair was made (this week / this month / older, so leftovers from before the
+2026-10-15 dedupe fixes read differently from something still happening), and the id kinds per pair
+(`sq` Square, `bk` public booking, `c_` CSV/random, `c` hand-added). Test in
+`test-health-sweep.mjs`. Nothing is merged or changed: merging needs her yes.

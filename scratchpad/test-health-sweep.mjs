@@ -52,6 +52,14 @@ INSERT INTO app_launch_logs (device_key,provider_id,email,platform,build,events,
 INSERT INTO native_push_log (owner_id,outcome,reason,at) VALUES ('good','linked','',now()),('bad','send failed','UNREGISTERED',now());
 INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead','bad','t1','Cooper Secretname','cooper@client.com',${now - 30 * 24 * H}),('c_ok','good','t2','Ann Private','ann@client.com',${now - H});
 `);
+// 'dupe' has 26 same-name pairs: 10 old ones she sees twice in her list, 16 made this week where her
+// list holds only one of the two (merged in the app, still a row on the server).
+await db.query("INSERT INTO providers (id,email,created_at) VALUES ('dupe','dupes@x.com', now()-interval '60 days')");
+{ const list = {};
+  for (let i = 0; i < 26; i++) { const seen = i < 10; const t = seen ? now - 40 * 24 * H : now - 2 * 24 * H;
+    for (const id of ['sq_D' + i, 'cD' + i]) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', [id, 'dupe', 't' + id, 'Same Person' + i, 'same' + i + '@c.com', t]);
+    list['sq_D' + i] = { name: 'x' }; if (seen) list['cD' + i] = { name: 'x' }; }
+  await db.query("INSERT INTO kv VALUES ('dupe','sc_clients',$1)", [JSON.stringify(list)]); }
 // shared emails: 'other' has 30 old ones (family members), 'bad' gets 6 made today (same person twice)
 for (let i = 0; i < 30; i++) for (const n of ['Mum', 'Kid']) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', ['o' + i + n, 'other', 'to' + i + n, n + ' Fam' + i, 'fam' + i + '@home.com', now - 40 * 24 * H]);
 for (let i = 0; i < 6; i++) for (const k of ['a', 'b']) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', ['b' + i + k, 'bad', 'tb' + i + k, 'Twice Person' + i, 'twice' + i + '@c.com', k === 'b' ? now - H : now - 20 * 24 * H]);
@@ -102,8 +110,10 @@ ok(by['phone-push'].items.length === 1 && /send failed: UNREGISTERED/.test(by['p
 ok(by['new-setup'].items.length === 1 && /fre…@new.com/.test(by['new-setup'].items[0]), 'the new provider who never finished setup is flagged');
 { const f = by['data-shrink'].items.find(i => /oth…@x.com: sc_forms/.test(i)) || '';
   ok(/Shrank: tmpls 3\u21921 entries/.test(f) && /Forms: 2 gone \(1 deleted by her\), 1 edited much shorter/.test(f) && !/f_long|f_del|qqq/.test(f), 'a forms shrink says which part shrank and how many forms she deleted, with no ids or content', f); }
-ok(by['duplicates'].items.length === 1 && /tro…@x.com: 6 emails newly on more than one client today \(6 with the same name\)/.test(by['duplicates'].items[0]) && /oth…@x.com 30 \(0 same name\)/.test(by['duplicates'].note || ''), 'shared emails warn only when new today; the standing family ones are a note, not a warning', JSON.stringify(by['duplicates']));
+ok(by['duplicates'].items.length === 1 && /tro…@x.com: 6 emails newly on more than one client today \(6 with the same name\)/.test(by['duplicates'].items[0]) && /oth…@x.com 30 \(0 same name/.test(by['duplicates'].note || ''), 'shared emails warn only when new today; the standing family ones are a note, not a warning', JSON.stringify(by['duplicates']));
 ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-live'].items[0]), 'a deleted client still live on the server is flagged');
+{ const n = by['duplicates'].note || '';
+  ok(/dup…@x.com 26 \(26 same name: 10 both in her list, 16 only one in her list; newest copy: 16 this week, 0 this month, 10 older; id kinds c\+sq 26/.test(n), 'the standing same-name copies say how many she can see, when the newest was made, and what kind of ids', n); }
 ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|fam0@home|twice0@c|Twice Person|locked@out|ghost@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
 ok(j.problems.length > 0 && j.problems[0].startsWith('ALERT'), 'problems list is worst first');
 ok(!JSON.stringify(j).match(/hea…@ok\.com/), 'the healthy account appears nowhere');

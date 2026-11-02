@@ -291,9 +291,36 @@ export async function runSweep(q) {
       GROUP BY provider_id`;
     const fresh = dup.filter(r => r.fresh >= 5);
     const standing = dup.filter(r => r.n >= 25);
+    // WHERE the same-name copies are (2026-11-02, Ashley: "find out why it's happening"). Counts only.
+    // A copy she can SEE is one whose id is still in her app's own list (kv sc_clients); a copy that
+    // is only a server row was already merged or removed in the app and is invisible to her. And WHEN
+    // the newest copy of each pair was made, so a leftover from the 2026-10-15 fix reads differently
+    // from something still being created.
+    const detail = {};
+    for (const r of standing.filter(x => x.same > 0).slice(0, 12)) {
+      try {
+        const groups = await q`SELECT array_agg(id) AS ids, max(created_at) AS newest,
+            array_agg(DISTINCT CASE WHEN left(id, 3) = 'sq_' THEN 'sq' WHEN left(id, 5) = 'c_bk_' THEN 'bk' WHEN left(id, 2) = 'c_' THEN 'c_' ELSE 'c' END) AS kinds
+          FROM clients WHERE provider_id = ${r.provider_id} AND deleted_at IS NULL AND coalesce(email, '') <> ''
+          GROUP BY lower(email) HAVING count(*) > 1 AND count(DISTINCT lower(trim(coalesce(name, '')))) = 1`;
+        let mine = null;
+        try { const kv = await q`SELECT v FROM kv WHERE owner = ${r.provider_id} AND k = 'sc_clients'`; const o = kv[0] && JSON.parse(kv[0].v); if (o && typeof o === 'object' && !Array.isArray(o)) mine = new Set(Object.keys(o)); } catch (e) {}
+        const d = { seen: 0, serverOnly: 0, d7: 0, d30: 0, older: 0, kinds: {} };
+        const wk = Date.now() - 7 * 86400000, mo = Date.now() - 30 * 86400000;
+        for (const g of groups) {
+          if (mine) { const inList = (g.ids || []).filter(id => mine.has(String(id))).length; if (inList > 1) d.seen++; else d.serverOnly++; }
+          const t = Number(g.newest) || Date.parse(g.newest) || 0;
+          if (t > wk) d.d7++; else if (t > mo) d.d30++; else d.older++;
+          const k = (g.kinds || []).slice().sort().join('+'); d.kinds[k] = (d.kinds[k] || 0) + 1;
+        }
+        detail[r.provider_id] = (mine ? d.seen + ' both in her list, ' + d.serverOnly + ' only one in her list' : 'her list not readable')
+          + '; newest copy: ' + d.d7 + ' this week, ' + d.d30 + ' this month, ' + d.older + ' older'
+          + '; id kinds ' + Object.entries(d.kinds).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => k + ' ' + n).join(', ');
+      } catch (e) { detail[r.provider_id] = 'detail failed: ' + (e && e.message); }
+    }
     return { items: burst.map(r => who(r.provider_id) + ': ' + r.n + ' clients added in the last day')
       .concat(fresh.map(r => who(r.provider_id) + ': ' + r.fresh + ' emails newly on more than one client today (' + r.fresh_same + ' with the same name)')),
-      note: standing.length ? 'Shared emails, standing (not new): ' + standing.map(r => who(r.provider_id) + ' ' + r.n + ' (' + r.same + ' same name)').join(', ') : undefined };
+      note: standing.length ? 'Shared emails, standing (not new): ' + standing.map(r => who(r.provider_id) + ' ' + r.n + ' (' + r.same + ' same name' + (detail[r.provider_id] ? ': ' + detail[r.provider_id] : '') + ')').join(', ') : undefined };
   });
 
   // 15. A client the provider deleted that is still live on the server (Cooper Howard, 2026-10-21).
