@@ -8692,3 +8692,14 @@ confirm. On the old file it fails 4 of 5. VC sweeps green (layout, reprocess, su
 xdevice-fewer, blob, product-consult 37/37). `sweep3-vc-provider-flow` 7/8, the same on HEAD: its
 "retake keeps the first set" check counts photos on the new submission, but the first set is kept
 as `prev` by `_keepPrevConsult`, so that assertion is stale, not a regression.
+
+### 2026-11-02: health sweep, a cron run that never finished now says when and how slow (preview)
+
+The Nov 2 sweep flagged `cron-reminders: started 2x in the last day and never finished` (first time;
+96 runs a day, the rest finished). No Vercel logs from here, and no function sets `maxDuration`, so
+the item could not say whether those runs were near the platform's time limit or hung. It now adds
+the UTC start times of the unfinished runs and how long the finished ones took (typical and
+slowest), so the next brief can tell "too slow" from "hung" by reading. Test in
+`test-health-sweep.mjs`. If the slowest finished run is close to the limit, the fix is a
+`maxDuration` on that job; if far under, look at what that start time does (the :00 run also runs
+the Square isolation sweep).
