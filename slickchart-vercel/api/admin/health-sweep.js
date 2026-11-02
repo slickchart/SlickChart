@@ -163,16 +163,29 @@ export async function runSweep(q) {
     const okRows = await q`SELECT name, max(finished_at) AS last_ok, count(*) FILTER (WHERE NOT ok AND finished_at > now() - interval '26 hours') AS fails
       FROM cron_runs WHERE finished_at IS NOT NULL GROUP BY name`;
     // Started and never finished (lib/cron-runs.js writes a row at the start): stopped for time.
-    const stuck = {};
-    try { (await q`SELECT name, count(*)::int AS n FROM cron_runs WHERE finished_at IS NULL
-      AND started_at < now() - interval '15 minutes' AND started_at > now() - interval '26 hours' GROUP BY name`).forEach(r => { stuck[r.name] = r.n; }); } catch (e) {}
+    const stuck = {}, stuckAt = {}, speed = {};
+    try { (await q`SELECT name, count(*)::int AS n, array_agg(to_char(started_at AT TIME ZONE 'UTC', 'HH24:MI') ORDER BY started_at) AS at FROM cron_runs WHERE finished_at IS NULL
+      AND started_at < now() - interval '15 minutes' AND started_at > now() - interval '26 hours' GROUP BY name`).forEach(r => { stuck[r.name] = r.n; stuckAt[r.name] = r.at || []; }); } catch (e) {}
+    // How long the FINISHED runs took, so a run that did not finish can be read against them: near
+    // the platform's time limit means the job is too slow; far under it means something hung.
+    try { (await q`SELECT name, count(*)::int AS n,
+        round(max(extract(epoch FROM finished_at - started_at)))::int AS slowest,
+        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM finished_at - started_at)))::int AS typical
+      FROM cron_runs WHERE finished_at IS NOT NULL AND started_at > now() - interval '26 hours' GROUP BY name`).forEach(r => { speed[r.name] = r; }); } catch (e) {}
     const last = {}; rows.forEach(r => { last[r.name] = r; });
     const lastOk = {}; okRows.forEach(r => { lastOk[r.name] = r; });
     const anyRecorded = rows.length > 0;
     const items = []; let level = 'ok';
     for (const [name, maxMin] of Object.entries(CRONS)) {
       const r = last[name];
-      if (stuck[name]) { items.push(name + ': started ' + stuck[name] + 'x in the last day and never finished (stopped for running too long?)'); level = 'alert'; }
+      if (stuck[name]) {
+        const sp = speed[name];
+        const at = (stuckAt[name] || []).slice(0, 6).join(', ');
+        items.push(name + ': started ' + stuck[name] + 'x in the last day and never finished (stopped for running too long?)'
+          + (at ? '; started at ' + at + ' UTC' : '')
+          + (sp ? '; the ' + sp.n + ' that finished took ' + sp.typical + 's typically, ' + sp.slowest + 's at most' : ''));
+        level = 'alert';
+      }
       if (!r) { if (anyRecorded && !stuck[name]) { items.push(name + ': no run recorded'); level = 'alert'; } continue; }
       const mins = Math.round((Date.now() - new Date(r.finished_at).getTime()) / 60000);
       if (mins > maxMin) { items.push(name + ': last ran ' + mins + ' minutes ago'); level = 'alert'; }
