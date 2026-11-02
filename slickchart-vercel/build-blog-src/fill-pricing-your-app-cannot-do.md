@@ -4,7 +4,6 @@ h1: Lash fills, color touch-ups and the pricing your booking app cannot do
 description: A fill is priced by how long it has been since the last visit. Why generic booking apps leave that to you, and what it takes to make your own app do it.
 date: 2026-11-02
 keywords: lash fill pricing, lash fill booking, booking app for lash artists, time since last visit pricing, build your own booking app, beauty business app, build an app with ai
-draft: true
 ---
 
 Look at a lash artist's booking page and you will often find the same thing: three or four fill services that are really one service.

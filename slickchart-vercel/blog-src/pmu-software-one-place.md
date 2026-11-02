@@ -4,7 +4,6 @@ h1: PMU software: booking, consent and healed photos without three subscriptions
 description: Many PMU artists pay for a booking app, a consent form app and somewhere to keep healed photos. What each job needs, and how to do all three in one place.
 date: 2026-11-02
 keywords: pmu software, permanent makeup software, microblading software, pmu consent form app, pmu booking app, healed pmu photos, permanent makeup client records
-draft: true
 ---
 
 Talk to permanent makeup artists about their software and a pattern comes up. There is a booking app for the calendar and deposits. There is a separate form app, or a stack of PDFs, for consent and the health questionnaire. And the healed photos live in the camera roll, mixed in with everything else on the phone.
