@@ -1,6 +1,6 @@
 // sweep2-photo-xaccount: provider A signs out, provider B signs in on the SAME device.
 // _doLogout() / _purgeOffloaded() only clear 'lskv_*' IndexedDB keys; the photo store lives at
-// IndexedDB 'captured_photos' (and 'gfile_*'), which nothing clears and nothing owner-stamps.
+// IndexedDB 'captured_photos' (and 'gfile_*'), which is now owner-stamped at sign-in (captured_photos_owner) and set aside per owner.
 // Expectation (§0): B must never see, index, or upload A's client photos.
 //   node scratchpad/sweep2-photo-xaccount.mjs   (needs the :8899 server from CLAUDE.md)
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
@@ -44,8 +44,11 @@ check('A: photo uploaded under A', uploads.some(x => x.as === 'A' && x.id === 'p
 // A signs out.
 await p.evaluate(async () => { const r = location.reload; try { await _doLogout(); } catch (e) {} });
 await p.waitForTimeout(3000);
-const idbAfterLogout = await p.evaluate(() => new Promise(res => { const rq = indexedDB.open('slickchart', 1); rq.onsuccess = () => { const t = rq.result.transaction('kv', 'readonly').objectStore('kv'); const g = t.get('captured_photos'); g.onsuccess = () => res(g.result ? Object.keys(g.result) : null); g.onerror = () => res('err'); }; rq.onerror = () => res('err'); }));
-check('logout clears A\'s photo store from IndexedDB', !idbAfterLogout || !idbAfterLogout.includes('cA'), 'IDB captured_photos keys after logout: ' + JSON.stringify(idbAfterLogout));
+// By design (2026-10) sign-out does not delete the photo store: it can hold photos taken offline that
+// never uploaded. It must instead carry its OWNER's stamp, so it is set aside for A and never given to
+// B (the B checks below are the isolation proof).
+const idbAfterLogout = await p.evaluate(() => new Promise(res => { const rq = indexedDB.open('slickchart', 1); rq.onsuccess = () => { const st = rq.result.transaction('kv', 'readonly').objectStore('kv'); const g = st.get('captured_photos'); g.onsuccess = () => { const o = st.get('captured_photos_owner'); o.onsuccess = () => res({ keys: g.result ? Object.keys(g.result) : null, owner: o.result || '' }); o.onerror = () => res('err'); }; g.onerror = () => res('err'); }; rq.onerror = () => res('err'); }));
+check('logout leaves A\'s photo store either empty or stamped with its owner', idbAfterLogout !== 'err' && (!(idbAfterLogout.keys || []).includes('cA') || !!idbAfterLogout.owner), 'IDB after logout: ' + JSON.stringify(idbAfterLogout));
 
 // B signs in on the same device.
 who = 'B'; uploads.length = 0; pushes.length = 0;

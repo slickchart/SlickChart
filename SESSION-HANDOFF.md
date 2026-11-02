@@ -8703,3 +8703,22 @@ slowest), so the next brief can tell "too slow" from "hung" by reading. Test in
 `test-health-sweep.mjs`. If the slowest finished run is close to the limit, the fix is a
 `maxDuration` on that job; if far under, look at what that start time does (the :00 run also runs
 the Square isolation sweep).
+
+### 2026-11-02: build 2026-11-02a, photo labels readable in light mode + Safari catch-up (preview)
+
+- **Found while making the GBP image** (not reported): on Progress Photos the "Before" / "After" badges
+  and the angle tags (Front, Left side...) on photo consult thumbnails were nearly invisible in light
+  mode, the default since 10-20c. They sit on a black overlay but used theme ink colours that are dark
+  in light mode (contrast 1.1:1 to 1.4:1). Now white, and "After" a light teal (all 4.77:1 or better
+  over a white photo). `sweep-contrast` never measured text on a translucent overlay, which is how it
+  slipped. Test: `scratchpad/test-photo-label-contrast.mjs` (8 labels) in Chromium AND WebKit; the
+  build before fails 5.
+- **Safari catch-up:** WebKit is installed in this container again
+  (`SC_WEBKIT=<scratchpad>/pw-webkit`). Every test from builds 10-30d to 11-01a that had only run in
+  Chromium now passes in BOTH engines: deleted-intake-not-sent 13, service-forms 17,
+  service-forms-flows 13, nc-consent-ui 8, invite-default-deep 11, short-checkin-client 7,
+  sweep-nc-forms-by-prof 6, maddie-invite-checkin 6, square-expired 12, vc-handlers 5,
+  safari-storage-hook 6, face-chart-flow 37, photo-export 10.
+- **Two stale tests fixed** (no app change): `sweep3-vc-provider-flow` now counts the first set kept
+  as `prev` (8/8), and `sweep2-photo-xaccount` checks that the photo store left after sign-out is
+  owner-stamped instead of expecting it emptied, which is the 2026-10 design (6/6).

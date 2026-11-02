@@ -44,7 +44,8 @@ const c = await P.p.evaluate(async () => {
   await new Promise(r => setTimeout(r, 300));
   await syncClientEvents();
   const s = vcSubmissions.c1 || {};
-  return { n: (s.photos || []).length, goals: s.goals, routine: (s.routine || []).length, status: _vcStatus('c1') };
+  // The first set is kept as `prev` (_keepPrevConsult), beside the retake's new photos.
+  return { n: (s.photos || []).length + ((s.prev && s.prev.photos) || []).length, goals: s.goals, routine: (s.routine || []).length, status: _vcStatus('c1') };
 });
 T.check('retake keeps the first set of photos (as the confirm promises)', c.n >= 3, JSON.stringify(c));
 T.check('retake keeps her goals / routine from the first submission', c.goals === 'less redness' && c.routine === 1, JSON.stringify(c));
