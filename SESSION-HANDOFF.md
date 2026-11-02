@@ -8735,3 +8735,26 @@ newest copy of each pair was made (this week / this month / older, so leftovers 
 2026-10-15 dedupe fixes read differently from something still happening), and the id kinds per pair
 (`sq` Square, `bk` public booking, `c_` CSV/random, `c` hand-added). Test in
 `test-health-sweep.mjs`. Nothing is merged or changed: merging needs her yes.
+
+### 2026-11-02: build 2026-11-02b, Recover clients stops listing put-back clients as "deleted again"
+
+**Observed (Ashley, her Mac, founder Recover clients screen):** "28 clients are being deleted again every
+time they refresh", including (no name), Ashley Delgadillo x3, Ashley Watson, Brenda Jenkins, Cooper
+Howard, Debbi Miranda. "how do we make this stop happening?" / "this has been a consistent problem".
+
+- **Cause (code):** `api/admin/client-recover.js` built `ghosts` from the delete record's ids ALONE and
+  never read `sc_undeleted_clients`. The app keeps a client put back after its delete
+  (`_unDeletedClientIds`: kept unless deleted again later), and so does the server
+  (`reconcileDeletedClients`). And the tombstone set only grows, so a "Bring back" took the id off the
+  account copy and the next sync from any device put it straight back. Every client ever brought back
+  therefore stayed on this warning forever and "Bring back" looked like it did nothing.
+- **Fix:** `splitGhosts` applies the app's rule: a ghost only if the delete is newer than the put-back
+  (or there is no put-back). Put-back clients come back as `putBackIds` (additive field) and show as one
+  quiet line; the copy paste counts them too.
+- **Not proven from here:** whether any of the 28 are real ghosts (delete newer than put-back). Those
+  should be soft-deleted within the hour by `reconcileDeletedClients` (cron-reminders and every save of
+  the delete record), so any that stay on the list after an hour mean reconcile is not running for that
+  account. Check that first if the list does not empty.
+- Tests: `scratchpad/test-recover-ghosts-putback.mjs` (7, incl. control on the old rule),
+  `test-recover-unghost-one.mjs` 6/6 Chromium + WebKit (new check for the quiet line),
+  `test-recover-search` 12/12, `test-recover-scroll` and `test-junk-ui` no failures.

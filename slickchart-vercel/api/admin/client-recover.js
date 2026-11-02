@@ -157,6 +157,21 @@ export function clientContent(dataRaw) {
 // computed the same way, or she approves one set and a different set is taken.
 // Every name with more than one live row, in one go, for names that already have a record in her
 // list (so a junk name with no real client is never promoted into it). One list backup first.
+// A live client whose id is on the delete record is only a ghost (removed again on every refresh) when
+// the delete is NEWER than her put-back. The app applies exactly that rule (_unDeletedClientIds: a
+// put-back wins unless deleted again later) and so does reconcileDeletedClients on the server.
+const _stampOf = v => (typeof v === 'number' && Number.isFinite(v)) ? v : (v ? 1 : 0);
+export function splitGhosts(clients, delSet, delStamps, undelStamps) {
+  const ghosts = [], putBack = [];
+  for (const c of clients || []) {
+    if (!c || c.deleted || !delSet[c.id]) continue;
+    const und = undelStamps || {};
+    const kept = Object.prototype.hasOwnProperty.call(und, c.id) && !(_stampOf((delStamps || {})[c.id]) > _stampOf(und[c.id]));
+    (kept ? putBack : ghosts).push({ id: c.id, name: c.name, has: c.has });
+  }
+  return { ghosts, putBack };
+}
+
 // Take ids off the account's delete record and stamp them un-deleted, so no device strips them again.
 // Shared by "Bring back" and by putting a client back in the list: a client put back whose id was
 // still on the delete record vanished again on the next refresh (Debbi Miranda, 2026-10-13: "it
@@ -862,12 +877,23 @@ export default async function handler(req, res) {
     // The delete record the DEVICE pushed up. If a client is tombstoned on the server, this says
     // whether a device asked for it — which is the difference between "she deleted them" and
     // "something deleted them for her".
-    let deletedRecord = null;
+    let deletedRecord = null, delStamps = {}, undelStamps = {};
     try {
       const dr = await q`SELECT jsonb_object_keys(v::jsonb) AS id FROM kv
         WHERE owner=${owner} AND k='sc_deleted_clients'`;
       deletedRecord = (dr || []).map(x => String(x.id));
     } catch (e) { deletedRecord = null; }
+    // The stamps on both records, so a client she put back AFTER it was deleted is not reported as
+    // "deleted again every refresh": her app keeps those (_unDeletedClientIds), and so does the server
+    // (reconcileDeletedClients). Reading only the ids made every put-back client look like a ghost
+    // forever, so "Bring back" seemed to do nothing (Ashley, 2026-11-02: 28 listed, Cooper Howard among them).
+    try {
+      const sr = await q`SELECT k, v FROM kv WHERE owner=${owner} AND k IN ('sc_deleted_clients','sc_undeleted_clients')`;
+      for (const r of sr || []) {
+        let o = null; try { o = JSON.parse(r.v); } catch (e) {}
+        if (o && typeof o === 'object' && !Array.isArray(o)) Object.assign(r.k === 'sc_deleted_clients' ? delStamps : undelStamps, o);
+      }
+    } catch (e) {}
 
     // ── The OTHER place a provider's work lives ──────────────────────────────
     // clients.data carries the CLIENT-FACING copy of a chart. The provider's own session
@@ -984,8 +1010,7 @@ export default async function handler(req, res) {
     // is why this is reported loudly rather than quietly patched.
     const delSet = {};
     (deletedRecord || []).forEach(id => { delSet[String(id)] = 1; });
-    const ghosts = clients.filter(c => !c.deleted && delSet[c.id])
-      .map(c => ({ id: c.id, name: c.name, has: c.has }));
+    const { ghosts, putBack } = splitGhosts(clients, delSet, delStamps, undelStamps);
 
     const live = clients.filter(c => !c.deleted);
 
@@ -1127,6 +1152,7 @@ export default async function handler(req, res) {
       missingFromTable: rosterIds ? rosterIds.filter(id => !clients.some(c => c.id === id)) : null,
       deletedRecordIds: deletedRecord,
       ghosts,
+      putBackIds: putBack.map(c => c.id),
       // What a purge would take and what it would keep back, per class. ADDED, never changed: a
       // build that has not relaunched reads every key above exactly as before (CLAUDE.md §1a).
       junk: {

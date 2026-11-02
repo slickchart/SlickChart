@@ -30,6 +30,16 @@ check('only Cooper comes off the delete record', un && JSON.stringify(un.unDelet
 check('and he is added to her list (adds only, that id)', rr && JSON.stringify(rr.onlyIds) === '["coop1"]', JSON.stringify(rr));
 const loc = await page.evaluate(() => ({ del: Object.keys(_deletedClientIds), un: Object.keys(JSON.parse(localStorage.getItem('sc_undeleted_clients') || '{}')) }));
 check('this device stops deleting him too; Maya stays deleted', !loc.del.includes('coop1') && loc.del.includes('maya') && loc.un.includes('coop1'), JSON.stringify(loc));
+// 2026-11-02: clients brought back AFTER their delete are not ghosts (the server now sends them as
+// putBackIds); the warning box goes and one quiet line says they stay in the list.
+const pb = await page.evaluate(() => {
+  _recoverState = Object.assign({}, _recoverState, { ghosts: [], putBackIds: ['coop1', 'maya'] });
+  renderClientRecover();
+  const t = document.getElementById('S').innerText;
+  let copy = ''; try { copy = (typeof _recoverPasteText === 'function') ? _recoverPasteText(_recoverState) : ''; } catch (e) {}
+  return { box: /being deleted again every time/.test(t), line: /2 clients were brought back after being deleted, and stay in the list/.test(t), btn: document.querySelectorAll('button.rec-unghost').length };
+});
+check('put-back clients get no "deleted again" warning or Bring back buttons, one quiet line instead', !pb.box && pb.line && pb.btn === 0, JSON.stringify(pb));
 check('no page errors', errs.length === 0, errs.join(' | '));
 await browser.close();
 let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS ' : 'FAIL ') + x.name + (x.detail !== '' ? '  — ' + x.detail : '')); }
