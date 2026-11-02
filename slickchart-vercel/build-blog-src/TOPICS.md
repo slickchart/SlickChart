@@ -25,7 +25,8 @@ committed to anything, the later ones are for people mid-build.
 - [x] **Patch tests, consent and the booking that should not happen.** Drafted 2026-10-26
       (`booking-your-app-should-refuse.md`). Why "checks before you start"
       belong in the app itself, per trade (lash lift, color, PMU, tattoo). No medical or legal advice.
-- [ ] **Lash fills, color touch-ups and the pricing your app cannot do.** Time-since-last-visit pricing
+- [x] **Lash fills, color touch-ups and the pricing your app cannot do.** Drafted 2026-11-02
+      (`fill-pricing-your-app-cannot-do.md`). Time-since-last-visit pricing
       as the clearest example of a trade rule generic software skips.
 - [ ] **Doing two trades at once: skin and lashes, hair and nails.** Booking services clients take
       together, and which forms and rules belong to which service.
