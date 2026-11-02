@@ -153,6 +153,13 @@ She asked for this after an edit disturbed providers who were using the app. **D
 **`release` IS her approval.** Nothing may be pushed to it that she has not said yes to. That is the
 whole mechanism — treat a push to `release` exactly as seriously as a push to `main` used to be.
 
+**Standing yes for verified work (her rule, 2026-11-02):** *"instead of asking me for permission on so
+many things you can just assume that i want these things shipped."* Work on the preview that you have
+verified (tests and CI green) goes to `release` without asking, so the overnight run carries it, and
+the brief says what went. This does NOT cover: dispatching the deploy during the day (the 2026-10-14
+rule below still holds), pushing `main` for app code, or anything destructive or irreversible
+(deleting or merging clients, touching live data, contacting anyone). Those still need her yes.
+
 **NO EARLY PUSHES unless she says so, for THAT change (her rule, 2026-10-14):** *"make sure we are
 building all of today's edit on the preview branch and not pushing out each edit live. the whole point
 of that is to not glitch anyones app as they are currently working during the day. they should all
