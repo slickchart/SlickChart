@@ -73,6 +73,7 @@ const ALLOW={
   'admin/exposure.js':'founder-gated cross-account exposure scan (the point of the tool)',
   'admin/square-create-log.js':'founder-gated; maps provider ids to emails for the log view',
   'admin/stale-subs.js':'founder-gated subscription report',
+  'admin/orphans.js':'founder-gated (verified token email) paid-but-no-account list; Monitor key reads masked emails only and can never write; its only write is the founder_settings row',
   // Read-only, monitor-key or founder session. Lists accounts made in the last N days, then reads each
   // one's own rows by its id (sessions, kv key NAMES and sizes, device reports, launch logs). Never values,
   // never client data, emails masked. Re-read it if it changes.

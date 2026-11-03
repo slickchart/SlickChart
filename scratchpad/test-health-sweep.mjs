@@ -46,6 +46,9 @@ INSERT INTO feedback (provider_id,message,ts) VALUES ('bad','it broke',now()-int
 INSERT INTO device_reports VALUES ('good','dev-good-1','{"build":"2026-10-29a","platform":"iPhone","kind":"installed app","unsent":2,"idbWorks":true}',now()),
   ('bad','dev-bad-1','{"build":"2026-10-10a","platform":"Android","kind":"browser","unsent":7,"idbWorks":false,"reloadFails":"loadForms"}',now());
 INSERT INTO subscriptions (email,stripe_subscription_id,status,updated_at) VALUES ('healthy@ok.com','sub_1','active',now()-interval '20 days'),('trouble@x.com','sub_2','past_due',now()),('ghost@paid.com','sub_3','active',now()-interval '5 hours');
+CREATE TABLE nurture_sends (email text NOT NULL, seq text NOT NULL, step int NOT NULL, sent_at timestamptz DEFAULT now(), UNIQUE(email, seq, step));
+CREATE TABLE nurture_optout (email text PRIMARY KEY, ts timestamptz DEFAULT now());
+INSERT INTO nurture_sends (email,seq,step,sent_at) VALUES ('ghost@paid.com','orphan',0,now()-interval '2 hours');
 INSERT INTO login_attempts (email,ts) SELECT 'locked@out.com', now()-interval '1 hour' FROM generate_series(1,5);
 INSERT INTO app_launch_logs (device_key,provider_id,email,platform,build,events,updated_at) VALUES ('d1','bad','trouble@x.com','android','2026-10-24f','[{"t":${now - H},"e":"token-dropped","d":"x"},{"t":${now - H},"e":"screen","d":"home"}]',now()),
   ('d2','good','healthy@ok.com','ios','2026-10-29a','[{"t":${now - H},"e":"launch"},{"t":${now - H},"e":"prev-launch-cut-off"}]',now());
@@ -66,7 +69,8 @@ await db.query("INSERT INTO providers (id,email,created_at) VALUES ('dupe','dupe
   for (let i = 0; i < 26; i++) { const seen = i < 10; const t = seen ? now - 40 * 24 * H : now - 2 * 24 * H;
     for (const id of ['sq_D' + i, 'cD' + i]) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', [id, 'dupe', 't' + id, 'Same Person' + i, 'same' + i + '@c.com', t]);
     list['sq_D' + i] = { name: 'x' }; if (seen) list['cD' + i] = { name: 'x' }; }
-  await db.query("INSERT INTO kv VALUES ('dupe','sc_clients',$1)", [JSON.stringify(list)]); }
+  await db.query("INSERT INTO kv VALUES ('dupe','sc_clients',$1)", [JSON.stringify(list)]);
+  await db.query(`INSERT INTO device_reports VALUES ('dupe','dev-dupe','{"build":"2026-11-03a","dupesMerged":0,"dupesLeft":4,"dupesWhy":"notes 3, both links used 1"}',now())`); }
 // shared emails: 'other' has 30 old ones (family members), 'bad' gets 6 made today (same person twice)
 for (let i = 0; i < 30; i++) for (const n of ['Mum', 'Kid']) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', ['o' + i + n, 'other', 'to' + i + n, n + ' Fam' + i, 'fam' + i + '@home.com', now - 40 * 24 * H]);
 for (let i = 0; i < 6; i++) for (const k of ['a', 'b']) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', ['b' + i + k, 'bad', 'tb' + i + k, 'Twice Person' + i, 'twice' + i + '@c.com', k === 'b' ? now - H : now - 20 * 24 * H]);
@@ -109,7 +113,7 @@ ok(by['scheduled-jobs'].items.some(i => /cron-events: started 1x in the last day
 { const it = by['scheduled-jobs'].items.find(i => /cron-events: started/.test(i)) || '';
   ok(/started at \d\d:\d\d UTC/.test(it) && /the 1 that finished took 4s typically, 4s at most/.test(it), 'a run that never finished says when it started and how long the finished runs took', it); }
 ok(by['square-tokens'].level === 'alert' && by['square-tokens'].items.length === 1 && /EXPIRED/.test(by['square-tokens'].items[0]), 'the expired Square sign-in is an ALERT');
-ok(by['billing'].level === 'alert' && by['billing'].items.some(i => /past due/.test(i)) && by['billing'].items.some(i => /gho…@paid.com: paid but has no SlickChart account/.test(i)), 'past-due-but-using and paid-with-no-account are flagged', JSON.stringify(by['billing'].items));
+ok(by['billing'].level === 'alert' && by['billing'].items.some(i => /past due/.test(i)) && by['billing'].items.some(i => /gho…@paid.com: paid but has no SlickChart account; setup email sent \w{3} \d\d \d\d:\d\d UTC/.test(i)), 'past-due-but-using and paid-with-no-account are flagged, with when the setup email went', JSON.stringify(by['billing'].items));
 ok(by['sign-in'].items.length === 1 && /5 failed sign-ins/.test(by['sign-in'].items[0]), 'someone stuck at sign-in is flagged');
 ok(by['app-logs'].items.length === 1 && /signed out by the app 1x/.test(by['app-logs'].items[0]), 'a sign-out in the launch log is flagged; one mid-launch close is not', JSON.stringify(by['app-logs'].items));
 ok(by['stale-builds'].items.length === 1 && /2026-10-10a/.test(by['stale-builds'].items[0]), 'the device on an old build is flagged');
@@ -121,7 +125,8 @@ ok(by['new-setup'].items.length === 1 && /fre…@new.com/.test(by['new-setup'].i
 ok(by['duplicates'].items.length === 1 && /tro…@x.com: 6 emails newly on more than one client today \(6 with the same name\)/.test(by['duplicates'].items[0]) && /oth…@x.com 30 \(0 same name/.test(by['duplicates'].note || ''), 'shared emails warn only when new today; the standing family ones are a note, not a warning', JSON.stringify(by['duplicates']));
 ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-live'].items[0]), 'a deleted client still live on the server is flagged');
 { const n = by['duplicates'].note || '';
-  ok(/dup…@x.com 26 \(26 same name: 10 both in her list, 16 only one in her list; newest copy: 16 this week, 0 this month, 10 older; id kinds c\+sq 26/.test(n), 'the standing same-name copies say how many she can see, when the newest was made, and what kind of ids', n); }
+  ok(/dup…@x.com 26 \(26 same name: 10 both in her list, 16 only one in her list; newest copy: 16 this week, 0 this month, 10 older; id kinds c\+sq 26/.test(n), 'the standing same-name copies say how many she can see, when the newest was made, and what kind of ids', n);
+  ok(/her app last merged 0, left 4 for her \(notes 3, both links used 1\)/.test(n), 'the note says what her app left for her at its last automatic merge, and why', n); }
 { const items = by['data-shrink'].items;
   const cl = items.find(i => /oth…@x.com: sc_clients/.test(i)) || '', co = items.find(i => /oth…@x.com: sc_courses/.test(i)) || '';
   ok(/Entries: 6 before, 3 now \(2 of the 3 gone were deleted by her\)/.test(cl), 'a clients shrink counts the ones she deleted (a put-back stamp does not count)', cl);

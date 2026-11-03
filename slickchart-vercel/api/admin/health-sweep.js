@@ -243,10 +243,25 @@ export async function runSweep(q) {
     const lapsed = await q`SELECT s.email, s.status FROM subscriptions s JOIN providers p ON lower(p.email) = lower(s.email)
       WHERE s.status IN ('past_due', 'unpaid', 'incomplete') AND EXISTS (SELECT 1 FROM sessions x WHERE x.provider_id = p.id AND x.last_seen_at > now() - interval '7 days')`;
     lapsed.forEach(r => items.push(maskEmail(r.email) + ': payment ' + r.status.replace('_', ' ') + ', still using the app'));
-    const orphan = await q`SELECT s.email FROM subscriptions s WHERE s.status = 'active' AND s.updated_at < now() - interval '3 hours'
-      AND s.updated_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
-      AND coalesce(s.stripe_subscription_id, '') <> ''`;
-    orphan.forEach(r => items.push(maskEmail(r.email) + ': paid but has no SlickChart account'));
+    // And what the automatic "finish your account" email (cron-orphan-checkout) did for each, so the
+    // brief can say "emailed Nov 1, still nothing" instead of guessing whether anyone was told.
+    let orphan = [];
+    try {
+      orphan = await q`SELECT s.email, s.updated_at,
+          (SELECT to_char(sent_at AT TIME ZONE 'UTC', 'Mon DD HH24:MI') FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'orphan' AND n.step = 0) AS emailed,
+          (SELECT to_char(sent_at AT TIME ZONE 'UTC', 'Mon DD HH24:MI') FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'orphan' AND n.step = 1) AS alerted,
+          EXISTS (SELECT 1 FROM nurture_optout o WHERE o.email = lower(s.email)) AS unsub
+        FROM subscriptions s WHERE s.status = 'active' AND s.updated_at < now() - interval '3 hours'
+        AND s.updated_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
+        AND coalesce(s.stripe_subscription_id, '') <> ''`;
+    } catch (e) {
+      orphan = await q`SELECT s.email FROM subscriptions s WHERE s.status = 'active' AND s.updated_at < now() - interval '3 hours'
+        AND s.updated_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
+        AND coalesce(s.stripe_subscription_id, '') <> ''`;
+    }
+    orphan.forEach(r => items.push(maskEmail(r.email) + ': paid but has no SlickChart account'
+      + (r.emailed ? '; setup email sent ' + r.emailed + ' UTC' : (r.unsub ? '; unsubscribed, so no setup email' : (('emailed' in r) ? '; setup email NOT sent yet' : '')))
+      + (r.alerted ? '; you were told ' + r.alerted + ' UTC' : '')));
     return { level: orphan.length ? 'alert' : (items.length ? 'warn' : 'ok'), items };
   });
 
@@ -349,7 +364,14 @@ export async function runSweep(q) {
         }
         detail[r.provider_id] = (mine ? d.seen + ' both in her list, ' + d.serverOnly + ' only one in her list' : 'her list not readable')
           + '; newest copy: ' + d.d7 + ' this week, ' + d.d30 + ' this month, ' + d.older + ' older'
-          + '; id kinds ' + Object.entries(d.kinds).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => k + ' ' + n).join(', ');
+          + '; id kinds ' + Object.entries(d.kinds).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => k + ' ' + n).join(', ')
+        // What her own app did about them at its last automatic merge (device report, counts and field
+        // names only): left copies and the field that differed, so a pair left for her is explained.
+        try {
+          const dr = await q`SELECT report FROM device_reports WHERE provider_id = ${r.provider_id} AND report ? 'dupesLeft' ORDER BY updated_at DESC LIMIT 1`;
+          const rep = dr[0] && dr[0].report;
+          if (rep) detail[r.provider_id] += '; her app last merged ' + (Number(rep.dupesMerged) || 0) + ', left ' + (Number(rep.dupesLeft) || 0) + ' for her' + (rep.dupesWhy ? ' (' + rep.dupesWhy + ')' : '');
+        } catch (e) {}
       } catch (e) { detail[r.provider_id] = 'detail failed: ' + (e && e.message); }
     }
     return { items: burst.map(r => who(r.provider_id) + ': ' + r.n + ' clients added in the last day')

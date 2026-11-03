@@ -8784,3 +8784,28 @@ and send (8s, a timeout is a plain error and never `gone`, so no phone address i
 Resend email send (8s) are bounded, like APNs already was. Test
 `scratchpad/founder-push/send-timeouts.mjs` (6/6; 6 fail on the old code), added to the CI founder
 list. All founder-push tests (8 server + 5 UI) pass.
+
+## 2026-11-03 — Build 2026-11-03a: same-name same-email duplicates merge themselves; payer-no-account waits are settings
+
+**Duplicates (Ashley chose "Yes, merge them" on 2026-11-03).** `_autoMergeSquareDuplicates` has a
+second pass: a hand-added/imported record with NO Square id, and exactly ONE `sq_` record, with the
+same normalised name AND the same email, fold into the `sq_` record through `_mergeClientRecords`
+(every side store, delete record, `_mergedInto`, server `mergeClientRows`). Left for her (Merge
+Duplicates): any field clash (`_autoMergeConflict`), two different consults, two Square copies of the
+person, a removed copy, no email, the copy open on screen, and a pair where the client opened BOTH
+links (the server can hand only one link to the survivor). It runs on each provider's own device after
+her list arrives, so the 8 accounts clean up on their first launch of 2026-11-03a. Backup: kv_history
+keeps the pre-merge `sc_clients`, and every dropped id is a soft delete. The device report now carries
+`dupesMerged`/`dupesLeft`/`dupesWhy` (field names, never a client name) and the health sweep's
+duplicates note prints "her app last merged N, left M for her (why)". Tests:
+`scratchpad/test-dupes-email-name-merge.mjs` 21/21 Chromium and WebKit; CONTROL=1 fails 10.
+
+**Paid but no account.** Correction to the 2026-11-03 brief: the rescue email ALREADY existed
+(`api/cron-orphan-checkout.js`, hourly, email after 3 h, tell Ashley after 48 h). Its founder alert
+goes to ashley@slickchart.app, which is why it was not visible from Gmail here. New: both waits are
+her settings (`lib/founder-settings.js`, table `founder_settings`), edited in Admin tools -> **Paid but
+no account** (`_founderOrphans`, `/api/admin/orphans`: founder session read/write, Monitor key read
+with masked emails). The list shows each person, when they paid, when the setup email went, and
+failed sign-ins. The health sweep's billing check now says "setup email sent <time>" or "NOT sent
+yet". Email text now says "That is on me" (was "our fault"). Tests: `test-orphan-settings.mjs` 19/19
+(PGlite), `test-orphans-ui.mjs` 8/8, `test-health-sweep.mjs` ALL PASS.

@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-02b';
+const APP_BUILD='2026-11-03a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2611,6 +2611,36 @@ function _autoMergeSquareDuplicates(){
         _mergeClientRecords(keepId,dropId);merged++;
       });
     });
+    // The same person twice, once added by hand (or imported) and once from Square: same name AND same
+    // email, where the hand-added copy has no Square id at all, so the pass above never paired them.
+    // Ashley chose to merge these on 2026-11-03 (8 accounts, 30-263 pairs each, all from before the
+    // 2026-10-15 fix). Narrow on purpose: exactly ONE Square copy in the group (two Square customers
+    // are two records in Square too, so those stay for her), neither copy removed, the Square copy
+    // survives (the sync, purge and delete record are keyed on it), and the same no-clash rule.
+    const _dl=(typeof _deletedClientIds!=='undefined'&&_deletedClientIds)||{};
+    const byEN={};
+    Object.keys(CL).forEach(function(id){const c=CL[id];if(!c||c.isAnimal||c.ownerId||_dl[id])return;
+      try{if(typeof _isAnimal==='function'&&_isAnimal(c))return;}catch(e){}
+      const em=String(c.email||'').trim().toLowerCase(),nm=_mergeNorm(c.name);
+      if(!nm||em.indexOf('@')<1)return;(byEN[em+'|'+nm]=byEN[em+'|'+nm]||[]).push(id);});
+    Object.keys(byEN).forEach(function(k){
+      const ids=byEN[k];if(ids.length<2)return;
+      const sqs=ids.filter(function(id){return String(id).indexOf('sq_')===0;});
+      const plain=ids.filter(function(id){return String(id).indexOf('sq_')!==0&&!(CL[id]&&CL[id].squareId);});
+      if(sqs.length!==1||!plain.length)return;
+      const keepId=sqs[0];
+      plain.sort().forEach(function(dropId){
+        if(!CL[dropId]||!CL[keepId])return;
+        if(dropId===_open||keepId===_open){skipped.push((CL[keepId].name||keepId)+' (open)');return;}
+        // The client opened BOTH links: the server can hand only one of them to the survivor, so the
+        // other would stop opening for her client. Hers to decide, not automatic.
+        if(CL[dropId].appJoined&&CL[keepId].appJoined){skipped.push((CL[keepId].name||keepId)+' (both links used)');return;}
+        let clash=_autoMergeConflict(CL[keepId],CL[dropId]);
+        try{if(!clash&&typeof vcSubmissions!=='undefined'&&vcSubmissions[keepId]&&vcSubmissions[dropId]&&JSON.stringify(vcSubmissions[keepId])!==JSON.stringify(vcSubmissions[dropId]))clash='consult';}catch(e){}
+        if(clash){skipped.push((CL[keepId].name||keepId)+' ('+clash+')');return;}
+        _mergeClientRecords(keepId,dropId);merged++;
+      });
+    });
     }finally{
       const b=_mergeBatch;_mergeBatch=null;
       if(b&&b.pairs.length){
@@ -2624,7 +2654,9 @@ function _autoMergeSquareDuplicates(){
     }
     if(merged||skipped.length){
       try{console.log('[dupes] merged '+merged+' duplicate cop'+(merged===1?'y':'ies')+(skipped.length?'; left for review: '+skipped.join(', '):''));}catch(e){}
-      try{localStorage.setItem('sc_dupes_last',JSON.stringify({at:Date.now(),merged:merged,skipped:skipped.slice(0,20)}));}catch(e){}
+      // Why each copy was left, as field names only (never a name), so the device report can say it.
+      const why={};skipped.forEach(function(x){const m=/\(([^)]*)\)$/.exec(x);const w=m?m[1]:'other';why[w]=(why[w]||0)+1;});
+      try{localStorage.setItem('sc_dupes_last',JSON.stringify({at:Date.now(),merged:merged,left:skipped.length,why:why,skipped:skipped.slice(0,20)}));}catch(e){}
     }
     return merged;
   }catch(e){return 0;}
@@ -6087,6 +6119,11 @@ async function _sendDeviceReport(){
       clientsSaved:cl?(Array.isArray(cl)?cl.length:Object.keys(cl).length):0,
       clientsOpen:(typeof CL!=='undefined'&&CL)?Object.keys(CL).length:0,
       logo:!!br.logoDataUrl,storageKB:Math.round(lsBytes/1024),
+      // The last automatic duplicate merge on this device: how many went, how many were left and why
+      // (field names such as "notes", never a client's name).
+      dupesMerged:(function(){const d=js('sc_dupes_last');return d?Number(d.merged)||0:0;})(),
+      dupesLeft:(function(){const d=js('sc_dupes_last');return d?(Number(d.left)||(Array.isArray(d.skipped)?d.skipped.length:0)):0;})(),
+      dupesWhy:(function(){const d=js('sc_dupes_last');if(!d||!d.why)return '';return Object.keys(d.why).sort(function(a,b){return d.why[b]-d.why[a];}).slice(0,8).map(function(k){return String(k).replace(/[^a-zA-Z_ ]/g,'').slice(0,20)+' '+d.why[k];}).join(', ');})(),
       offloaded:Object.keys((Cloud&&Cloud._offloaded)||{}).join(','),
       // Changes not yet confirmed by the account, and values this device was too full to store
       // (held in memory only, so they are gone from the phone at the next launch until re-pulled).
@@ -27236,6 +27273,8 @@ function renderAccount(){
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderTestPush(this,6)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-bolt" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Test with a delay &mdash; then close the app</div><div style="font-size:16px;color:var(--p-mut);">Sends 6s after you tap, so you can close the app and see a real lock-screen banner</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderOrphans()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-mail-forward" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Paid but no account</div><div style="font-size:16px;color:var(--p-mut);">Who paid and never made their account, and when the setup email goes out</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderStaleSubs(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-receipt-off" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Check for stray subscription rows</div><div style="font-size:16px;color:var(--p-mut);">Roadmap buyers who look like paying subscribers. Read-only, changes nothing</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderClientRecover(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid var(--p-line-ctl);cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-restore" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Get a provider&rsquo;s clients back</div><div style="font-size:16px;color:var(--p-mut);">Shows what the server still holds for them, and offers to put it back</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
@@ -33372,6 +33411,52 @@ async function _pollFounderSignups(force){
 // A roadmap sale used to write a row into `subscriptions`. Those rows make a buyer look like a
 // paying SlickChart subscriber, which granted them a paid account and (until it was fixed) silenced
 // their signup alert. This only LISTS them — nothing here changes a billing row.
+// ── Founder tool: paid but never made an account (2026-11-03) ─────────────────────────────
+// The hourly job (api/cron-orphan-checkout.js) emails anyone who paid and has no account, then tells
+// her if they still have none. Both waits are HER settings (§1f), edited here. Shows each person and
+// exactly what was sent and when, so nobody has to guess whether they were told.
+async function _founderOrphans(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const when=v=>{try{return v?new Date(v).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';}catch(e){return '';}};
+  const old=document.getElementById('orphan-modal');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='orphan-modal';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');box.setAttribute('role','dialog');box.setAttribute('aria-modal','true');box.setAttribute('aria-label','Paid but no account');
+  box.style.cssText='background:var(--surf2);border:1px solid var(--p-line);border-radius:16px;padding:18px;max-width:380px;width:100%;max-height:calc(100vh - 32px);overflow-y:auto;-webkit-overflow-scrolling:touch;';
+  box.innerHTML='<div style="font-size:16px;color:var(--p-mut);">Checking\u2026</div>';
+  ov.appendChild(box);(document.querySelector('.shell')||document.body).appendChild(ov);
+  let j=null;
+  try{const r=await fetch('/api/admin/orphans',{headers:{'Authorization':'Bearer '+tok}});j=await r.json().catch(()=>null);if(!r.ok||!j||!j.ok){box.innerHTML='<div style="font-size:16px;color:var(--p-ink);margin-bottom:12px;">'+esc((j&&j.error)||'Couldn\u2019t check. Try again.')+'</div><button class="btng" id="orph-close" style="width:100%;border-radius:12px;padding:11px;">Close</button>';box.querySelector('#orph-close').onclick=()=>ov.remove();return;}}
+  catch(e){box.innerHTML='<div style="font-size:16px;color:var(--p-ink);margin-bottom:12px;">Couldn\u2019t check. Try again.</div><button class="btng" id="orph-close" style="width:100%;border-radius:12px;padding:11px;">Close</button>';box.querySelector('#orph-close').onclick=()=>ov.remove();return;}
+  const st=j.settings||{},lb=j.labels||{};
+  const people=(j.people||[]).map(function(x){
+    const sent=x.emailedAt?('Setup email sent '+when(x.emailedAt)):esc(x.status||'');
+    return '<div style="padding:10px 0;border-top:1px solid var(--p-line);"><div style="font-size:16px;color:var(--p-ink);word-break:break-all;">'+esc(x.email)+'</div>'
+      +'<div style="font-size:15px;color:var(--p-mut);line-height:1.5;">Paid '+esc(when(x.paidAt))+'<br>'+sent+(x.alertedAt?'<br>You were told '+esc(when(x.alertedAt)):'')+(x.failedSignIns?'<br>'+x.failedSignIns+' failed sign-in'+(x.failedSignIns===1?'':'s')+' with this email':'')+'</div></div>';
+  }).join('');
+  const field=function(k){const d=lb[k]||{};return '<label style="display:block;margin-bottom:12px;"><div style="font-size:15px;color:var(--p-mut);margin-bottom:4px;">'+esc(d.label||k)+'</div>'
+    +'<input id="orph-'+k+'" type="number" inputmode="numeric" min="'+(d.min||1)+'" max="'+(d.max||720)+'" value="'+esc(st[k])+'" style="width:110px;padding:10px;border-radius:10px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-ink);font-size:16px;font-family:inherit;"> <span style="font-size:15px;color:var(--p-mut);">hours</span></label>';};
+  box.innerHTML='<div style="font-size:17px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Paid but no account</div>'
+    +'<div style="font-size:15px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">SlickChart emails them a link to finish their account, then tells you if they still have none. Checked every hour.</div>'
+    +field('orphan_email_hours')+field('orphan_alert_hours')
+    +'<div id="orph-msg" style="font-size:15px;color:var(--p-mut);min-height:20px;margin-bottom:8px;"></div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:14px;"><button class="btng" id="orph-close" style="flex:1;border-radius:12px;padding:11px;">Close</button><button id="orph-save" style="flex:1;border:none;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--accent);color:var(--accent-ink);">Save</button></div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:2px;">'+((j.people||[]).length?((j.people||[]).length+' waiting'):'Nobody waiting')+'</div>'
+    +(people||'<div style="font-size:15px;color:var(--p-mut);">Everyone who paid in the last 60 days has an account.</div>');
+  box.querySelector('#orph-close').onclick=()=>ov.remove();
+  box.querySelector('#orph-save').onclick=async function(){
+    const msg=box.querySelector('#orph-msg');const body={};
+    ['orphan_email_hours','orphan_alert_hours'].forEach(function(k){const el=box.querySelector('#orph-'+k);if(el&&el.value!=='')body[k]=Number(el.value);});
+    msg.textContent='Saving\u2026';
+    try{const r=await fetch('/api/admin/orphans',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)});const k=await r.json().catch(()=>null);
+      if(!r.ok||!k||!k.ok){msg.textContent=(k&&k.error)||'Couldn\u2019t save. Try again.';return;}
+      const ns=k.settings||{};['orphan_email_hours','orphan_alert_hours'].forEach(function(x){const el=box.querySelector('#orph-'+x);if(el&&ns[x]!=null)el.value=ns[x];});
+      msg.textContent='Saved. Email after '+ns.orphan_email_hours+' h, tell you after '+ns.orphan_alert_hours+' h.';
+    }catch(e){msg.textContent='Couldn\u2019t save. Try again.';}
+  };
+}
 async function _founderStaleSubs(rowEl){
   const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
   const orig='Roadmap buyers who look like paying subscribers. Read-only, changes nothing';

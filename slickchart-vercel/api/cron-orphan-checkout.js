@@ -22,11 +22,11 @@ import { sendEmail, trustedOrigin } from '../lib/email.js';
 import { ensureNurtureTables } from '../lib/nurture.js';
 import { pushFounders } from '../lib/fcm.js';
 import { withCronRun } from '../lib/cron-runs.js';
+import { getFounderSettings } from '../lib/founder-settings.js';
 
-// Long enough that nobody mid-signup is emailed, short enough to matter the same day.
-const GRACE_HOURS = 3;
-// If they still have no account after this, it needs a person, not another automated email.
-const ESCALATE_HOURS = 48;
+// How long to wait before the email, and before telling Ashley, are HER settings (Admin tools ->
+// Paid but no account; lib/founder-settings.js). Defaults 3 h (long enough that nobody mid-signup is
+// emailed) and 48 h (it needs a person, not another automated email).
 
 function authorized(req) {
   const secret = process.env.CRON_SECRET || '';
@@ -48,7 +48,7 @@ function escHtml(s) {
 function rescueHtml(link) {
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;padding:12px;color:#1a2a28;">
     <div style="font-size:21px;font-weight:700;margin-bottom:10px;">One quick step left</div>
-    <p style="font-size:15px;line-height:1.7;margin:0 0 14px;">Your SlickChart subscription is active — thank you! But it looks like your account never got created, so there is nothing to log into yet. That is our fault, not yours.</p>
+    <p style="font-size:15px;line-height:1.7;margin:0 0 14px;">Your SlickChart subscription is active. Thank you! But your account was never made, so there is nothing to log in to yet. That is on me, not you.</p>
     <p style="font-size:15px;line-height:1.7;margin:0 0 14px;">It takes about a minute:</p>
     <p style="margin:0 0 20px;"><a href="${link}" style="display:inline-block;background:#2bc7ac;color:#04231d;text-decoration:none;font-weight:700;font-size:15px;padding:13px 20px;border-radius:999px;">Create your account</a></p>
     <p style="font-size:15px;line-height:1.7;margin:0 0 14px;"><strong>Use this same email address</strong> when you sign up, so it connects to the subscription you already paid for. You will not be charged again.</p>
@@ -59,7 +59,7 @@ function rescueHtml(link) {
 function rescueText(link) {
   return `One quick step left.
 
-Your SlickChart subscription is active — thank you! But it looks like your account never got created, so there is nothing to log into yet. That is our fault, not yours.
+Your SlickChart subscription is active. Thank you! But your account was never made, so there is nothing to log in to yet. That is on me, not you.
 
 Create your account (about a minute): ${link}
 
@@ -82,6 +82,9 @@ async function handler(req, res) {
     const q = sql();
     await ensureNurtureTables(q);
     const founders = founderEmails();
+    const set = await getFounderSettings(q);
+    const GRACE_HOURS = set.orphan_email_hours, ESCALATE_HOURS = set.orphan_alert_hours;
+    out.graceHours = GRACE_HOURS; out.escalateHours = ESCALATE_HOURS;
 
     // Paid, real subscription, old enough to be sure they are not mid-signup, and NO provider account
     // with that email. lower() on both sides because signup stores the address lowercased.
