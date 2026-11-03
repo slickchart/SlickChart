@@ -289,9 +289,11 @@ export async function runSweep(q) {
 
   // 12. Push to provider phones failing (native_push_log), grouped by reason.
   await check('phone-push', 'Phone notifications are being accepted', async () => {
-    const rows = await q`SELECT outcome, reason, count(*)::int AS n FROM native_push_log WHERE at > now() - interval '26 hours'
+    const rows = await q`SELECT outcome, reason, count(*)::int AS n, to_char(max(at) AT TIME ZONE 'UTC', 'Mon DD HH24:MI') AS last FROM native_push_log WHERE at > now() - interval '26 hours'
       AND (outcome LIKE 'removed%' OR outcome LIKE 'send failed%') GROUP BY outcome, reason ORDER BY n DESC LIMIT 10`;
-    return { items: rows.map(r => r.n + 'x ' + r.outcome + (r.reason ? ': ' + String(r.reason).slice(0, 80) : '')) };
+    // The LAST time each failure happened, so a fix (e.g. the Apple key added) can be confirmed by
+    // reading: a failure that stopped before the fix only ages out of the 26-hour window.
+    return { items: rows.map(r => r.n + 'x ' + r.outcome + (r.reason ? ': ' + String(r.reason).slice(0, 80) : '') + (r.last ? ' (last ' + r.last + ' UTC)' : '')) };
   });
 
   // 13. New providers who signed in but never finished setup (2026-10-24).

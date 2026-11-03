@@ -114,6 +114,7 @@ ok(by['sign-in'].items.length === 1 && /5 failed sign-ins/.test(by['sign-in'].it
 ok(by['app-logs'].items.length === 1 && /signed out by the app 1x/.test(by['app-logs'].items[0]), 'a sign-out in the launch log is flagged; one mid-launch close is not', JSON.stringify(by['app-logs'].items));
 ok(by['stale-builds'].items.length === 1 && /2026-10-10a/.test(by['stale-builds'].items[0]), 'the device on an old build is flagged');
 ok(by['phone-push'].items.length === 1 && /send failed: UNREGISTERED/.test(by['phone-push'].items[0]), 'a refused phone push is flagged, a link is not');
+ok(/\(last [A-Z][a-z]{2} \d\d \d\d:\d\d UTC\)$/.test(by['phone-push'].items[0] || ''), 'a phone push failure says when it last happened', by['phone-push'].items[0]);
 ok(by['new-setup'].items.length === 1 && /fre…@new.com/.test(by['new-setup'].items[0]), 'the new provider who never finished setup is flagged');
 { const f = by['data-shrink'].items.find(i => /oth…@x.com: sc_forms/.test(i)) || '';
   ok(/Shrank: tmpls 3\u21921 entries/.test(f) && /Forms: 2 gone \(1 deleted by her\), 1 edited much shorter/.test(f) && !/f_long|f_del|qqq/.test(f), 'a forms shrink says which part shrank and how many forms she deleted, with no ids or content', f); }
