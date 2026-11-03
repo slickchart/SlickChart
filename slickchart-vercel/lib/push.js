@@ -51,12 +51,15 @@ export function validPushEndpoint(endpoint) {
 // Send one notification to one subscription. Never throws — returns a small result the
 // caller can act on. `gone:true` means the subscription is dead (the browser unsubscribed
 // or the endpoint expired) and should be deleted so we stop trying it.
+const SEND_TIMEOUT_MS = 8000;   // same bound as lib/apns.js
 export async function sendPush(subscription, payload, opts) {
   if (!ensure()) return { ok: false, skipped: true };
   if (!subscription || !subscription.endpoint) return { ok: false, error: 'bad subscription' };
   if (!validPushEndpoint(subscription.endpoint)) return { ok: false, error: 'blocked endpoint' };
   try {
-    await webpush.sendNotification(subscription, JSON.stringify(payload || {}), { TTL: 3600, ...(opts && opts.timeout ? { timeout: opts.timeout } : {}) });
+    // Always time-bounded (2026-11-03). With no timeout a push service that never answers held a cron
+    // run open until the platform stopped it, and every client after that one in the run was skipped.
+    await webpush.sendNotification(subscription, JSON.stringify(payload || {}), { TTL: 3600, timeout: (opts && opts.timeout) || SEND_TIMEOUT_MS });
     return { ok: true };
   } catch (e) {
     const code = e && e.statusCode;

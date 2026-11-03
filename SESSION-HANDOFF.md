@@ -8758,3 +8758,29 @@ Howard, Debbi Miranda. "how do we make this stop happening?" / "this has been a 
 - Tests: `scratchpad/test-recover-ghosts-putback.mjs` (7, incl. control on the old rule),
   `test-recover-unghost-one.mjs` 6/6 Chromium + WebKit (new check for the quiet line),
   `test-recover-search` 12/12, `test-recover-scroll` and `test-junk-ui` no failures.
+
+### 2026-11-03: duplicates answered, shrink check counts her deletes, every outgoing send time-bounded
+
+**Duplicate clients, what the new check showed (live 2026-11-02b):** on 8 of the 10 accounts the
+same-name copies are BOTH in her own list (she sees two), the newest copy is over a month old
+(created before the 2026-10-15 dedupe fixes), and the pair is a hand-added/imported `c` record plus
+a Square `sq_` record (cry… 263, don… 81, jaz… 46, hea… 44, pat… 37, ski… 32, hel… 31, tif… 28). The
+2026-10-15 auto-merge only folds records sharing a `squareId`, and the hand-added copy has none, so
+these were never merged. Nothing is still making them (0 new this week on those accounts). mis…
+(38 of 42 only one in her list, 25 this month, mostly plain `c`) and bot… (all 20 only one in her
+list) are server rows the app already merged away: invisible to them. Fix would be a merge by same
+email + same name into the sq_ record: merging clients needs Ashley's yes (asked in the brief).
+
+**Shrink check:** a library shrink now says how many of the missing entries are in that library's
+own delete record (`DELETE_KEYS`: clients, courses, guides, appts, note drafts, forms; a negative
+stamp is a put-back and does not count), and a shrink where every missing entry was deleted by her
+no longer raises an ALERT on its own. Prompted by fae… (clients 6→3, courses 6→4, a note draft 1→0
+in one day). Test in `test-health-sweep.mjs`.
+
+**Crons that never finished:** the new timing detail showed the unfinished runs (provider
+reminders 22:00 UTC, automations 16:15 UTC) were hangs, not slowness: finished runs take 2-4s.
+No outgoing call had a time limit. Now web push (8s default, a caller's own still wins), FCM token
+and send (8s, a timeout is a plain error and never `gone`, so no phone address is pruned) and the
+Resend email send (8s) are bounded, like APNs already was. Test
+`scratchpad/founder-push/send-timeouts.mjs` (6/6; 6 fail on the old code), added to the CI founder
+list. All founder-push tests (8 server + 5 UI) pass.

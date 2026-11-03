@@ -48,12 +48,39 @@ const tail = id => '…' + String(id || '').slice(-4);
 // she deleted herself. Only counts and the app's part names: never a client id, name or any content.
 const COMPOUND = { sc_forms: 1, sc_workspace: 1 };
 const entries = x => Array.isArray(x) ? x.length : (x && typeof x === 'object' ? Object.keys(x).length : 0);
+// The delete record(s) the app keeps for each library (slickchart.html _TOMB_OBJ). A shrink whose
+// missing ids are all in these is the provider deleting things, not data loss (2026-11-03: a provider
+// tidying 3 clients, 2 courses and a finished note draft read as an ALERT).
+export const DELETE_KEYS = { sc_clients: ['sc_deleted_clients', 'sc_merged_ids'], sc_courses: ['sc_hidden_courses'],
+  sc_guides: ['sc_hidden_guides'], sc_appts: ['sc_deleted_appts'], sc_note_drafts: ['sc_deleted_note_drafts'], sc_forms: ['sc_hidden_forms'] };
+// Ids of a library: an object keyed by id, or a list of {id}. null when the shape is neither.
+function idsOf(x) {
+  if (Array.isArray(x)) { const ids = x.map(e => e && typeof e === 'object' && e.id != null ? String(e.id) : null); return ids.every(Boolean) ? ids : null; }
+  return (x && typeof x === 'object') ? Object.keys(x) : null;
+}
+// A delete record is {id: stamp} or [id, ...]; a negative stamp is a put-back (lib/clients.js).
+function deletedSet(vals) {
+  const out = {};
+  for (const v of vals) { let o; try { o = JSON.parse(v); } catch (e) { continue; }
+    if (Array.isArray(o)) o.forEach(id => { out[String(id)] = 1; });
+    else if (o && typeof o === 'object') for (const [id, st] of Object.entries(o)) if (!(typeof st === 'number' && st < 0)) out[id] = 1; }
+  return out;
+}
 export function explainShrink(k, oldV, nowV, hiddenV) {
   let a, b, hid = {};
   try { a = JSON.parse(oldV); b = nowV == null ? null : JSON.parse(nowV); } catch (e) { return ''; }
-  try { hid = JSON.parse(hiddenV || '{}') || {}; } catch (e) {}
+  if (hiddenV && typeof hiddenV === 'object') hid = hiddenV; else try { hid = JSON.parse(hiddenV || '{}') || {}; } catch (e) {}
   if (!a || typeof a !== 'object') return '';
-  if (!COMPOUND[k] || Array.isArray(a)) return '. Entries: ' + entries(a) + ' before, ' + entries(b) + ' now';
+  if (!COMPOUND[k] || Array.isArray(a)) {
+    let out = '. Entries: ' + entries(a) + ' before, ' + entries(b) + ' now';
+    const ia = idsOf(a), ib = idsOf(b);
+    if (ia && DELETE_KEYS[k]) {
+      const now = new Set(ib || []);
+      const gone = ia.filter(id => !now.has(id));
+      if (gone.length) out += ' (' + gone.filter(id => id in hid).length + ' of the ' + gone.length + ' gone were deleted by her)';
+    }
+    return out;
+  }
   const bb = (b && typeof b === 'object') ? b : {};
   const parts = [];
   for (const p of Object.keys(a)) {
@@ -96,9 +123,8 @@ export async function runSweep(q) {
   // 2. A library that shrank in the last day (kv_history keeps the copy from before each shrink).
   await check('data-shrink', 'No saved library shrank sharply in the last day', async () => {
     const rows = await q`SELECT h.owner, h.k, h.items AS old_items, h.bytes AS old_bytes, length(kv.v) AS now_bytes, h.saved_at,
-        h.v AS old_v, kv.v AS now_v, hf.v AS hidden_forms
+        h.v AS old_v, kv.v AS now_v
       FROM kv_history h LEFT JOIN kv ON kv.owner = h.owner AND kv.k = h.k
-      LEFT JOIN kv hf ON hf.owner = h.owner AND hf.k = 'sc_hidden_forms' AND h.k = 'sc_forms'
       WHERE h.reason = 'shrink' AND h.saved_at > now() - interval '26 hours' AND h.k = ANY(${SHRINK_KEYS})
       ORDER BY h.saved_at DESC LIMIT 60`;
     // First run on live data (2026-10-29): a new provider clearing the 3 starter courses read as an
@@ -108,8 +134,14 @@ export async function runSweep(q) {
       const key = r.owner + '|' + r.k;
       if (seen.has(key) || !((r.old_bytes || 0) > 200 && (r.now_bytes || 0) < (r.old_bytes || 0) * 0.8)) continue;
       seen.add(key);
-      if ((r.old_bytes || 0) > 2000) big = true;
-      items.push(who(r.owner) + ': ' + r.k + ' went from ' + r.old_bytes + ' to ' + (r.now_bytes || 0) + ' bytes (' + (r.old_items != null ? r.old_items + ' items before; ' : '') + 'earlier copy kept)' + explainShrink(r.k, r.old_v, r.now_v, r.hidden_forms));
+      let del = {};
+      if (DELETE_KEYS[r.k]) { try { del = deletedSet((await q`SELECT v FROM kv WHERE owner = ${r.owner} AND k = ANY(${DELETE_KEYS[r.k]})`).map(x => x.v)); } catch (e) {} }
+      const why = explainShrink(r.k, r.old_v, r.now_v, del);
+      // Every missing entry is one she deleted (or a finished draft): tidying, not loss. Still listed.
+      const m = / \((\d+) of the (\d+) gone were deleted by her\)/.exec(why);
+      const allHers = !!(m && m[1] === m[2]);
+      if ((r.old_bytes || 0) > 2000 && !allHers) big = true;
+      items.push(who(r.owner) + ': ' + r.k + ' went from ' + r.old_bytes + ' to ' + (r.now_bytes || 0) + ' bytes (' + (r.old_items != null ? r.old_items + ' items before; ' : '') + 'earlier copy kept)' + why);
     }
     return { level: big ? 'alert' : (items.length ? 'warn' : 'ok'), items };
   });

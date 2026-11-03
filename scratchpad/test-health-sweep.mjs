@@ -52,6 +52,13 @@ INSERT INTO app_launch_logs (device_key,provider_id,email,platform,build,events,
 INSERT INTO native_push_log (owner_id,outcome,reason,at) VALUES ('good','linked','',now()),('bad','send failed','UNREGISTERED',now());
 INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead','bad','t1','Cooper Secretname','cooper@client.com',${now - 30 * 24 * H}),('c_ok','good','t2','Ann Private','ann@client.com',${now - H});
 `);
+// 'other' deleted 3 of 6 clients and 1 of 3 courses herself: the shrink says so (2026-11-03 fae… case).
+{ const six = {}; for (let i = 0; i < 6; i++) six['oc' + i] = { name: 'x'.repeat(400) };
+  const three = { oc0: six.oc0, oc1: six.oc1, oc2: six.oc2 };
+  await db.query("INSERT INTO kv VALUES ('other','sc_clients',$1),('other','sc_deleted_clients',$2),('other','sc_courses',$3),('other','sc_hidden_courses',$4)",
+    [JSON.stringify(three), JSON.stringify({ oc3: now, oc4: now, oc5: -now }), JSON.stringify([{ id: 'k1', t: 'y'.repeat(300) }, { id: 'k2', t: 'y'.repeat(300) }]), JSON.stringify({ k3: now })]);
+  const oldC = JSON.stringify(six), oldK = JSON.stringify([{ id: 'k1', t: 'y'.repeat(300) }, { id: 'k2', t: 'y'.repeat(300) }, { id: 'k3', t: 'y'.repeat(900) }]);
+  await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('other','sc_clients',$1,$2,6,'shrink',now()-interval '1 hour'),('other','sc_courses',$3,$4,3,'shrink',now()-interval '1 hour')", [oldC, oldC.length, oldK, oldK.length]); }
 // 'dupe' has 26 same-name pairs: 10 old ones she sees twice in her list, 16 made this week where her
 // list holds only one of the two (merged in the app, still a row on the server).
 await db.query("INSERT INTO providers (id,email,created_at) VALUES ('dupe','dupes@x.com', now()-interval '60 days')");
@@ -114,6 +121,10 @@ ok(by['duplicates'].items.length === 1 && /tro…@x.com: 6 emails newly on more 
 ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-live'].items[0]), 'a deleted client still live on the server is flagged');
 { const n = by['duplicates'].note || '';
   ok(/dup…@x.com 26 \(26 same name: 10 both in her list, 16 only one in her list; newest copy: 16 this week, 0 this month, 10 older; id kinds c\+sq 26/.test(n), 'the standing same-name copies say how many she can see, when the newest was made, and what kind of ids', n); }
+{ const items = by['data-shrink'].items;
+  const cl = items.find(i => /oth…@x.com: sc_clients/.test(i)) || '', co = items.find(i => /oth…@x.com: sc_courses/.test(i)) || '';
+  ok(/Entries: 6 before, 3 now \(2 of the 3 gone were deleted by her\)/.test(cl), 'a clients shrink counts the ones she deleted (a put-back stamp does not count)', cl);
+  ok(/Entries: 3 before, 2 now \(1 of the 1 gone were deleted by her\)/.test(co), 'a courses shrink (a list of {id}) counts the ones she hid', co); }
 ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|fam0@home|twice0@c|Twice Person|locked@out|ghost@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
 ok(j.problems.length > 0 && j.problems[0].startsWith('ALERT'), 'problems list is worst first');
 ok(!JSON.stringify(j).match(/hea…@ok\.com/), 'the healthy account appears nowhere');

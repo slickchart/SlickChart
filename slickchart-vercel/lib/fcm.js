@@ -74,7 +74,8 @@ async function accessToken() {
     const r = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=' + jwt
+      body: 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=' + jwt,
+      signal: AbortSignal.timeout(8000)
     });
     if (!r.ok) { const t = await r.text().catch(() => ''); console.error('[fcm] token exchange failed', r.status, t.slice(0, 300)); return null; }
     const j = await r.json();
@@ -142,7 +143,10 @@ export async function sendFcm(token, payload, opts) {
     const r = await fetch('https://fcm.googleapis.com/v1/projects/' + sa.project_id + '/messages:send', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json' },
-      body: JSON.stringify(opts && opts.validateOnly ? { validate_only: true, message } : { message })
+      body: JSON.stringify(opts && opts.validateOnly ? { validate_only: true, message } : { message }),
+      // Time-bounded like lib/apns.js. A timeout lands in the catch below as a plain error, never
+      // as gone:true, so a slow Google never deletes a good phone address.
+      signal: AbortSignal.timeout(8000)
     });
     if (r.ok) return { ok: true };
     const t = await r.text().catch(() => '');

@@ -15,7 +15,9 @@ export async function sendEmail({ to, subject, html, text, replyTo: replyToOverr
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to, reply_to: replyTo, subject, html, text })
+    body: JSON.stringify({ from, to, reply_to: replyTo, subject, html, text }),
+    // Time-bounded: a hung request held whole cron runs open until the platform stopped them.
+    signal: AbortSignal.timeout(8000)
   });
   if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error('Email send failed: ' + r.status + ' ' + t); }
   return r.json();
