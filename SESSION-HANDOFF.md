@@ -8840,3 +8840,27 @@ so my clients can see them before deciding to purchase."*
   A frozen Square brand line ("Sun · $38", frozen once she edits the product) has its old amount
   dropped (`_brandNoPrice` provider side, same regex client side) so only the current price shows.
 - Test: `scratchpad/test-product-prices.mjs`, 18/18 in Chromium and WebKit.
+
+## 2026-11-04 — Price goes to $17/month for NEW sign-ups on Sat 2026-11-07 (Build 2026-11-04c)
+
+Ashley: *"I want to raise the price to $17/month. Providers who signed up at $10/month keep that for
+life, so this only applies to new sign ups going forward."* Yearly for new sign-ups: $170 (2 months
+free, same rule as $10 -> $100). No existing Stripe subscription is touched.
+
+- **One place:** `lib/pricing.js` (`PRICE_CHANGE_AT` = 12:00am PST Sat Nov 7). `signupPricing()` for a
+  new person; `renewPricing({createdAt, planAmount, planInterval})` for a lapsed account (an early
+  provider renews at $10/$100 for life; unknown counts as early). The landing page `index.html` has
+  the same date and links in its own script: keep the two equal.
+- **Fail-safe:** nothing switches until BOTH new Stripe Payment Links are set (`NEW_MONTHLY_LINK` /
+  `NEW_YEARLY_LINK` in lib/pricing.js or env `STRIPE_PAYMENT_LINK_17` / `STRIPE_PAYMENT_LINK_YEARLY_170`,
+  and `STRIPE_LINK_17` / `STRIPE_LINK_YEAR_170` in index.html). Until then everything stays $10/$100.
+- Uses it: signup/login 402 (`priceMonth`/`priceYear` added, old builds ignore them), the welcome email,
+  the lead nurture emails, the app's "pay yearly, $X" link and "Switch to yearly · $X/year" button.
+- **Switch to yearly** (`api/create-portal-session.js`) now confirms HER yearly price
+  (`subscription_update_confirm`, the yearly price on her product that is 10x her monthly), so a $10
+  provider gets $100 and a $17 one gets $170. Not found or refused -> the old generic screen.
+- Landing page: a "Price goes to $17/month on Saturday, Nov 7. Join before then and keep $10/month
+  for life." note under the hero price until the change; prices are `data-pm`/`data-py` spans swapped
+  by script after it. The `<meta>` descriptions and JSON-LD still say $10 until a static edit.
+- Old $10/$100 links stay ON: they are how a lapsed early provider renews at $10.
+- Tests: `scripts/test-pricing.mjs`.
