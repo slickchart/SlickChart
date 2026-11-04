@@ -313,7 +313,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-03a';
+const APP_BUILD='2026-11-04a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -14303,6 +14303,31 @@ function toggleSummaryGuidePicker(){const el=document.getElementById('summary-gu
 let summaryCustomOpen=false;
 let summaryNoteDraft={};   // provider's edited wording per client (overrides the default note)
 let summaryObsDraft={};     // provider's optional client-facing observation per client (starts empty for real clients)
+// The treatment she recommends NEXT, picked on the session summary (Maddie, Feedback Inbox 2026-11-04:
+// "An option to recommend the next treatment and the link for the client to book it from treatment
+// notes and client app"). {svc, weeks}: the service from HER catalog and, only if she types one, how
+// many weeks out. Nothing is filled in for her (§1f). Sent with the summary, saved on the client as
+// c.nextRec, and shown in the client app with a button that opens booking with that service chosen.
+let summaryNextRec={};
+// Her bookable catalog exactly as the client app sees it: Square's services when she has Square,
+// otherwise her service menu (lib/booking.js listServices), so the client can always book what she picks.
+function _nextRecOptions(){
+  const out=[],seen={};
+  const add=n=>{n=String(n||'').trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=1;out.push(n);}};
+  try{if(typeof squareCatalog!=='undefined'&&squareCatalog&&Array.isArray(squareCatalog.services))squareCatalog.services.forEach(x=>add(x&&x.name));}catch(e){}
+  if(!out.length){try{(_svcMenu||[]).forEach(x=>add(x&&x.name));}catch(e){}}
+  return out;
+}
+function _nextRecFor(id){
+  if(!summaryNextRec[id]){
+    // Re-opening the SAME visit keeps what she picked; a new visit starts empty.
+    const c=CL[id]||{},nr=c.nextRec,dd=(providerNoteDrafts[id]&&providerNoteDrafts[id].date)||(typeof _isoToday==='function'?_isoToday():'');
+    summaryNextRec[id]=(nr&&nr.svc&&nr.dd&&nr.dd===dd)?{svc:nr.svc,weeks:nr.weeks||''}:{svc:'',weeks:''};
+  }
+  return summaryNextRec[id];
+}
+function _nextRecSet(id,k,v){const r=_nextRecFor(id);if(k==='weeks'){const n=parseInt(v,10);r.weeks=(n>=1&&n<=104)?n:'';}else r.svc=String(v||'').trim();}
+function _nextRecWhen(nr){const w=parseInt(nr&&nr.weeks,10);if(!(w>=1))return '';const d=new Date((Number(nr.at)||Date.now())+w*7*864e5);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
 // Where an AI-written client note came from: {n: fingerprint of her provider notes at the time, t: the
 // note exactly as written}. Ashley, 2026-10-16: she made the summary client-friendly, then fixed
 // something in her provider notes, and the client's note still said the old thing. With this, a note
@@ -14568,6 +14593,16 @@ function renderSessionSummary(id){
         <button class="btng" style="flex:1;border-radius:8px;" onclick="_addToCalendar('${_jsAttr(nextTx||'Appointment')} with ${_jsAttr(_providerFirstName()||'your provider')}','${_jsAttr(nextDate||'')}','${_jsAttr(nextTime||'')}')"><i class="ti ti-calendar" aria-hidden="true"></i> Add to calendar</button>
         <button class="btng" style="flex:1;border-radius:8px;" onclick="nav('rebook','${id}')"><i class="ti ti-edit" aria-hidden="true"></i> Change date</button>
       </div>
+      ${(function(){const nr=_nextRecFor(id),opts=_nextRecOptions();if(nr.svc&&opts.indexOf(nr.svc)<0)opts.unshift(nr.svc);
+        return `<div style="margin-top:14px;">
+        <div style="font-size:16px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;font-weight:500;margin-bottom:8px;">Recommend next treatment</div>
+        ${opts.length?`<select id="nr-svc" aria-label="Recommended next treatment" onchange="_nextRecSet('${_jsAttr(id)}','svc',this.value);renderSessionSummary('${_jsAttr(id)}')" style="width:100%;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:11px 12px;font-size:16px;color:var(--p-ink);font-family:inherit;margin-bottom:8px;">
+          <option value="">None</option>${opts.map(o=>`<option value="${_fileEsc(o)}"${nr.svc===o?' selected':''}>${_fileEsc(o)}</option>`).join('')}
+        </select>
+        ${nr.svc?`<label style="display:flex;align-items:center;gap:8px;font-size:16px;color:var(--p-mut);">In about <input id="nr-weeks" type="number" inputmode="numeric" min="1" max="104" value="${_fileEsc(nr.weeks)}" placeholder="?" onchange="_nextRecSet('${_jsAttr(id)}','weeks',this.value)" style="width:70px;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px 10px;font-size:16px;color:var(--p-ink);font-family:inherit;"> weeks <span style="font-size:14px;">(optional)</span></label>
+        <div style="font-size:14px;color:var(--p-mut);margin-top:6px;line-height:1.5;">${_fileEsc(c.name.split(' ')[0])} sees this in their app with a button to book it.</div>`:''}`
+        :`<div style="font-size:16px;color:var(--p-mut);line-height:1.5;">Add your services first (More &rarr; Service menu, or connect Square), then you can pick one here.</div>`}
+      </div>`;})()}
     </div>`:''}
 
     <div style="background:var(--surf1);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--p-line);">
@@ -14986,6 +15021,12 @@ function _storeSummary(id){
     prodV:2,   // every product here came from her catalog: the client app shows no 'typed-in' extras for it
     // The sections she switched off on "Customize card". Additive: an older client app ignores it.
     hide:{note:!summaryToggles.note,products:!summaryToggles.products,appointment:!summaryToggles.appointment,homecare:!summaryToggles.homecare}};
+  // The treatment she recommends next (only with the appointment section on). The newest summary is
+  // the truth: sending one with no pick clears an older recommendation.
+  try{const _nr=summaryToggles.appointment?_nextRecFor(id):null;
+    if(_nr&&_nr.svc){const w=parseInt(_nr.weeks,10);const rec={svc:_nr.svc,at:ts,dd:_dd};if(w>=1)rec.weeks=w;entry.nextRec=rec;c.nextRec=rec;}
+    else delete c.nextRec;
+    delete summaryNextRec[id];}catch(e){}
   if(!Array.isArray(c.summaries))c.summaries=[];
   const _cex=_dd?c.summaries.find(h=>h._draftDate===_dd):null;
   if(_cex)Object.assign(_cex,entry);else c.summaries.unshift(entry);
@@ -22920,7 +22961,8 @@ function _assembleClientData(id){
   // only in this blob) were replaced by whichever device posted last. See lib/clients.js.
   // photosShared travels with the list so the server lets an emptied list through (sharing turned off)
   // instead of protecting the old photos, which kept them visible to the client.
-  return {_uAt:(Number(c._uAt)||0),photosShared:_photosShared(c),animals,studio,studioAddress,studioPhone,website,formStyle:_scfStyle(),providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:(typeof _nextVisitSvc==='function'?_nextVisitSvc(id):(c.treatment||'')),lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,routineReview,withdrawn:_withdrawnOut(c),checkinCfg:checkinCfgOut,checkinHide:(Array.isArray(c.checkinHide)&&c.checkinHide.length)?c.checkinHide.slice():undefined,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
+  const nextRec=(c.nextRec&&typeof c.nextRec==='object'&&c.nextRec.svc)?{svc:String(c.nextRec.svc),weeks:Number(c.nextRec.weeks)||0,at:Number(c.nextRec.at)||0}:null;
+  return {_uAt:(Number(c._uAt)||0),photosShared:_photosShared(c),nextRec,animals,studio,studioAddress,studioPhone,website,formStyle:_scfStyle(),providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:(typeof _nextVisitSvc==='function'?_nextVisitSvc(id):(c.treatment||'')),lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,routineReview,withdrawn:_withdrawnOut(c),checkinCfg:checkinCfgOut,checkinHide:(Array.isArray(c.checkinHide)&&c.checkinHide.length)?c.checkinHide.slice():undefined,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 // Sync bookkeeping: have we pushed the whole roster at least once this session, is the next flush

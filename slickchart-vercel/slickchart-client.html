@@ -2349,6 +2349,7 @@ function renderHome(){
         <div style="font-size:11px;font-weight:700;color:var(--accent-onDark);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;opacity:.85;">${past?'Last appointment':'Next appointment'}</div>
         <div style="font-size:22px;font-weight:600;color:var(--accent-onDark);margin-bottom:2px;">${noAppt?'Not scheduled':_dt(client.nextDate)}</div>
         <div style="font-size:13px;color:var(--accent-onDark);opacity:.75;">${noAppt?_txt(client.treatment||'Book your next visit'):(_txt(client.nextTime)+' · '+_txt(client.treatment))}</div>
+        ${((noAppt||past)&&activeProvider().nextRec)?`<div id="home-next-rec" style="margin-top:8px;font-size:13px;color:var(--accent-onDark);"><b>Recommended next:</b> ${_txt(_nextRecLine(activeProvider().nextRec))}</div>`:''}
         ${urgencyLabel?`<div style="margin-top:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <div style="background:var(--accent);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--accent-ink);font-weight:700;">${urgencyLabel}</div>
         </div>`:''}
@@ -2368,9 +2369,9 @@ function renderHome(){
     </div>
     <!-- Actions + the pre-visit checklist, all wrapped inside this one card -->
     <div style="display:flex;gap:8px;margin-top:14px;">
-      <button onclick="nav('rebook')" style="flex:1;background:var(--accent);border:1px solid rgba(255,255,255,.62);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
+      <button onclick="${((noAppt||past)&&activeProvider().nextRec)?'_bookNextRec()':"nav('rebook')"}" style="flex:1;background:var(--accent);border:1px solid rgba(255,255,255,.62);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
         <i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:15px;color:var(--accent-ink);"></i>
-        <span style="font-size:13px;font-weight:600;color:var(--accent-ink);">${noAppt?'Request an appointment':past?'Request your next visit':'Request another visit'}</span>
+        <span style="font-size:13px;font-weight:600;color:var(--accent-ink);">${((noAppt||past)&&activeProvider().nextRec)?'Book '+_txt(_svcShort?_svcShort(activeProvider().nextRec.svc):activeProvider().nextRec.svc):(noAppt?'Request an appointment':past?'Request your next visit':'Request another visit')}</span>
       </button>
       ${(noAppt||past)?'':`<button onclick="openCalModal()" aria-label="Add to calendar" style="flex:1;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.52);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
         <i class="ti ti-calendar-check" aria-hidden="true" style="font-size:15px;color:var(--accent-onDark);"></i>
@@ -4975,6 +4976,20 @@ function selectRebookDate(key){
   refreshRebookTimes();
 }
 let _rbUseRequest=false;
+// "Around Dec 1" from the day it was recommended plus the weeks she gave; '' when she gave none.
+function _nextRecWhen(r){var w=Number(r&&r.weeks)||0;if(w<1)return '';var d=new Date((Number(r.at)||Date.now())+w*7*864e5);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
+function _nextRecLine(r){if(!r||!r.svc)return '';var w=_nextRecWhen(r);return _svcShort?_svcShort(r.svc)+(w?' \u00b7 around '+w:''):r.svc+(w?' \u00b7 around '+w:'');}
+// Open booking with her recommended service already chosen.
+function _bookNextRec(){var r=(activeProvider()||{}).nextRec;if(r&&r.svc){rebookState.treatment=r.svc;}nav('rebook');}
+function _nextRecCardHTML(r){
+  if(!r||!r.svc)return '';
+  return `<div id="next-rec" style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
+    <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${_txt(client.providerFirst)} recommends next</div>
+    <div style="font-size:15px;font-weight:600;color:var(--c-ink);margin-bottom:${_nextRecWhen(r)?'2':'10'}px;">${_txt(_svcShort?_svcShort(r.svc):r.svc)}</div>
+    ${_nextRecWhen(r)?`<div style="font-size:13px;color:var(--c-mut);margin-bottom:10px;">In about ${Number(r.weeks)} week${Number(r.weeks)===1?'':'s'}, around ${_txt(_nextRecWhen(r))}</div>`:''}
+    <button class="btnp" onclick="_bookNextRec()" style="width:100%;border-radius:10px;padding:11px;"><i class="ti ti-calendar-plus" aria-hidden="true"></i> Book it</button>
+  </div>`;
+}
 function renderRebook(){
   setNav('home');
   document.getElementById('tt').textContent='Request Appointment';
@@ -5751,6 +5766,8 @@ function renderLatestSummary(){
     </div>`;}).join('')}
   </div>`:''}
 
+  <!-- What she recommends next, from this visit (only on the visit it was sent with) -->
+  ${(!_hide.appointment&&s.nextRec&&s.nextRec.svc)?_nextRecCardHTML(s.nextRec):''}
   <!-- Next appointment -->
   ${_hide.appointment?'':`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
     <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Next appointment</div>
@@ -6552,6 +6569,9 @@ function _applyRealClientData(j){
   // fetched by id below). Empty unless the provider turned sharing on for them.
   p.progressPhotos=Array.isArray(d.progressPhotos)?d.progressPhotos:[];
   p.summaries=Array.isArray(d.summaries)?d.summaries:[];
+  // The treatment the provider recommends next, with a button to book it (2026-11-04). Additive:
+  // an older provider build simply never sends it.
+  p.nextRec=(d.nextRec&&typeof d.nextRec==='object'&&typeof d.nextRec.svc==='string'&&d.nextRec.svc.trim())?{svc:d.nextRec.svc.trim(),weeks:Number(d.nextRec.weeks)||0,at:Number(d.nextRec.at)||0}:null;
   // no fabricated data in real mode
   p.avoid=[];p.aftercare=[];p.progress=[];p.observations=[];p.thread=[];p.homecareNote='';p.seriesLabel='';p.routineReview=null;
   // Drop the demo "Skin analysis · Jun 26" photo consult a real client must never see, then restore

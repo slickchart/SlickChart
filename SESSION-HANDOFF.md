@@ -8809,3 +8809,17 @@ with masked emails). The list shows each person, when they paid, when the setup 
 failed sign-ins. The health sweep's billing check now says "setup email sent <time>" or "NOT sent
 yet". Email text now says "That is on me" (was "our fault"). Tests: `test-orphan-settings.mjs` 19/19
 (PGlite), `test-orphans-ui.mjs` 8/8, `test-health-sweep.mjs` ALL PASS.
+
+## 2026-11-04 — Build 2026-11-04a: recommend the next treatment, client books it (Maddie's idea)
+
+Maddie (Feedback Inbox #19): "An option to recommend the next treatment and the link for the client to
+book it from treatment notes and client app". Session summary -> Next appointment now has **Recommend
+next treatment**: a picker of her bookable catalog (Square services when she has Square, else her
+service menu, same rule as lib/booking.js listServices), starting at None, plus an optional "in about
+N weeks" box she fills or leaves (§1f, nothing pre-filled). Sent with the summary as `entry.nextRec`
+and saved as `c.nextRec` {svc, weeks?, at, dd}; the client blob carries `nextRec`. A newer summary with
+no pick clears it. Client app: home card shows "Recommended next: X · around <date>" and its button
+becomes "Book X" when no visit is booked; the summary shows a "<provider> recommends next" card with
+**Book it**, which opens booking with that service chosen (Square providers go to their Square page as
+before). Additive both ways: old client builds ignore it, old provider builds never send it.
+Test: `scratchpad/test-next-treatment-rec.mjs` 13/13 Chromium and WebKit; session sweeps green.
