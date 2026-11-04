@@ -3742,6 +3742,24 @@ function _heartBtn(p){
   const s=_isSaved(p.name);
   return `<button onclick="event.stopPropagation();toggleSaved('${_jsAttr(p.name)}')" aria-label="${s?'Remove from saved':'Save for later'}" aria-pressed="${s}" title="${s?'Saved':'Save for later'}" style="width:34px;height:34px;border-radius:50%;border:1.5px solid ${s?'var(--accent)':'#d9e7e1'};background:${s?'var(--accent-lt)':'#fff'};display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="${s?'var(--accent)':'none'}" stroke="${s?'var(--accent)':'var(--c-mut)'}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></button>`;
 }
+// A product's price, when the provider set one (or Square has one). A recommended product from an
+// older provider build carries no price, so fall back to the same product in her shop list by name.
+function _prodPrice(p){
+  let v=p&&p.price;
+  if(v==null||v===''){try{const nm=String((p&&p.name)||'').trim().toLowerCase();const c=((activeProvider()&&activeProvider().catalog)||[]).find(function(x){return x&&String(x.name||'').trim().toLowerCase()===nm;});if(c)v=c.price;}catch(e){}}
+  const n=Number(v);return (v!=null&&v!==''&&isFinite(n)&&n>0)?Math.round(n*100)/100:null;
+}
+function _prodPriceStr(n){return '$'+(n%1?n.toFixed(2):String(n));}
+// The grey line under a product name: its brand, then its price, shown once.
+function _prodSub(p){
+  let b=String((p&&p.brand)||'');const n=_prodPrice(p);
+  if(n==null)return _txt(b);
+  // A Square line carries the price it had on the day she last edited the product ("Sun · $38"),
+  // and stops refreshing after that. Drop that old amount and show the current one.
+  b=b.replace(/\s*(·\s*)?\$\s?[\d,.]+(\s*[–-]\s*\$?[\d,.]+)?\s*$/,'').trim();
+  const pr='<span class="prod-price" style="color:var(--c-ink);font-weight:600;">'+_prodPriceStr(n)+'</span>';
+  return b?(_txt(b)+' · '+pr):pr;
+}
 // A product's thumbnail: the real product photo (synced from the provider's Square catalog) when
 // there is one, otherwise the emoji icon. Keeps the three shop surfaces (card, recommended, buy
 // sheet) consistent with one definition.
@@ -3762,7 +3780,7 @@ function _shopProdCard(p,idx){
         ${_prodThumb(p,28)}
         <div style="flex:1;min-width:0;">
           <div style="font-size:15px;font-weight:600;color:var(--c-ink);">${_txt(p.name)}</div>
-          <div style="font-size:12px;color:var(--c-mut);">${_txt(p.brand)}</div>
+          <div style="font-size:12px;color:var(--c-mut);">${_prodSub(p)}</div>
           ${p.inOffice?`<div style="font-size:11px;color:var(--accent-ink-lt);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}
         </div>
         ${_heartBtn(p)}
@@ -5503,7 +5521,7 @@ function openBuyOptions(i){
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeBuySheet();};
   ov.innerHTML=`<div style="background:var(--c-card);width:100%;border-radius:16px;padding:16px;box-shadow:0 -8px 30px rgba(0,0,0,.18);">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">${_prodThumb(p,22)}<div style="flex:1;min-width:0;overflow-wrap:anywhere;"><div style="font-size:15px;font-weight:700;color:var(--c-ink);">${_txt(p.name)}</div><div style="font-size:12px;color:var(--c-mut);">${_txt(p.brand||'')}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--c-mut);cursor:pointer;line-height:1;">✕</button></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">${_prodThumb(p,22)}<div style="flex:1;min-width:0;overflow-wrap:anywhere;"><div style="font-size:15px;font-weight:700;color:var(--c-ink);">${_txt(p.name)}</div><div style="font-size:12px;color:var(--c-mut);">${_prodSub(p)}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--c-mut);cursor:pointer;line-height:1;">✕</button></div>
     <div style="font-size:11px;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px;">Where to buy</div>
     ${rows.join('')}
   </div>`;
@@ -6039,7 +6057,7 @@ function renderLatestSummary(){
     ${products.map((p,i)=>{const opts=(p.inOffice?1:0)+(p.site?1:0)+(p.url?1:0)+((p.amazon||activeProvider().amazonStore)?1:0);return`
     <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--c-line);">
       ${_prodThumb(p,22)}
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:var(--c-ink);">${_txt(p.name)}</div><div style="font-size:11px;color:var(--c-mut);">${_txt(p.brand)}</div>${p.inOffice?`<div style="font-size:11px;color:var(--accent-ink-lt);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${p.why?`<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-top:5px;">${_txt(p.why)}</div>`:''}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:var(--c-ink);">${_txt(p.name)}</div><div style="font-size:11px;color:var(--c-mut);">${_prodSub(p)}</div>${p.inOffice?`<div style="font-size:11px;color:var(--accent-ink-lt);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${p.why?`<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-top:5px;">${_txt(p.why)}</div>`:''}</div>
       ${true?`<button onclick="openBuyOptions(${i})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">Buy</button>`:''}
     </div>`;}).join('')}
   </div>`:''}
@@ -6252,7 +6270,7 @@ function renderMagicLanding(){
     ${products.map((pr,i)=>{const opts=(pr.inOffice?1:0)+(pr.site?1:0)+(pr.url?1:0)+((pr.amazon||p.amazonStore)?1:0);return`
     <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #eef6f3;">
       ${_prodThumb(pr,22)}
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:var(--c-ink);">${_txt(pr.name)}</div><div style="font-size:11px;color:var(--c-mut);">${_txt(pr.brand)}</div>${pr.inOffice?`<div style="font-size:11px;color:var(--accent-ink-lt);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${pr.why?`<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-top:5px;">${_txt(pr.why)}</div>`:''}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:var(--c-ink);">${_txt(pr.name)}</div><div style="font-size:11px;color:var(--c-mut);">${_prodSub(pr)}</div>${pr.inOffice?`<div style="font-size:11px;color:var(--accent-ink-lt);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${pr.why?`<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-top:5px;">${_txt(pr.why)}</div>`:''}</div>
       ${true?`<button onclick="openBuyOptions(${i})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">Buy</button>`:''}
     </div>`;}).join('')}
   </div>`:''}

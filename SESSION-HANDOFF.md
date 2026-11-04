@@ -8823,3 +8823,20 @@ becomes "Book X" when no visit is booked; the summary shows a "<provider> recomm
 **Book it**, which opens booking with that service chosen (Square providers go to their Square page as
 before). Additive both ways: old client builds ignore it, old provider builds never send it.
 Test: `scratchpad/test-next-treatment-rec.mjs` 13/13 Chromium and WebKit; session sweeps green.
+
+## 2026-11-04 — Build 2026-11-04b: product prices clients can see (Diana's idea)
+
+Diana (esthieguild@gmail.com) emailed Ashley directly: *"is it possible to add prices to the products
+so my clients can see them before deciding to purchase."*
+
+- **Provider:** the product editor (`renderAddAffiliate`) has an optional **Price** box. Blank means no
+  price shown. A Square product with a Square price shows that price read-only ("from Square, change
+  it in Square"). A Square product with no price gets the box; her price sets `priceManual` and
+  `_mergeSquareRetail` then leaves it alone. Her shop list shows the price after the brand.
+- **Payload:** `price:_clientPrice(a)` (positive number or null) added to the shop catalog, the client
+  blob's products, the summary products and the routine products. Old client builds ignore it.
+- **Client:** `_prodSub(p)` draws "Brand · $28.50" on the shop card, the buy sheet and both summary
+  product lists. A rec from an older provider build with no price falls back to the catalog by name.
+  A frozen Square brand line ("Sun · $38", frozen once she edits the product) has its old amount
+  dropped (`_brandNoPrice` provider side, same regex client side) so only the current price shows.
+- Test: `scratchpad/test-product-prices.mjs`, 18/18 in Chromium and WebKit.
