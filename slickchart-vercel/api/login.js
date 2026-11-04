@@ -3,9 +3,10 @@
 // enforces TOTP 2FA when the account has it enabled, and (when REQUIRE_PAYMENT is on) re-checks the
 // subscription at login — not just at signup.
 import { signToken, verifyPassword, tooManyAttempts, tooManyAttemptsByIp, recordAttempt, clearAttempts, createSession } from '../lib/auth.js';
-import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
+import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription, getSubscription } from '../lib/db.js';
 import { verifyToken as verifyTotp } from '../lib/totp.js';
-import { liveSubForEmail, repairSubscriptionRow, pastDueForEmail, YEARLY_LINK } from '../lib/stripe-subs.js';
+import { liveSubForEmail, repairSubscriptionRow, pastDueForEmail } from '../lib/stripe-subs.js';
+import { renewPricing } from '../lib/pricing.js';
 
 // A valid-format (salt:hash) decoy so an UNKNOWN email still runs the same slow scrypt a known one does.
 // Without it, the intentionally-generic "Email or password is incorrect" reply leaked which emails are
@@ -89,10 +90,17 @@ export default async function handler(req, res) {
                   let behind = null;
                   try { behind = await pastDueForEmail(email); } catch (e) { /* refuse below */ }
                   if (!behind) {
+                    // An early provider renews at the price she signed up at, for life (lib/pricing.js).
+                    let lastSub = null, created = null;
+                    try { lastSub = await getSubscription(email); } catch (e) { /* unknown = early */ }
+                    try { const pr = await q`SELECT created_at FROM providers WHERE email = ${email}`; created = pr[0] && pr[0].created_at; } catch (e) {}
+                    const price = renewPricing({ createdAt: created, planAmount: lastSub && lastSub.plan_amount, planInterval: lastSub && lastSub.plan_interval });
                     res.status(402).json({
                       error: 'Your subscription isn’t active. Please renew to continue.',
-                      checkoutUrl: process.env.STRIPE_PAYMENT_LINK || '',
-          checkoutUrlYear: process.env.STRIPE_PAYMENT_LINK_YEARLY || YEARLY_LINK
+                      checkoutUrl: price.checkoutUrl,
+                      checkoutUrlYear: price.checkoutUrlYear,
+                      priceMonth: price.month,
+                      priceYear: price.year
                     });
                     return;
                   }

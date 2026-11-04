@@ -1,3 +1,4 @@
+import { signupPricing } from './pricing.js';
 // Minimal transactional email via Resend's HTTP API (no SDK/deps needed).
 // If RESEND_API_KEY isn't set, we no-op gracefully so the app still works in
 // development / before an email provider is connected.
@@ -89,6 +90,7 @@ export function trustedOrigin() {
 // thank them for signing up, and set the tone that this is a provider-built
 // app they're helping shape, not a finished product being handed to them.
 export function welcomeEmailHtml({ name, link }) {
+  const P = signupPricing();
   const first = String(name || '').trim().split(/\s+/)[0] || 'there';
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:8px;color:#1a1a1a;">
     <div style="background:#0a1719;border-radius:14px;padding:28px 24px;text-align:center;color:#eaf6f4;">
@@ -138,7 +140,7 @@ export function welcomeEmailHtml({ name, link }) {
 
       <div style="background:#eef8f5;border-radius:12px;padding:16px 18px;margin:0 0 20px;">
         <div style="font-size:12px;font-weight:700;color:#1e9e88;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Want 2 months free?</div>
-        <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0;">Pay yearly: <strong>$100 a year</strong> instead of $120. Switch any time in Settings &rarr; Security &amp; Billing &rarr; <strong>Switch to yearly</strong> (on the web at <a href="https://slickchart.app/slickchart" style="color:#1e9e88;">slickchart.app</a>). Already paying yearly? You are all set.</p>
+        <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0;">Pay yearly: <strong>${'$' + P.year} a year</strong> instead of ${'$' + P.yearFull}. Switch any time in Settings &rarr; Security &amp; Billing &rarr; <strong>Switch to yearly</strong> (on the web at <a href="https://slickchart.app/slickchart" style="color:#1e9e88;">slickchart.app</a>). Already paying yearly? You are all set.</p>
       </div>
 
       <div style="background:#f6f7f8;border-radius:12px;padding:16px 18px;margin:0 0 20px;">
@@ -152,6 +154,7 @@ export function welcomeEmailHtml({ name, link }) {
   </div>`;
 }
 export function welcomeEmailText({ name, link }) {
+  const P = signupPricing();
   const first = String(name || '').trim().split(/\s+/)[0] || 'there';
   return `Hi ${first},
 
@@ -182,7 +185,7 @@ Getting started:
 5. Remove the sample data once your real clients are in
 
 Want 2 months free?
-Pay yearly: $100 a year instead of $120. Switch any time in Settings -> Security & Billing -> Switch to yearly (on the web at https://slickchart.app/slickchart). Already paying yearly? You are all set.
+Pay yearly: ${'$' + P.year} a year instead of ${'$' + P.yearFull}. Switch any time in Settings -> Security & Billing -> Switch to yearly (on the web at https://slickchart.app/slickchart). Already paying yearly? You are all set.
 
 If you ever want to cancel:
 Settings -> Security & Billing -> Cancel subscription. One tap, no email required, no phone call. You keep full access to the end of the time you have already paid for, and nothing is deleted -- your clients, notes and photos stay exactly where they are. Using the iPhone app? Cancelling lives on the web: sign in at https://slickchart.app/slickchart. And if anything gets in your way, just reply to this email and I will cancel it for you the same day.

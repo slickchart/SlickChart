@@ -6,6 +6,7 @@ import { verifyToken, sessionOk } from '../lib/auth.js';
 import { safeStripeMessage } from '../lib/stripe-safe.js';
 import { dbEnabled, getSubscription, accountEmail } from '../lib/db.js';
 import { appOrigin } from '../lib/email.js';
+import { yearlyCentsFor } from '../lib/pricing.js';
 
 function claims(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -42,12 +43,40 @@ export default async function handler(req, res) {
     } catch (e) {}
 
     const origin = appOrigin(req);
+    const stripeGet = (path) => fetch('https://api.stripe.com/v1/' + path, { headers: { Authorization: 'Bearer ' + key } })
+      .then(r => r.ok ? r.json() : null).catch(() => null);
+    // "Switch to yearly" must land on HER yearly price: $10/month -> $100/year (early providers keep
+    // it for life), $17/month -> $170/year. Stripe's generic change-plan screen lists every price
+    // configured in the portal, which would offer a $17 provider the $100 plan, or a $10 provider
+    // the $170 one. So find the yearly price on her own product that is ten times her monthly
+    // price and confirm exactly that. Not found -> the old generic screen, as before.
+    let yearlyTarget = null;
+    if (intent === 'yearly' && sub.stripe_subscription_id) {
+      try {
+        const live = await stripeGet('subscriptions/' + encodeURIComponent(sub.stripe_subscription_id));
+        const item = live && live.items && live.items.data && live.items.data[0];
+        const pr = item && item.price;
+        const want = pr && pr.recurring && pr.recurring.interval === 'month' ? yearlyCentsFor(pr.unit_amount) : null;
+        const product = pr && (typeof pr.product === 'string' ? pr.product : pr.product && pr.product.id);
+        if (want && product) {
+          const list = await stripeGet('prices?active=true&type=recurring&limit=100&product=' + encodeURIComponent(product));
+          const hit = ((list && list.data) || []).find(x => x.recurring && x.recurring.interval === 'year' && x.unit_amount === want && x.currency === pr.currency);
+          if (hit) yearlyTarget = { item: item.id, price: hit.id };
+        }
+      } catch (e) { yearlyTarget = null; }
+    }
     const mk = (withCancelFlow, withUpdateFlow) => {
       const body = new URLSearchParams({ customer: sub.stripe_customer_id, return_url: origin + '/slickchart' });
       // "Switch to yearly": straight to Stripe's change-plan screen. Needs plan switching turned on
       // in the portal settings with the yearly price listed; if it is not, the fallback below opens
       // the ordinary portal instead of an error.
-      if (withUpdateFlow) {
+      if (withUpdateFlow && yearlyTarget) {
+        body.set('flow_data[type]', 'subscription_update_confirm');
+        body.set('flow_data[subscription_update_confirm][subscription]', sub.stripe_subscription_id);
+        body.set('flow_data[subscription_update_confirm][items][0][id]', yearlyTarget.item);
+        body.set('flow_data[subscription_update_confirm][items][0][price]', yearlyTarget.price);
+        body.set('flow_data[subscription_update_confirm][items][0][quantity]', '1');
+      } else if (withUpdateFlow) {
         body.set('flow_data[type]', 'subscription_update');
         body.set('flow_data[subscription_update][subscription]', sub.stripe_subscription_id);
       }
@@ -68,6 +97,12 @@ export default async function handler(req, res) {
     const wantsUpdate = intent === 'yearly' && !!sub.stripe_subscription_id;
     let r = await mk(wantsCancel, wantsUpdate);
     let j = await r.json().catch(() => ({}));
+    if (!r.ok && wantsUpdate && yearlyTarget) {
+      console.error('[create-portal-session] yearly confirm flow refused:', (j && j.error && j.error.message) || r.status);
+      yearlyTarget = null;
+      r = await mk(false, true);
+      j = await r.json().catch(() => ({}));
+    }
     if (!r.ok && wantsUpdate) {
       console.error('[create-portal-session] plan-switch flow refused:', (j && j.error && j.error.message) || r.status);
       r = await mk(false, false);
