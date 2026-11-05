@@ -8075,7 +8075,9 @@ unread check-in card and the top of the check-in detail page showed the client's
 
 **Ashley OBSERVED (her words, 2026-11-05 01:34 UTC):** *"I have a previous client who is in my square
 book online. she is not on my slickchart client list and it is not prompting to send the first visit
-package."* Name and device not given yet (asked).
+package."* The client is **Lindsey Healy**, *"a long term client on my square list"*. Her SlickChart
+calendar shows Lindsey's NAME and service for the booking (so the "Client" name-lookup cause is ruled
+out for her; the clean-up removal is the lead). Device not stated.
 
 **Three causes found in the code, all fixed on the preview:**
 1. `_upsertClientsFromSquare` returned early, silently, for any booker whose `sq_` id is in
