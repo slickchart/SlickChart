@@ -8139,6 +8139,16 @@ Josie's Forms row says and whether Josie used her app link or filled it in perso
 skipped by the fill AND not in eventClients); a copy whose email differs (unique exact name, no
 contradicting phone); forms sent one at a time, all completed with nothing waiting.
 
+**11:57am, her observations:** Josie filled it out **in person on Ashley's device**; Josie's profile
+says **"0 forms on file"**. Asked: how many Josies show in a search, and Fill intake vs Sign here vs
+her app link. Found: **Fill intake (`_pfiSave`) never wrote to the server event log at all** — it lived
+only in `sc_clients`, so nothing could heal it; **Sign here** did, but a client with no server row got a
+404 and nothing retried. Build `2026-11-04h`: both go through `_logInPersonForm` (makes the server
+row first, device-only retry queue `scl_inperson_queue` flushed on every events poll, one idem key).
+`scratchpad/test-inperson-form-logged.mjs` 6/6 (CONTROL fails 5). Josie's own answers, if they were
+saved to the roster at all, can only come back from `kv_history` sc_clients copies (Recover clients →
+Earlier copies); not yet checked.
+
 **If they still show after she opens 2026-11-04d:** ask for the one Recover clients paste for her own
 email (§1d) and read Cooper's and Josie's rows there before any theory.
 

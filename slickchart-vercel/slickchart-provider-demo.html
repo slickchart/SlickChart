@@ -573,7 +573,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-04g';
+const APP_BUILD='2026-11-04h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -22591,6 +22591,49 @@ function initSignPad(){
   c.addEventListener('touchstart',start,{passive:false});c.addEventListener('touchmove',move,{passive:false});c.addEventListener('touchend',end);
 }
 function clearSignPad(){const c=document.getElementById('sign-pad');if(c&&c.getContext){const ctx=c.getContext('2d');ctx&&ctx.clearRect(0,0,c.width,c.height);}_signPadInk=false;}
+// A form filled IN PERSON on her device (Sign here, Fill intake) goes into the server's event log, the
+// copy every device re-attaches forms from. "Fill intake" never did, so it lived only in the client
+// list; "Sign here" did, but a client with no server record yet got a 404 and nothing retried. Josie
+// (2026-11-05): "she filled it out in person here on my device. and it says 0 forms on file". Now the
+// client's server record is made first when missing, and a send that fails waits on this device
+// (scl_inperson_queue, device-only) and is retried on every events poll until the server has it.
+const _IPQ_KEY='scl_inperson_queue';
+function _ipqRead(){try{const a=JSON.parse(localStorage.getItem(_IPQ_KEY)||'[]');return Array.isArray(a)?a:[];}catch(e){return [];}}
+function _ipqWrite(a){try{localStorage.setItem(_IPQ_KEY,JSON.stringify(a.slice(-40)));}catch(e){}}
+function _logInPersonForm(cid,rec){
+  if(!cid||!rec||rec.evId)return;
+  if(!rec.idem)rec.idem='ip'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  const q=_ipqRead().filter(function(x){return x&&x.idem!==rec.idem;});
+  q.push({cid:cid,idem:rec.idem,formId:rec.formId,title:rec.title,answers:rec.answers||{},flagged:rec.flagged||[],signed:!!rec.signed,qs:rec.qs||null,sigImg:rec.sigImg||undefined,at:rec.at||Date.now()});
+  _ipqWrite(q);
+  return _flushInPersonForms();
+}
+let _ipqBusy=false;
+async function _flushInPersonForms(){
+  if(_ipqBusy)return;const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+  let q=_ipqRead();if(!q.length)return;
+  _ipqBusy=true;
+  try{
+    for(const it of q.slice()){
+      const cid=(typeof _resolveClientId==='function')?_resolveClientId(it.cid):it.cid;
+      const c=CL[cid];
+      if(!c){if(Date.now()-(it.at||0)>30*86400000)q=q.filter(x=>x!==it);continue;}
+      try{
+        if(!c._token){try{await _syncSpecificClientsToServer([cid],{});}catch(e){}}
+        const r=await fetch('/api/provider-form',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+          body:JSON.stringify({clientId:cid,formId:it.formId,title:it.title,answers:it.answers,flagged:it.flagged,signed:it.signed,qs:it.qs,sigImg:it.sigImg,idem:it.idem})});
+        const j=r&&r.ok?await r.json().catch(()=>null):null;
+        if(j&&j.ok&&j.id){
+          q=q.filter(x=>x!==it);
+          const f=(c.submittedForms||[]).find(x=>x&&x.idem===it.idem)||(c.submittedForms||[]).find(x=>x&&!x.evId&&x.formId===it.formId&&Number(x.at)===Number(it.at));
+          if(f){f.evId=j.id;}
+          try{if(typeof _markEventSeen==='function')_markEventSeen(j.id);}catch(e){}
+          try{saveClients();if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
+        }
+      }catch(e){}
+    }
+  }finally{_ipqWrite(q);_ipqBusy=false;}
+}
 function submitSignOnDevice(fid,cid){
   if(!_signPadInk){proToast('Please sign in the box to complete');return;}
   const tmpl=formTmpls[fid]||{name:'Form'};
@@ -22637,17 +22680,7 @@ function submitSignOnDevice(fid,cid){
     // forms used to live ONLY in sc_clients, which is exactly how Josie's signed intake got lost. On
     // success we stamp the returned event id onto the local record so the self-heal adopts it instead of
     // adding a duplicate. Best-effort: an offline sign still shows locally and the union-merge protects it.
-    try{
-      var _sodTok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-      if(_sodTok&&_sodForm){
-        var _sodIdem='sod'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-        fetch('/api/provider-form',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_sodTok},
-          body:JSON.stringify({clientId:cid,formId:fid,title:tmpl.name,answers:ans,flagged:_sodForm.flagged||[],signed:true,qs:_sodForm.qs,sigImg:_sodForm.sigImg||undefined,idem:_sodIdem})})
-          .then(function(r){return r&&r.ok?r.json():null;}).then(function(j){
-            if(j&&j.ok&&j.id){try{_sodForm.evId=j.id;if(typeof _markEventSeen==='function')_markEventSeen(j.id);if(typeof saveClients==='function')saveClients();if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}}
-          }).catch(function(){});
-      }
-    }catch(e){}
+    try{if(_sodForm)_logInPersonForm(cid,_sodForm);}catch(e){}
   }
   proToast(`${tmpl.name} signed ✓`);
   if(cid&&CL[cid])nav('client',cid);else nav('forms');
@@ -33426,6 +33459,7 @@ async function syncClientEvents(){
     // actual data was never saved. That race is exactly how a client's submission "never came
     // through." Each branch below is written to be idempotent so a re-processed event is harmless.
     try{loadMergedInto();}catch(e){}   // pick up any merge routing synced from another device
+    try{_flushInPersonForms();}catch(e){}
     try{if(_routeOrphanEventClients(j.events,(Array.isArray(j.eventClients)?j.eventClients:[]).concat(Array.isArray(j.clients)?j.clients:[])))touchedClients=true;}catch(e){}
     const _notifCountBefore=notifFeed.length;
     const _evFailedIds=Object.create(null);
@@ -37240,10 +37274,12 @@ function _pfiSave(id,fid){
   try{_capturePhotoConsent(c,fid,answers);}catch(e){}
   try{_captureRefPhoto(id,fid,answers);}catch(e){}
   c.submittedForms=c.submittedForms||[];
-  c.submittedForms.unshift({formId:fid,title:t.name,answers,flagged,date:'Today',at:Date.now(),signed:false,filledBy:'provider'});
+  const _pfiRec={formId:fid,title:t.name,answers,flagged,date:'Today',at:Date.now(),signed:false,filledBy:'provider',qs:Array.isArray(t.qs)?_bizFillQs(t.qs):null};
+  c.submittedForms.unshift(_pfiRec);
   if(flagged.length)c.flaggedContra={form:t.name,items:flagged.slice(),date:'Today'};
   try{saveClients();}catch(e){}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
+  try{_logInPersonForm(id,_pfiRec);}catch(e){}
   delete _pfiDrafts[id];
   proToast('Intake saved \u2713');
   nav('client',id);
