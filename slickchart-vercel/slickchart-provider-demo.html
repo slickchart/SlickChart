@@ -573,7 +573,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-04f';
+const APP_BUILD='2026-11-04g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -11509,7 +11509,12 @@ function _hasIntakeOnFile(c){
   });
   if(byId)return true;
   const names=[...((c.submittedForms||[]).map(s=>s&&s.title)),...((c.signedForms||[])||[])];
-  return names.some(n=>/intake/i.test(String(n||'')));
+  if(names.some(n=>/intake/i.test(String(n||''))))return true;
+  // Forms she sent one at a time instead of as a package (a consent, a consultation): once the client
+  // has completed forms and nothing she was sent is still waiting, the first visit is done (Josie,
+  // 2026-11-05).
+  const subs=(c.submittedForms||[]).filter(function(sf){return sf&&(sf.formId||sf.title);});
+  return subs.length>0&&!(Array.isArray(c.pendingForms)&&c.pendingForms.some(function(pf){return pf&&pf.formId;}));
 }
 // A one-line, tappable nudge for a booked appointment, meant to sit full-bleed at the bottom of an
 // appointment card (Up next, This week's appointments/clients) with the card set to
@@ -33220,6 +33225,9 @@ function _routeOrphanEventClients(events,rows){
     if(!r||!r.id||!need[r.id]||CL[r.id])return;
     let to=(typeof _findExistingClientId==='function')?_findExistingClientId(r.name,r.email):null;
     if(!to&&r.phone&&typeof _sqDigits==='function'){const ph=_sqDigits(r.phone);if(ph.length>=7){const m=Object.keys(CL).filter(function(k){return CL[k]&&_sqDigits(CL[k].phone)===ph;});if(m.length===1)to=m[0];}}
+    // Same name, a different email on the copy (she typed her own on the intake): only when that name
+    // is exactly one client in the list and no phone number contradicts it.
+    if(!to&&typeof _clientIdByName==='function'){const nk=String(r.name||'').trim().toLowerCase().replace(/\s+/g,' ');const m=nk?Object.keys(CL).filter(function(k){return CL[k]&&String(CL[k].name||'').trim().toLowerCase().replace(/\s+/g,' ')===nk;}):[];if(m.length===1&&typeof _sqDigits==='function'){const a=_sqDigits(r.phone),b=_sqDigits(CL[m[0]].phone);if(!(a.length>=7&&b.length>=7&&a!==b))to=m[0];}}
     if(!to||to===r.id||!CL[to])return;
     _mergedInto[r.id]=to;changed=true;
   });
@@ -33418,7 +33426,7 @@ async function syncClientEvents(){
     // actual data was never saved. That race is exactly how a client's submission "never came
     // through." Each branch below is written to be idempotent so a re-processed event is harmless.
     try{loadMergedInto();}catch(e){}   // pick up any merge routing synced from another device
-    try{if(_routeOrphanEventClients(j.events,j.eventClients))touchedClients=true;}catch(e){}
+    try{if(_routeOrphanEventClients(j.events,(Array.isArray(j.eventClients)?j.eventClients:[]).concat(Array.isArray(j.clients)?j.clients:[])))touchedClients=true;}catch(e){}
     const _notifCountBefore=notifFeed.length;
     const _evFailedIds=Object.create(null);
     fresh.forEach(ev=>{ try{

@@ -8132,6 +8132,13 @@ Tests: `scratchpad/test-fvp-done-orphan-events.mjs` 7/7 (CONTROL=1 fails 4, so i
 `scratchpad/test-event-clients-sql.mjs` 9/9 on PGlite, plus event-isolation, deleted-intake-not-sent,
 takeback, delete-reconcile, selfcheck-event-fails. Chromium only; WebKit is not installed here.
 
+**2026-11-05 11:27am, her observation (desktop Safari, slickchart.app, build 04f live):** Cooper
+cleared. Josie still shows "First-visit package not done yet" (Thu Nov 5 12:00 PM). Asked her what
+Josie's Forms row says and whether Josie used her app link or filled it in person. Build `2026-11-04g`
+(preview) closes three more ways: a copy this device removed whose server row is still live (it was
+skipped by the fill AND not in eventClients); a copy whose email differs (unique exact name, no
+contradicting phone); forms sent one at a time, all completed with nothing waiting.
+
 **If they still show after she opens 2026-11-04d:** ask for the one Recover clients paste for her own
 email (§1d) and read Cooper's and Josie's rows there before any theory.
 

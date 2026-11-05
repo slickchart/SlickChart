@@ -12,17 +12,25 @@ const EVENTS=[
    payload:{formId:'intake',title:'New client intake & consent',answers:{},signed:true}},
   {id:'ev_josie',kind:'form',client_id:'c_josie',created_at:now-86400000*3,
    payload:{formId:'ec-facial',title:'Facial consultation',answers:{},signed:true}},
+  {id:'ev_josie2',kind:'form',client_id:'c_josie_livecopy',created_at:now-86400000*2,
+   payload:{formId:'intake',title:'New client intake & consent',answers:{},signed:true}},
+  {id:'ev_mail',kind:'form',client_id:'c_mail_copy',created_at:now-86400000*2,
+   payload:{formId:'intake',title:'New client intake & consent',answers:{},signed:true}},
+  {id:'ev_phone',kind:'form',client_id:'c_phone_copy',created_at:now-86400000*2,
+   payload:{formId:'intake',title:'New client intake & consent',answers:{},signed:true}},
   {id:'ev_other',kind:'form',client_id:'c_other_copy',created_at:now-86400000*3,
    payload:{formId:'intake',title:'New client intake & consent',answers:{},signed:true}},
 ];
 const EVENT_CLIENTS=[
   {id:'c_cooper_copy',name:'Cooper Howard',email:'cooper@example.com',phone:''},
   {id:'c_other_copy',name:'Somebody Else',email:'someone@example.com',phone:''},
+  {id:'c_mail_copy',name:'Mara Lee',email:'mara.own@example.com',phone:''},
+  {id:'c_phone_copy',name:'Pat Kim',email:'pat2@example.com',phone:'(555) 222-3333'},
 ];
 const page=await b.newPage({viewport:{width:390,height:844}});
 await page.addInitScript(()=>{localStorage.setItem('sc_token','TESTTOKEN');localStorage.setItem('sc_onboarded','1');});
 await page.route('**/api/store*', r=>r.fulfill({status:200,contentType:'application/json',body:r.request().method()==='GET'?'{"data":{}}':'{"ok":true}'}));
-await page.route('**/api/clients*', r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,clients:[],events:EVENTS,eventClients:EVENT_CLIENTS})}));
+await page.route('**/api/clients*', r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,clients:[{id:'c_josie_livecopy',name:'Josie Statzer',email:'josie@example.com',phone:'',token:'x'}],events:EVENTS,eventClients:EVENT_CLIENTS})}));
 await page.route('**/api/cloud-status*', r=>r.fulfill({status:200,contentType:'application/json',body:'{"enabled":true}'}));
 await page.goto('http://localhost:8899/slickchart.html',{waitUntil:'load'});
 await page.waitForTimeout(4000);
@@ -41,6 +49,11 @@ const r=await page.evaluate(async (control)=>{
   CL.c_josie=Object.assign({},base,{name:'Josie Statzer',email:'josie@example.com',pendingForms:[{formId:'ec-facial',assignedAt:1}]});
   CL.c_cooper=Object.assign({},base,{name:'Cooper Howard',email:'cooper@example.com'});
   CL.c_new=Object.assign({},base,{name:'Brand New',email:'new@example.com'});
+  CL.c_mara=Object.assign({},base,{name:'Mara Lee',email:'mara@example.com'});
+  CL.c_pat=Object.assign({},base,{name:'Pat Kim',email:'pat@example.com',phone:'555 999 0000'});
+  CL.c_solo=Object.assign({},base,{name:'Solo Forms',email:'solo@example.com',submittedForms:[{formId:'consent-esty',title:'Esthetics consent',date:'Nov 1'}]});
+  CL.c_half=Object.assign({},base,{name:'Half Done',email:'half@example.com',submittedForms:[{formId:'consent-esty',title:'Esthetics consent',date:'Nov 1'}],pendingForms:[{formId:'ec-acne',assignedAt:1}]});
+  _deletedClientIds.c_josie_livecopy=Date.now();
   CL.c_diff=Object.assign({},base,{name:'Different Person',email:'diff@example.com'});
   if(!formTmpls['ec-facial'])formTmpls['ec-facial']={name:'Facial consultation',qs:[]};
   bundles.length=0;
@@ -49,7 +62,7 @@ const r=await page.evaluate(async (control)=>{
   localStorage.setItem('sc_seen_events','[]');
   await syncClientEvents();
   const nud=id=>/First-visit package not done yet/.test(_firstVisitNudgeHTML(id)||'');
-  return {josie:nud('c_josie'),cooper:nud('c_cooper'),fresh:nud('c_new'),diff:nud('c_diff'),
+  return {mara:nud('c_mara'),pat:nud('c_pat'),solo:nud('c_solo'),half:nud('c_half'),josie2:(CL.c_josie.submittedForms||[]).some(f=>f.evId==='ev_josie2'),josie:nud('c_josie'),cooper:nud('c_cooper'),fresh:nud('c_new'),diff:nud('c_diff'),
     cooperForms:(CL.c_cooper.submittedForms||[]).map(f=>f.evId),diffForms:(CL.c_diff.submittedForms||[]).length,
     josiePending:(CL.c_josie.pendingForms||[]).length,routed:_mergedInto.c_cooper_copy||null,otherRouted:_mergedInto.c_other_copy||null};
 },!!process.env.CONTROL);
@@ -62,5 +75,10 @@ ck(r.routed==='c_cooper',"Cooper's removed copy routes to the live record");
 ck(r.fresh,'a client with nothing done is still nudged');
 ck(r.diff&&r.diffForms===0&&!r.otherRouted,'a removed copy of a DIFFERENT person is not attached to anyone');
 ck(r.josiePending===0,"Josie's done form left her to-do list");
+ck(r.josie2,"a form on a copy this device removed but the server still has live lands on the record");
+ck(!r.mara,'same unique name, different email on the copy: attached');
+ck(r.pat,'same name but a contradicting phone: NOT attached');
+ck(!r.solo,'forms sent one at a time, all done: cleared');
+ck(r.half,'forms done but one still waiting: still nudged');
 console.log(bad?('\nFAILURES: '+bad):'\nall pass');
 await b.close();process.exit(bad?1:0);
