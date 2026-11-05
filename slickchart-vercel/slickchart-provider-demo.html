@@ -276,6 +276,8 @@ textarea.scf-in,.scf textarea.fi{border:1px solid var(--scf-line) !important;bor
 .scf-pad{width:100%;height:150px;background:#fff;border:none;border-bottom:1px solid #8f877c;touch-action:none;display:block;}
 /* The keyboard is up (see "Keep the field being typed in visible"): the shell is the visible height. */
 html.kb-open .shell{height:var(--kb-vh)!important;max-height:var(--kb-vh)!important;min-height:0!important;}html.kb-open .shell>.nav{display:none!important;}
+/* With the menu hidden for the keyboard, the message bar sits right on top of the keyboard, not a menu's height above it. */
+html.kb-open .shell{--nav-h:0px!important;}
 #sc-demo-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#2a231b,#1a1208);border-bottom:1px solid #3c3227;color:#f3ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 14px;flex-wrap:wrap;text-align:center;}#sc-demo-banner b{color:#C8A882;}#sc-demo-banner button{background:none;border:1px solid #6b5d45;color:#C8A882;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}#sc-demo-banner button:hover{border-color:#C8A882;}html,body{height:100%;margin:0;}.shell{height:100vh !important;max-height:100vh !important;min-height:0 !important;}
 </style>
 </head>
@@ -571,7 +573,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-04c';
+const APP_BUILD='2026-11-04d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7399,12 +7401,13 @@ let bizInfo={
 
 // The message bar (and .modal-bg) sit directly on the bottom menu. Its height was assumed to be 60px,
 // but it depends on the phone's font size, zoom and safe area, so on Android a strip of page showed
-// between the two (2026-10-21). Keep --nav-h equal to the menu's real height.
+// between the two (2026-10-21). Keep --nav-h equal to the menu's real height. Watch its BORDER box: the
+// home-bar space is padding, and a content-box observer never saw it change (2026-11-04).
 (function _trackNavHeight(){
   try{
     const nv=document.querySelector('.shell > .nav, .shell .nav'),sh=document.querySelector('.shell');if(!nv||!sh)return;
     const set=()=>{try{const h=nv.offsetHeight;if(h>0)sh.style.setProperty('--nav-h',h+'px');}catch(e){}};
-    set();if(typeof ResizeObserver==='function')new ResizeObserver(set).observe(nv);else window.addEventListener('resize',set);
+    set();if(typeof ResizeObserver==='function')new ResizeObserver(set).observe(nv,{box:"border-box"});else window.addEventListener('resize',set);
   }catch(e){}
 })();
 function setNav(id){
@@ -24227,7 +24230,7 @@ function renderChat(id){
       const _tap=(_mine&&(m.status==='failed'||m.status==='pending')&&m._mid)?`onclick="_retryProviderMsg('${id}','${m._mid}')" style="cursor:pointer;"`:'';
       return`<div ${_tap} style="align-self:${_mine?'flex-end':'flex-start'};max-width:80%;width:fit-content;min-width:0;${_tap?'cursor:pointer;':''}">${m.text?`<div class="${_mine?'bub-me':'bub-them'}">${_fileEsc(m.text)}</div>`:''}${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${_mine?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${_imgSrc(src)}" alt="shared photo" loading="lazy" decoding="async" onclick="openPhoto(this.src)" style="width:${imgs.length>1?'92px':'180px'};height:${imgs.length>1?'92px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1px solid var(--p-line);cursor:zoom-in;">`).join('')}</div>`:''}<div style="font-size:16px;color:var(--p-mut);margin-top:3px;${_mine?'text-align:right;':''}">${_fileEsc(_fmtMsgTime(m))}${_st?' · '+_st:''}</div></div>`;}).join('')}
   </div>
-  <div style="position:absolute;bottom:var(--nav-h,calc(60px + env(safe-area-inset-bottom, 0px)));left:0;right:0;background:var(--surf1);border-top:1px solid var(--p-line2);padding:8px 12px;">
+  <div id="chat-compose" style="position:absolute;bottom:var(--nav-h,calc(60px + env(safe-area-inset-bottom, 0px)));left:0;right:0;z-index:6;background:var(--surf1);border-top:1px solid var(--p-line2);padding:8px 12px;">
     <div id="ai-suggest-bar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
     <div style="display:flex;align-items:flex-end;gap:6px;">
     ${aiEnabled?`<button onclick="_aiSuggestReplies('${id}')" aria-label="Suggest a reply" title="Suggest a reply" style="width:34px;height:34px;border-radius:50%;background:var(--surf2);border:1px solid var(--p-line-ctl);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-sparkles" style="font-size:18px;color:var(--accent-strong);"></i></button>`:''}
