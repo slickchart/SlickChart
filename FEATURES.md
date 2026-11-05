@@ -353,6 +353,11 @@ saved anywhere", not "does this always call that".
 | `_handleAuthParams` | `/api/change-email` | via `_confirmEmailChange` |
 | `_handleAuthParams` | `/api/client-code` | via `_clientSendCode` |
 | `_handlePushParams` | `/api/clients` | via `syncClientEvents` |
+| `_hasIntakeOnFile` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_hasIntakeOnFile` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_hasIntakeOnFile` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_hasIntakeOnFile` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_hasIntakeOnFile` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_hcAddHowTo` | `/api/square/orders` | via `_hcFetchBought` |
 | `_hcCustomStep` | `/api/square/orders` | via `_hcFetchBought` |
 | `_hcFetchBought` | `/api/square/orders` | direct |

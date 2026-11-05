@@ -8071,6 +8071,39 @@ unread check-in card and the top of the check-in detail page showed the client's
   `THEMES=light` / `BRANDS=navy` env vars narrow a run.
 - Test: `scratchpad/test-checkin-light.mjs` 27/27 Chrome + Safari (fails 13 on the old code).
 
+## 2026-11-05 — Josie and Cooper: first-visit package says not done after they did it (build `2026-11-04d`, PREVIEW)
+
+**What Ashley OBSERVED (§1b, settled):** on her schedule for Thu Nov 5, Josie Statzer and Cooper Howard
+both show that their first-visit package still needs doing. Both have already completed it. *"this has
+consistently happened with cooper in particular over and over."* Device not stated.
+
+**Not looked at:** her account's actual rows (no founder session in this container; no monitor-key
+endpoint shows client names). So which of the causes below hit Josie and which hit Cooper is NOT proven
+from her data. Nothing has been written to her data by hand.
+
+**Causes found (code, each reproduced headless):**
+1. `_hasIntakeOnFile` counted a form only if it was her standard intake, ended in `-intake`, had
+   "intake" in its title, or was in the ONE bundle marked "every new client". Since 2026-10-22 she
+   picks a welcome package per service (`_fvpChooser`); finishing any other package's forms never
+   counted. Now the send records `c.fvpForms`, and a form from any of her bundles counts.
+2. A form submitted on a client COPY that was later removed (deleted / auto-merged without the server
+   `mergeClientRows` moving its events) resolved to no record: `_reconcileEventAttachments` skipped it
+   on every poll, forever. Cooper had 141 copies cleaned up in October (§2be), so his are the likely
+   case. `GET /api/clients` now also returns `eventClients` (name/email/phone of removed rows that
+   form/check-in events point at; this provider only; never an erased client) and
+   `_routeOrphanEventClients` puts them in `_mergedInto` (email, then unique phone, then name), so the
+   normal reconcile attaches them on every device.
+3. `listEvents` returned the newest 2000 events of every kind, so messages pushed old forms out; a
+   device that had lost one from the chart could never heal it. Older FORM events now ride along
+   (bounded 1500).
+
+Tests: `scratchpad/test-fvp-done-orphan-events.mjs` 7/7 (CONTROL=1 fails 4, so it sees the bug),
+`scratchpad/test-event-clients-sql.mjs` 9/9 on PGlite, plus event-isolation, deleted-intake-not-sent,
+takeback, delete-reconcile, selfcheck-event-fails. Chromium only; WebKit is not installed here.
+
+**If they still show after she opens 2026-11-04d:** ask for the one Recover clients paste for her own
+email (§1d) and read Cooper's and Josie's rows there before any theory.
+
 ## 2026-10-21 — Cooper Howard keeps getting deleted (build `2026-10-21b`, PREVIEW)
 
 **What Ashley OBSERVED (ground truth, §1b):**

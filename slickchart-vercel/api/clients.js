@@ -2,7 +2,7 @@
 // the server (POST), and read them back with link tokens & invite status (GET).
 import { verifyToken, isSessionValid } from '../lib/auth.js';
 import { dbEnabled, sql } from '../lib/db.js';
-import { ensureClientTables, upsertClient, listClients, listEvents, markClientDeleted, mergeClientRows } from '../lib/clients.js';
+import { ensureClientTables, upsertClient, listClients, listEvents, listEventClients, markClientDeleted, mergeClientRows } from '../lib/clients.js';
 
 function providerId(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -25,7 +25,10 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const clients = await listClients(provider);
       const events = await listEvents(provider);
-      res.status(200).json({ ok: true, clients, events });
+      // Additive field (older builds ignore it): removed copies that events still point at.
+      let eventClients = [];
+      try { eventClients = await listEventClients(provider, events); } catch (e) { eventClients = []; }
+      res.status(200).json({ ok: true, clients, events, eventClients });
       return;
     }
     if (req.method === 'POST') {

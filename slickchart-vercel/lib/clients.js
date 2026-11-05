@@ -497,8 +497,38 @@ export async function logEventOnce(providerId, clientId, kind, payload, idemKey)
 // so high-volume message events can't crowd out the structured form/check-in events.)
 export async function listEvents(providerId) {
   const q = sql();
-  return await q`SELECT id, client_id, kind, payload, seen, created_at
+  const recent = await q`SELECT id, client_id, kind, payload, seen, created_at
     FROM client_events WHERE provider_id=${providerId} ORDER BY created_at DESC LIMIT 2000`;
+  // Completed FORMS must never age out of the window (2026-11-05). Ashley: "both josie and cooper
+  // have already done their first visit packages and its saying they still need to ... this has
+  // consistently happened with cooper". Messages and check-ins crowd forms out of the newest 2000;
+  // once a form fell out, any device that had lost it from the chart could no longer heal it, and the
+  // "first-visit package not done yet" nudge came back for a client who had done it weeks ago.
+  // Forms are few (a handful per client), so every older one rides along too, bounded.
+  try {
+    if (recent.length >= 2000) {
+      const oldest = recent[recent.length - 1].created_at;
+      const older = await q`SELECT id, client_id, kind, payload, seen, created_at
+        FROM client_events WHERE provider_id=${providerId} AND kind='form' AND created_at < ${oldest}
+        ORDER BY created_at DESC LIMIT 1500`;
+      if (older.length) return recent.concat(older);
+    }
+  } catch (e) { /* the recent window alone is what this always returned */ }
+  return recent;
+}
+
+// Who a form/check-in event belongs to when its client row is no longer LIVE (a duplicate copy that
+// was removed or folded away without the server merge moving its events). The app routes such an
+// event onto the live record of the same person (email, then phone, then name), so a first-visit
+// package a client completed on a copy shows on the record she actually works from. Names and
+// contact only (no token, no data), and only this provider's own rows (CLAUDE.md §0.1).
+export async function listEventClients(providerId, events) {
+  const ids = [...new Set((events || []).filter(e => e && (e.kind === 'form' || e.kind === 'checkin')).map(e => String(e.client_id || '')).filter(Boolean))];
+  if (!ids.length) return [];
+  const q = sql();
+  return await q`SELECT id, name, email, phone FROM clients
+    WHERE provider_id=${String(providerId)} AND deleted_at IS NOT NULL AND id = ANY(${ids.slice(0, 5000)}::text[])
+      AND COALESCE(name,'') <> ''`;
 }
 
 // Full two-way message thread for one client (client-submitted + provider-sent),

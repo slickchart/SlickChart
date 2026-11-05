@@ -571,7 +571,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-04c';
+const APP_BUILD='2026-11-04d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -11492,6 +11492,13 @@ function _hasIntakeOnFile(c){
     if((intakeFid&&fid===intakeFid)||/(^|-)intake$/.test(fid))return true;
     // Her new-client bundle may hold no form called "intake" at all; any of its forms done counts.
     try{const nb=(typeof _newClientBundle==='function')?_newClientBundle():null;if(nb&&nb.formIds.indexOf(fid)>=0)return true;}catch(e){}
+    // The package she ACTUALLY sent this client (2026-11-05, Josie and Cooper). Since 2026-10-22 she
+    // picks a welcome package per service, and only the bundle marked "every new client" was counted
+    // here, so a client who finished the facial package she was sent stayed "not done" forever. The
+    // send now records its forms on the client (fvpForms); for packages sent before that, a form from
+    // any of her welcome packages counts.
+    if(Array.isArray(c.fvpForms)&&c.fvpForms.indexOf(fid)>=0)return true;
+    try{if(typeof bundles!=='undefined'&&Array.isArray(bundles)&&bundles.some(function(b){return b&&Array.isArray(b.formIds)&&b.formIds.indexOf(fid)>=0;}))return true;}catch(e){}
     return false;
   });
   if(byId)return true;
@@ -23784,6 +23791,8 @@ async function sendFirstVisitPackage(id,opts){
   // Assign the intake (+ bundled photo release) FIRST so the client record is never in a
   // check-in-without-intake state, THEN stamp the fresh check-in request. The client keys "check-in done"
   // on this nonce (plus the appointment date), so a new package always asks for a FRESH check-in.
+  // Remember what this package asked for, so its forms count as the package being done (_hasIntakeOnFile).
+  try{c.fvpForms=(_nb?_nb.formIds:_withPhotoRelease(intakeFid)).slice(0,20);}catch(e){}
   if(_nb){
     _assignFormsToClient(c,_nb.formIds);
     try{_assignGuidesToClient(c,_nb.guideIds.filter(g=>typeof _findGuide!=='function'||_findGuide(g)));}catch(e){}
@@ -33187,6 +33196,29 @@ function _sanVcPhotos(arr){return (Array.isArray(arr)?arr:[]).map(o=>({label:Str
 // while the chart reverted to blank. Runs over ALL events every poll (not just unseen ones), so a wiped
 // intake re-lands on the very next sync. Idempotent: skips anything already on the chart and respects
 // check-ins the provider deliberately cleared/dismissed.
+// A form or check-in whose client row was REMOVED (a duplicate copy deleted or folded away without the
+// server moving its events) used to resolve to no record at all, so it was dropped on every poll and
+// the client's chart never showed it. Ashley (2026-11-05): "both josie and cooper have already done
+// their first visit packages and its saying they still need to ... this has consistently happened with
+// cooper in particular over and over". Cooper had 141 copies cleaned up in October. The server now
+// says who each such copy was (eventClients: name, email, phone, this provider's rows only), and the
+// event is routed onto the live record of the same person through the same merge map every merge
+// uses, so it is attached by the normal reconcile below and survives on every device. Email first,
+// then phone, then name (only when it resolves to exactly one client and no email contradicts it).
+function _routeOrphanEventClients(events,rows){
+  if(!Array.isArray(events)||!Array.isArray(rows)||!rows.length)return false;
+  const need={};events.forEach(function(ev){if(ev&&(ev.kind==='form'||ev.kind==='checkin')&&ev.client_id&&!CL[_resolveClientId(ev.client_id)])need[ev.client_id]=1;});
+  let changed=false;
+  rows.forEach(function(r){
+    if(!r||!r.id||!need[r.id]||CL[r.id])return;
+    let to=(typeof _findExistingClientId==='function')?_findExistingClientId(r.name,r.email):null;
+    if(!to&&r.phone&&typeof _sqDigits==='function'){const ph=_sqDigits(r.phone);if(ph.length>=7){const m=Object.keys(CL).filter(function(k){return CL[k]&&_sqDigits(CL[k].phone)===ph;});if(m.length===1)to=m[0];}}
+    if(!to||to===r.id||!CL[to])return;
+    _mergedInto[r.id]=to;changed=true;
+  });
+  if(changed){try{_saveMergedInto();}catch(e){}}
+  return changed;
+}
 function _reconcileEventAttachments(events){
   if(!Array.isArray(events)||!events.length)return false;
   let touched=false;
@@ -33379,6 +33411,7 @@ async function syncClientEvents(){
     // actual data was never saved. That race is exactly how a client's submission "never came
     // through." Each branch below is written to be idempotent so a re-processed event is harmless.
     try{loadMergedInto();}catch(e){}   // pick up any merge routing synced from another device
+    try{if(_routeOrphanEventClients(j.events,j.eventClients))touchedClients=true;}catch(e){}
     const _notifCountBefore=notifFeed.length;
     const _evFailedIds=Object.create(null);
     fresh.forEach(ev=>{ try{
