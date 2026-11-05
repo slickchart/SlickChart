@@ -8897,3 +8897,25 @@ free, same rule as $10 -> $100). No existing Stripe subscription is touched.
   by script after it. The `<meta>` descriptions and JSON-LD still say $10 until a static edit.
 - Old $10/$100 links stay ON: they are how a lapsed early provider renews at $10.
 - Tests: `scripts/test-pricing.mjs`.
+
+## 2026-11-04 — Build 2026-11-04e: the reply box on Messages sits fully above the bottom menu
+
+- **Observed (Ashley, 2026-11-04):** "when i was sending a message in the app's messaging system, the
+  reply box at the bottom was mostly hidden by the navigation bar at the bottom and was very hard to
+  click into."
+- **Cause, both apps.** Client app: the reply bar was placed a fixed 68px up, but an iPhone's menu is
+  ~100px tall (it also clears the home bar), and the Messages tab is `position:relative` so it painted
+  OVER the bar. Provider app: it already followed `--nav-h`, but the ResizeObserver watched the
+  menu's CONTENT box, and the home-bar space is padding, so when the safe area resolved after the
+  first layout `--nav-h` stayed short and the menu covered the bottom ~34px of the box (a tap in the
+  middle of it landed on the menu). Also, with the keyboard up the menu is hidden but `--nav-h` kept
+  its old value, so the bar floated a menu's height above the keyboard.
+- **Fix:** client app tracks `--nav-h` the same way as the provider app; both observe the border box;
+  `html.kb-open .shell{--nav-h:0px!important}` in both; the bar has `id="chat-compose"` and `z-index:6`.
+- **Test:** `scratchpad/test-chat-compose-above-nav.mjs` (adds the 34px home bar to the menu, then
+  checks the bar's bottom = menu's top, a tap in the box hits the box, and with the keyboard up the
+  bar sits on the keyboard). Passes in Chromium and WebKit (`ENGINE=webkit`, with
+  `PLAYWRIGHT_BROWSERS_PATH` at an installed WebKit); against the previous build it fails 5 of 6.
+  `test-keyboard-visible` still 41/41 on the provider demo. (The client DEMO page pads its body 40px
+  for the demo banner, so with the keyboard up its shell runs 40px past the visible area; demo only,
+  the real client page is flush.)

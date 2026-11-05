@@ -238,6 +238,8 @@ textarea.scf-in,.scf textarea.fi{border:1px solid var(--scf-line) !important;bor
 .scf-pad{width:100%;height:150px;background:#fff;border:none;border-bottom:1px solid #8f877c;touch-action:none;display:block;}
 /* The keyboard is up (see "Keep the field being typed in visible"): the shell is the visible height. */
 html.kb-open .shell{height:var(--kb-vh)!important;max-height:var(--kb-vh)!important;min-height:0!important;}html.kb-open .shell>.nav{display:none!important;}
+/* With the menu hidden for the keyboard, the message bar sits right on top of the keyboard, not a menu's height above it. */
+html.kb-open .shell{--nav-h:0px!important;}
 #sc-demo-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#2a231b,#1a1208);border-bottom:1px solid #3c3227;color:#f3ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 14px;flex-wrap:wrap;text-align:center;}#sc-demo-banner b{color:#C8A882;}#sc-demo-banner button{background:none;border:1px solid #6b5d45;color:#C8A882;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}#sc-demo-banner button:hover{border-color:#C8A882;}html,body{height:100%;margin:0;}.shell{height:100vh !important;max-height:100vh !important;min-height:0 !important;}
 </style>
 </head>
@@ -546,6 +548,17 @@ try{window.addEventListener('error',function(e){try{var t=e&&e.target;if(t&&t.ta
 <script>
 window.__scMain=1; // first statement: proves this script parsed (see the boot guard at the end of the page)
 const S=document.getElementById('S');
+// The message bar sits directly on the bottom menu. It was placed 68px up, but on an iPhone the menu
+// is taller than that (it also clears the home bar), so the menu covered most of the reply box
+// (Ashley, 2026-11-04: "the reply box at the bottom was mostly hidden by the navigation bar").
+// Keep --nav-h equal to the menu's real height, the same way the provider app does.
+(function _trackNavHeight(){
+  try{
+    const nv=document.querySelector('.shell > .nav, .shell .nav'),sh=document.querySelector('.shell');if(!nv||!sh)return;
+    const set=()=>{try{const h=nv.offsetHeight;if(h>0)sh.style.setProperty('--nav-h',h+'px');}catch(e){}};
+    set();if(typeof ResizeObserver==='function')new ResizeObserver(set).observe(nv,{box:"border-box"});else window.addEventListener('resize',set);
+  }catch(e){}
+})();
 
 /* ════════════════════════════════════════════════════════════════
    SLICKBRIDGE, cross-app channel (provider tab ⇆ client tab)
@@ -3650,7 +3663,7 @@ function renderMessages(){
       <div style="font-size:11px;color:var(--c-mut);margin-top:3px;${m.from==='me'?'text-align:right;':''};">${m.from==='me'&&m.status==='sending'?'Sending…':(m.from==='me'&&m.status==='failed'?`<span onclick="retryClientMsg('${m._id}')" style="color:#c2410c;cursor:pointer;font-weight:600;">Not delivered · Tap to retry</span>`:_txt(m.time))}</div>
     </div>`;}).join('')}
   </div>
-  <div style="position:absolute;bottom:68px;left:0;right:0;background:var(--c-card);border-top:1px solid var(--c-line);padding:8px 12px;display:flex;align-items:flex-end;gap:6px;">
+  <div id="chat-compose" style="position:absolute;bottom:var(--nav-h,calc(68px + env(safe-area-inset-bottom,0px)));left:0;right:0;z-index:6;background:var(--c-card);border-top:1px solid var(--c-line);padding:8px 12px;display:flex;align-items:flex-end;gap:6px;">
     <button onclick="attachClientPhoto()" aria-label="Add a photo" title="Add a photo" style="width:40px;height:40px;border-radius:50%;background:var(--c-surf);border:1.5px solid var(--c-line-ctl);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-camera" aria-hidden="true" style="font-size:18px;color:var(--accent-ink-lt);"></i></button>
     <button onclick="attachClientLink()" aria-label="Add a photo by link" title="Add a photo by link" style="width:40px;height:40px;border-radius:50%;background:var(--c-surf);border:1.5px solid var(--c-line-ctl);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-link" aria-hidden="true" style="font-size:19px;color:var(--accent-ink-lt);"></i></button>
     <textarea id="cinput" aria-label="Type a message" placeholder="Message ${_txt(client.providerFirst)}…" rows="1" style="flex:1;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:20px;padding:9px 14px;font-size:13px;color:var(--c-ink);resize:none;font-family:inherit;max-height:80px;" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
