@@ -66,6 +66,33 @@ function deletedSet(vals) {
     else if (o && typeof o === 'object') for (const [id, st] of Object.entries(o)) if (!(typeof st === 'number' && st < 0)) out[id] = 1; }
   return out;
 }
+// sc_note_drafts is {clientId: draft}. A draft leaves the map for one of four reasons, and only the
+// last one can be work at risk. Its delete record keys are "nd:<clientId>" (slickchart.html
+// _expireCommittedDraft), so a plain id lookup read every expiry as "not deleted by her" and raised a
+// false alert. Counts and characters only, never text.
+export function explainNoteDrafts(oldV, nowV, tomb, goneClients) {
+  let a, b; try { a = JSON.parse(oldV); b = nowV == null ? {} : JSON.parse(nowV); } catch (e) { return ''; }
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return '';
+  if (!b || typeof b !== 'object') b = {};
+  tomb = tomb || {}; goneClients = goneClients || {};
+  const typed = d => { let n = 0; try { const sec = d && d.sections; if (sec && typeof sec === 'object') for (const v of Object.values(sec)) n += String(v == null ? '' : v).trim().length; } catch (e) {} return n; };
+  let expired = 0, client = 0, saved = 0, open = 0, openChars = 0, moved = 0;
+  const gone = Object.keys(a).filter(id => !(id in b));
+  for (const id of gone) {
+    const d = a[id] || {};
+    if (('nd:' + id) in tomb) expired++;
+    else if (id in goneClients) client++;
+    else if (d.committed) saved++;
+    else { open++; openChars += typed(d); }
+  }
+  // An entry still there under the same id but now empty of typing is "moved/cleared", reported apart.
+  for (const id of Object.keys(a)) if (id in b && typed(a[id]) > 0 && typed(b[id]) === 0) moved++;
+  const mine = expired + client + saved;
+  let out = '. Entries: ' + Object.keys(a).length + ' before, ' + Object.keys(b).length + ' now (' + mine + ' of the ' + gone.length + ' gone were deleted by her)';
+  out += '. Gone: ' + expired + ' expired (visit saved), ' + client + ' client removed or merged, ' + saved + ' saved visit, ' + open + ' UNSAVED (' + openChars + ' typed characters)';
+  if (moved) out += '; ' + moved + ' emptied in place';
+  return out;
+}
 export function explainShrink(k, oldV, nowV, hiddenV) {
   let a, b, hid = {};
   try { a = JSON.parse(oldV); b = nowV == null ? null : JSON.parse(nowV); } catch (e) { return ''; }
@@ -136,7 +163,12 @@ export async function runSweep(q) {
       seen.add(key);
       let del = {};
       if (DELETE_KEYS[r.k]) { try { del = deletedSet((await q`SELECT v FROM kv WHERE owner = ${r.owner} AND k = ANY(${DELETE_KEYS[r.k]})`).map(x => x.v)); } catch (e) {} }
-      const why = explainShrink(r.k, r.old_v, r.now_v, del);
+      let why;
+      if (r.k === 'sc_note_drafts') {
+        let gc = {};
+        try { gc = deletedSet((await q`SELECT v FROM kv WHERE owner = ${r.owner} AND k = ANY(${['sc_deleted_clients', 'sc_merged_ids']})`).map(x => x.v)); } catch (e) {}
+        why = explainNoteDrafts(r.old_v, r.now_v, del, gc);
+      } else why = explainShrink(r.k, r.old_v, r.now_v, del);
       // Every missing entry is one she deleted (or a finished draft): tidying, not loss. Still listed.
       const m = / \((\d+) of the (\d+) gone were deleted by her\)/.exec(why);
       const allHers = !!(m && m[1] === m[2]);

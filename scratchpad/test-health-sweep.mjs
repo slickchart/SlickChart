@@ -21,6 +21,7 @@ export function sql(){ return async (strs, ...v) => { let t=''; strs.forEach((s,
 globalThis.__db = db;
 // app-launch-log imports db helpers; give it what it needs
 const H = 3600 * 1000, now = Date.now();
+const CUR = (fs.readFileSync(path.join(SRC, 'lib/app-build.js'), 'utf8').match(/APP_BUILD = '([^']+)'/) || [])[1];
 await db.exec(`
 CREATE TABLE providers (id text PRIMARY KEY, email text UNIQUE NOT NULL, name text, pass_hash text, verified boolean, created_at timestamptz DEFAULT now());
 CREATE TABLE sessions (id text PRIMARY KEY, provider_id text NOT NULL, device text, location text, ip text, created_at timestamptz DEFAULT now(), last_seen_at timestamptz DEFAULT now(), revoked boolean DEFAULT false);
@@ -43,7 +44,7 @@ INSERT INTO kv_history (owner,k,bytes,items,reason,saved_at) VALUES ('bad','sc_c
 INSERT INTO square_connections (provider_id,merchant_id,expires_at) VALUES ('good','M_GOOD',now()+interval '20 days'),('bad','M_SHARED',now()-interval '1 day'),('other','M_SHARED',now()+interval '20 days');
 INSERT INTO notify_log (kind,subject,skipped,devices,sent,at) VALUES ('paid-signup','someone@new.com','',2,2,now()-interval '3 hours'),('provider-signup','someone@new.com','already announced by the paid-provider ping',0,0,now()-interval '3 hours'),('feedback','trouble@x.com','no push transport configured',0,0,now()-interval '3 hours');
 INSERT INTO feedback (provider_id,message,ts) VALUES ('bad','it broke',now()-interval '5 hours');
-INSERT INTO device_reports VALUES ('good','dev-good-1','{"build":"2026-10-29a","platform":"iPhone","kind":"installed app","unsent":2,"idbWorks":true}',now()),
+INSERT INTO device_reports VALUES ('good','dev-good-1','{"build":"${CUR}","platform":"iPhone","kind":"installed app","unsent":2,"idbWorks":true}',now()),
   ('bad','dev-bad-1','{"build":"2026-10-10a","platform":"Android","kind":"browser","unsent":7,"idbWorks":false,"reloadFails":"loadForms"}',now());
 INSERT INTO subscriptions (email,stripe_subscription_id,status,updated_at) VALUES ('healthy@ok.com','sub_1','active',now()-interval '20 days'),('trouble@x.com','sub_2','past_due',now()),('ghost@paid.com','sub_3','active',now()-interval '5 hours');
 CREATE TABLE nurture_sends (email text NOT NULL, seq text NOT NULL, step int NOT NULL, sent_at timestamptz DEFAULT now(), UNIQUE(email, seq, step));
@@ -51,7 +52,7 @@ CREATE TABLE nurture_optout (email text PRIMARY KEY, ts timestamptz DEFAULT now(
 INSERT INTO nurture_sends (email,seq,step,sent_at) VALUES ('ghost@paid.com','orphan',0,now()-interval '2 hours');
 INSERT INTO login_attempts (email,ts) SELECT 'locked@out.com', now()-interval '1 hour' FROM generate_series(1,5);
 INSERT INTO app_launch_logs (device_key,provider_id,email,platform,build,events,updated_at) VALUES ('d1','bad','trouble@x.com','android','2026-10-24f','[{"t":${now - H},"e":"token-dropped","d":"x"},{"t":${now - H},"e":"screen","d":"home"}]',now()),
-  ('d2','good','healthy@ok.com','ios','2026-10-29a','[{"t":${now - H},"e":"launch"},{"t":${now - H},"e":"prev-launch-cut-off"}]',now());
+  ('d2','good','healthy@ok.com','ios','${CUR}','[{"t":${now - H},"e":"launch"},{"t":${now - H},"e":"prev-launch-cut-off"}]',now());
 INSERT INTO native_push_log (owner_id,outcome,reason,at) VALUES ('good','linked','',now()),('bad','send failed','UNREGISTERED',now());
 INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead','bad','t1','Cooper Secretname','cooper@client.com',${now - 30 * 24 * H}),('c_ok','good','t2','Ann Private','ann@client.com',${now - H});
 `);
@@ -62,6 +63,15 @@ INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead
     [JSON.stringify(three), JSON.stringify({ oc3: now, oc4: now, oc5: -now }), JSON.stringify([{ id: 'k1', t: 'y'.repeat(300) }, { id: 'k2', t: 'y'.repeat(300) }]), JSON.stringify({ k3: now })]);
   const oldC = JSON.stringify(six), oldK = JSON.stringify([{ id: 'k1', t: 'y'.repeat(300) }, { id: 'k2', t: 'y'.repeat(300) }, { id: 'k3', t: 'y'.repeat(900) }]);
   await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('other','sc_clients',$1,$2,6,'shrink',now()-interval '1 hour'),('other','sc_courses',$3,$4,3,'shrink',now()-interval '1 hour')", [oldC, oldC.length, oldK, oldK.length]); }
+// Note drafts (2026-11-05: three accounts read as alerts because the expiry record is "nd:<id>").
+{ const pad = 'z'.repeat(700);
+  const old = { nd1: { date: '2026-10-01', sections: { a: pad }, committed: true, ts: 1 }, oc3: { date: '2026-10-02', sections: { a: pad }, ts: 1 },
+    nd3: { date: '2026-10-03', sections: { a: pad }, committed: true, ts: 1 }, nd4: { date: '2026-10-04', sections: { a: 'Hello world', b: pad }, ts: 1 }, keep: { date: '2026-11-05', sections: { a: 'x' }, ts: 2 } };
+  const nowV = JSON.stringify({ keep: old.keep });
+  await db.query("INSERT INTO kv VALUES ('other','sc_note_drafts',$1),('other','sc_deleted_note_drafts',$2)", [nowV, JSON.stringify({ 'nd:nd1': now })]);
+  const allExp = { e1: { sections: { a: pad }, committed: true }, e2: { sections: { a: pad }, committed: true }, e3: { sections: { a: pad + pad }, committed: true } };
+  await db.query("INSERT INTO kv VALUES ('ndonly','sc_note_drafts','{}'),('ndonly','sc_deleted_note_drafts',$1)", [JSON.stringify({ 'nd:e1': now, 'nd:e2': now, 'nd:e3': now })]);
+  await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('other','sc_note_drafts',$1,$2,5,'shrink',now()-interval '1 hour'),('ndonly','sc_note_drafts',$3,$4,3,'shrink',now()-interval '1 hour')", [JSON.stringify(old), JSON.stringify(old).length, JSON.stringify(allExp), JSON.stringify(allExp).length]); }
 // 'dupe' has 26 same-name pairs: 10 old ones she sees twice in her list, 16 made this week where her
 // list holds only one of the two (merged in the app, still a row on the server).
 await db.query("INSERT INTO providers (id,email,created_at) VALUES ('dupe','dupes@x.com', now()-interval '60 days')");
@@ -104,7 +114,7 @@ const j = res.body; const by = Object.fromEntries(j.checks.map(c => [c.id, c]));
 ok(res.code === 200 && j.checks.length === 15, 'all 15 checks reported', res.code + ' ' + (j.checks || []).length);
 ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every check ran against real SQL', JSON.stringify(j.checks.filter(c => (c.items[0] || '').startsWith('could not run')).map(c => c.id + ': ' + c.items[0])));
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
-ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
+ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
 ok(by['settings-empty'].items.length === 1 && /sc_availability/.test(by['settings-empty'].items[0]), 'hours saved as null are flagged; hours never set ({}) are not');
 ok(by['founder-alerts'].level === 'alert' && by['founder-alerts'].items.some(i => /feedback alert/.test(i)) && !by['founder-alerts'].items.some(i => /paid-signup|provider-signup/.test(i)), 'the skipped feedback alert is flagged; a good one and a deliberate de-dup are not', JSON.stringify(by['founder-alerts'].items));
 ok(/7 changes not yet saved/.test(by['device-health'].items.join()) && /storage not working/.test(by['device-health'].items.join()) && by['device-health'].items.length === 1, 'the failing device is flagged; 2 unsent (save in its delay) is not');
@@ -131,6 +141,11 @@ ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-
   const cl = items.find(i => /oth…@x.com: sc_clients/.test(i)) || '', co = items.find(i => /oth…@x.com: sc_courses/.test(i)) || '';
   ok(/Entries: 6 before, 3 now \(2 of the 3 gone were deleted by her\)/.test(cl), 'a clients shrink counts the ones she deleted (a put-back stamp does not count)', cl);
   ok(/Entries: 3 before, 2 now \(1 of the 1 gone were deleted by her\)/.test(co), 'a courses shrink (a list of {id}) counts the ones she hid', co); }
+{ const items = by['data-shrink'].items;
+  const nd = items.find(i => /oth…@x.com: sc_note_drafts/.test(i)) || '', ne = items.find(i => /…only: sc_note_drafts/.test(i)) || '';
+  ok(/Entries: 5 before, 1 now \(3 of the 4 gone were deleted by her\)\. Gone: 1 expired \(visit saved\), 1 client removed or merged, 1 saved visit, 1 UNSAVED \(711 typed characters\)/.test(nd), 'a note-draft shrink sorts each gone draft: expired, client removed, saved visit, unsaved with its typed characters', nd);
+  ok(/\(3 of the 3 gone were deleted by her\)\. Gone: 3 expired/.test(ne), 'drafts that all expired count as hers (the nd: record is read)', ne);
+  ok(!/Hello world|zzzz/.test(JSON.stringify(items)), 'no draft text in the reply'); }
 ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|fam0@home|twice0@c|Twice Person|locked@out|ghost@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
 ok(j.problems.length > 0 && j.problems[0].startsWith('ALERT'), 'problems list is worst first');
 ok(!JSON.stringify(j).match(/hea…@ok\.com/), 'the healthy account appears nowhere');
