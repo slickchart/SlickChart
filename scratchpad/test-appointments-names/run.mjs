@@ -1,0 +1,13 @@
+import handler from './api/square/appointments.js';
+import { calls, cfg } from './lib/square.js';
+const run = async () => { let out; const res = { status() { return this; }, json(j) { out = j; } }; await handler({ method: 'GET', query: { days: '14' } }, res); return out; };
+let ok = true; const chk = (n, p, d) => { console.log((p ? 'PASS ' : 'FAIL ') + n + (d ? ' — ' + d : '')); if (!p) ok = false; };
+let o = await run();
+chk('bulk + fallback resolves all three names', o.appointments.map(a => a.customerName).join(',') === 'Ann One,Bea Two,Cat Three', JSON.stringify(o.appointments.map(a => a.customerName)));
+chk('createdAt passed through', o.appointments.every(a => a.createdAt === '2026-11-01T00:00:00Z'));
+chk('email kept', o.appointments[1].customerEmail === 'b@x.test');
+chk('only the miss is looked up singly', calls.filter(c => /^GET \/v2\/customers\//.test(c)).length === 1, calls.join(' | '));
+calls.length = 0; cfg.bulkFails = true; cfg.flaky = {};
+o = await run();
+chk('bulk refused + one 429 each: still all three named (retry)', o.appointments.map(a => a.customerName).join(',') === 'Ann One,Bea Two,Cat Three', JSON.stringify(o.appointments.map(a => a.customerName)));
+process.exit(ok ? 0 : 1);

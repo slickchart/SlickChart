@@ -8071,6 +8071,35 @@ unread check-in card and the top of the check-in detail page showed the client's
   `THEMES=light` / `BRANDS=navy` env vars narrow a run.
 - Test: `scratchpad/test-checkin-light.mjs` 27/27 Chrome + Safari (fails 13 on the old code).
 
+## 2026-11-05 — A previous client booked on Square, not in her list, no first-visit prompt (build `2026-11-04f`, PREVIEW)
+
+**Ashley OBSERVED (her words, 2026-11-05 01:34 UTC):** *"I have a previous client who is in my square
+book online. she is not on my slickchart client list and it is not prompting to send the first visit
+package."* Name and device not given yet (asked).
+
+**Three causes found in the code, all fixed on the preview:**
+1. `_upsertClientsFromSquare` returned early, silently, for any booker whose `sq_` id is in
+   `sc_deleted_clients`. `_runClientCleanup` took ~670 empty Square imports off her list in one go
+   (and the leaked-customer purge tombstoned more), so a regular who had never been charted was on
+   that delete record, and every booking she ever made again was dropped. Now a booking MADE after
+   the removal (`createdAt`, new additive field from `api/square/appointments.js`) puts her back via
+   `sc_undeleted_clients` (the same put-back Recover clients uses; `reconcileDeletedClients` restores
+   the server row). A booking made before the removal, an undated delete record, and a customer merged
+   into another chart all stay as they were.
+2. `_fvpCandidates` (Home "First visit for X") excluded `_isReturningClient`, which counts her SQUARE
+   history visits, so a pre-SlickChart regular with no intake and no invite never got the prompt. Now
+   `_isReturningClient(id,true)` counts only visits SlickChart recorded. Such a client's tile reads
+   "Set up <name> in SlickChart". `_hasIntakeOnFile` / `appInvited` / dismissals unchanged.
+3. `api/square/appointments.js` looked every customer up in parallel, one request each; anything Square
+   rate-limited came back as "Client", which the upsert skips. Now `/v2/customers/bulk-retrieve` (100
+   per call) with one-by-one lookups (5 at a time, one retry) for misses.
+
+Tests: `scratchpad/test-square-rebook-removed.mjs` 17/17 Chromium AND WebKit (`ENGINE=webkit`), CONTROL
+on the old file 6/17; `scratchpad/test-booking-toast-boot.mjs` 10/10; `scratchpad/test-appointments-names/`
+5/5 (server, stubbed Square). If her client is still missing after this, the next suspects are: the
+booking shows as "Client" on her calendar (Square customer with no name), or the customer was MERGED
+away (`sc_merged_ids`) into a chart that was later removed.
+
 ## 2026-11-05 — Josie and Cooper: first-visit package says not done after they did it (build `2026-11-04d`, PREVIEW)
 
 **What Ashley OBSERVED (§1b, settled):** on her schedule for Thu Nov 5, Josie Statzer and Cooper Howard

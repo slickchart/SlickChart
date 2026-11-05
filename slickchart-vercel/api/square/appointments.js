@@ -75,24 +75,40 @@ export default async function handler(req, res) {
 
     const bookings = raw.filter(isLive);
 
-    // Resolve customer names (one lookup per unique customer, in parallel).
+    // Resolve customer names. One request per unique customer, all at once, used to run straight into
+    // Square's rate limit on a busy calendar: every lookup it refused came back as "Client", and the app
+    // skips a booking with no real name, so that person never reached her client list and got no
+    // first-visit prompt (Ashley, 2026-11-05: a returning client booked online and was not in her list).
+    // Square's bulk lookup takes 100 ids per request; anyone it does not return is tried on their own,
+    // a few at a time, with one retry.
     const ids = [...new Set(bookings.map(b => b.customer_id).filter(Boolean))];
     const cust = {};
-    await Promise.all(ids.map(async (id) => {
+    const keep = (id, c) => {
+      if (!c) return;
+      // Capture email + phone (not just the name) so a new online booker can be added to the
+      // provider's client list with the contact info needed to send them forms / their app link.
+      cust[id] = {
+        name: [c.given_name, c.family_name].filter(Boolean).join(' ').trim() || c.company_name || c.email_address || 'Client',
+        email: c.email_address || '',
+        phone: c.phone_number || ''
+      };
+    };
+    for (let i = 0; i < ids.length; i += 100) {
       try {
-        const cd = await sf('/v2/customers/' + id);
-        if (cd.customer) {
-          const c = cd.customer;
-          // Capture email + phone (not just the name) so a new online booker can be added to the
-          // provider's client list with the contact info needed to send them forms / their app link.
-          cust[id] = {
-            name: [c.given_name, c.family_name].filter(Boolean).join(' ').trim() || c.email_address || 'Client',
-            email: c.email_address || '',
-            phone: c.phone_number || ''
-          };
+        const br = await sf('/v2/customers/bulk-retrieve', { method: 'POST', body: { customer_ids: ids.slice(i, i + 100) } });
+        const resp = (br && br.responses) || {};
+        for (const id of Object.keys(resp)) keep(id, resp[id] && resp[id].customer);
+      } catch (e) { /* fall through to the one-by-one lookups below */ }
+    }
+    const missing = ids.filter(id => !cust[id]);
+    for (let i = 0; i < missing.length; i += 5) {
+      await Promise.all(missing.slice(i, i + 5).map(async (id) => {
+        for (let attempt = 0; attempt < 2 && !cust[id]; attempt++) {
+          try { const cd = await sf('/v2/customers/' + id); keep(id, cd && cd.customer); }
+          catch (e) { if (e && e.status === 404) break; }
         }
-      } catch { /* ignore a single failed lookup */ }
-    }));
+      }));
+    }
 
     // What each booking is FOR. Square puts only a service_variation_id on the segment, so every
     // appointment arrived in the app with no idea of its service and the calendar labelled them all
@@ -123,6 +139,10 @@ export default async function handler(req, res) {
           customerName: (cust[b.customer_id] && cust[b.customer_id].name) || 'Client',
           customerEmail: (cust[b.customer_id] && cust[b.customer_id].email) || '',
           customerPhone: (cust[b.customer_id] && cust[b.customer_id].phone) || '',
+          // When the booking was MADE (not when it is for). A client she removed from her list who books
+          // again AFTER the removal is put back by the app; a booking made before it is not. Added
+          // field; older builds ignore it.
+          createdAt: b.created_at || '',
           durationMinutes: seg.duration_minutes || null,
           serviceVariationId: seg.service_variation_id || '',
           serviceName: svcName[seg.service_variation_id] || '',

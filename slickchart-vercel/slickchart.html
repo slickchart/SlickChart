@@ -315,7 +315,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-04e';
+const APP_BUILD='2026-11-04f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -9458,7 +9458,10 @@ function _fvpCandidates(){
       // filled the intake in. A completed intake is proof the package is done; trust it over the flag.
       if(!c||!String(c.name||'').trim())return false;
       if(typeof _hasIntakeOnFile==='function'&&_hasIntakeOnFile(c))return false;
-      return !_isReturningClient(id)&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
+      // Visits in her SQUARE history do not count here (inAppOnly). A regular from before SlickChart who
+      // has never had an intake or an app invite still needs the package, and skipping her meant the
+      // prompt never came (Ashley, 2026-11-05). Visits charted IN SlickChart still count.
+      return !_isReturningClient(id,true)&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
     }).sort(function(a,b){return (_clientApptSoonMs(a[0])||Infinity)-(_clientApptSoonMs(b[0])||Infinity);});
 }
 function _attnTilesHTML(){
@@ -9511,7 +9514,7 @@ function _attnTilesHTML(){
     return cands.map(function(e){var id=e[0],c=e[1];var na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;return _swipeTile(`
     <div onclick="sendFirstVisitPackage('${id}')" style="margin:0;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-green-line);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:40px;height:40px;border-radius:12px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-rocket" style="font-size:22px;color:var(--p-green);"></i></div>
-      <div style="flex:1;padding-right:18px;"><div style="font-size:16px;font-weight:600;color:var(--p-green);">First visit for ${_fileEsc((c.name||'').split(' ')[0])}</div><div style="font-size:16px;color:var(--p-mut2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${na&&na.dateLabel?_fileEsc('Next: '+na.dateLabel+' · '):''}Send the first-visit package</div></div>
+      <div style="flex:1;padding-right:18px;"><div style="font-size:16px;font-weight:600;color:var(--p-green);">${_isReturningClient(id)?'Set up '+_fileEsc((c.name||'').split(' ')[0])+' in SlickChart':'First visit for '+_fileEsc((c.name||'').split(' ')[0])}</div><div style="font-size:16px;color:var(--p-mut2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${na&&na.dateLabel?_fileEsc('Next: '+na.dateLabel+' · '):''}Send the first-visit package</div></div>
       <i class="ti ti-chevron-right" style="font-size:16px;color:#5a8a7a;flex-shrink:0;"></i>
     </div>`,'fvp-'+id);}).join('');
   })()}
@@ -32635,7 +32638,8 @@ function _nextVisitSvc(id){
 // "New client" label is NOT evidence: every chart starts with it. Ashley, 2026-10-24: "Client
 // friendly" opened a regular client's note with "it was great meeting you today", because the AI
 // was told "Treatment: New client".
-function _isReturningClient(id){
+// inAppOnly: count only visits SlickChart itself recorded, not her Square appointment history.
+function _isReturningClient(id,inAppOnly){
   const c=CL[id]||{};
   try{
     const t0=new Date();t0.setHours(0,0,0,0);
@@ -32645,7 +32649,7 @@ function _isReturningClient(id){
     if((Array.isArray(c.summaries)?c.summaries:[]).some(function(r){return r&&!(String(r._draftDate||'').slice(0,10)===todayIso);}))return true;
     if((Number(c.sessions)||0)>0)return true;
     if(typeof _isBlankVal==='function'?!_isBlankVal(c.lastVisit):!!c.lastVisit)return true;
-    if(typeof _sqHistAppts==='function'&&_sqHistAppts().some(function(a){return a&&a.at&&a.at<t0&&_apptIsClients(a,id);}))return true;
+    if(!inAppOnly&&typeof _sqHistAppts==='function'&&_sqHistAppts().some(function(a){return a&&a.at&&a.at<t0&&_apptIsClients(a,id);}))return true;
   }catch(e){}
   return false;
 }
@@ -35538,10 +35542,28 @@ function _upsertClientsFromSquare(appts){
     // re-removed the same people and toasted "N new online bookings added" — Ashley, 2026-10-13:
     // "every time i open slickchart i get x number of online bookings added ... not a real number".
     // Same rule as the purge, applied before the create instead of after it.
+    // EXCEPT someone who booked again AFTER she was removed. The big clean-ups took hundreds of empty
+    // Square imports off her list in one go, regulars she simply had not charted yet among them, and
+    // each one's next online booking was then dropped here without a word: Ashley, 2026-11-05, "I have
+    // a previous client who is in my square book online. she is not on my slickchart client list and
+    // it is not prompting to send the first visit package". A booking MADE after the removal is her
+    // client coming back, so put her back the way Recover clients does (sc_undeleted_clients, which
+    // also restores the row on the server). A booking made before the removal stays removed, and so
+    // does anyone merged into another chart.
     if(sqid&&typeof _sqLocalId==='function'){
       const _k=_sqLocalId(sqid);
-      if((typeof _deletedClientIds!=='undefined'&&_deletedClientIds[_k]&&!(typeof _unDeletedClientIds==='function'&&_unDeletedClientIds()[_k]))
-        ||(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[_k]))return;
+      if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[_k])return;
+      const _delAt=(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[_k])?(+_deletedClientIds[_k]||1):0;
+      if(_delAt&&!(typeof _unDeletedClientIds==='function'&&_unDeletedClientIds()[_k])){
+        const _made=a.createdAt?Date.parse(a.createdAt):NaN;
+        if(!(_delAt>1e12&&_made>_delAt))return;   // an undated delete record proves nothing either way: leave it
+        try{
+          const u=JSON.parse(_lsGet('sc_undeleted_clients')||'{}')||{};u[_k]=Math.max(Date.now(),_delAt+1);
+          const v=JSON.stringify(u);localStorage.setItem('sc_undeleted_clients',v);
+          if(typeof _pushKeyNow==='function')_pushKeyNow('sc_undeleted_clients',v);
+        }catch(e){return;}
+        if(!(typeof _unDeletedClientIds==='function'&&_unDeletedClientIds()[_k]))return;   // could not record it: do not half-restore
+      }
     }
     // New online booker → create a client record.
     // The Square customer's own id when we have it, so two devices (and the customer sync) land on
