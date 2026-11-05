@@ -18,7 +18,7 @@ const YEARLY_LINK = 'https://buy.stripe.com/4gM28q8r91Qd92c7WJ4wM01';
 export const PRICE_CHANGE_AT = Date.parse('2026-11-07T00:00:00-08:00'); // 12:00am PST, Sat Nov 7
 // The $10/month link the landing page has always used (index.html STRIPE_LINK).
 export const OLD_MONTHLY_LINK = 'https://buy.stripe.com/14AeVc0YH1Qd2DO1yl4wM00';
-export const NEW_MONTHLY_LINK = 'https://buy.stripe.com/eVqdR8bDldyV7Y82Cp4wM02';
+export const NEW_MONTHLY_LINK = 'https://buy.stripe.com/4gM8wOfTB9iF1zK3Gt4wM05';
 export const NEW_YEARLY_LINK = 'https://buy.stripe.com/8x2bJ05eXcuRbak2Cp4wM04';
 
 const OLD = { month: 10, year: 100 };
