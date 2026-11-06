@@ -315,7 +315,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-04i';
+const APP_BUILD='2026-11-06a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -5093,6 +5093,8 @@ function _reloadAfterHydrate(){
   try{if(typeof loadRoutines==='function')loadRoutines();}catch(e){}
   try{if(typeof loadSquareCatalog==='function')loadSquareCatalog();}catch(e){}
   try{_reloadTopLevelStores();}catch(e){}
+  try{_loadHomeDismissed();_loadAttnSeen();}catch(e){}   // the cleared-cards record can be offloaded too
+  try{if(typeof loadCiDismissed==='function')loadCiDismissed();}catch(e){}
   // A screen may already be on display, drawn from the defaults. Draw it again now it is real.
   _redrawCurrentScreen();
 }
@@ -9465,7 +9467,16 @@ function _fvpCandidates(){
       return !_isReturningClient(id,true)&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
     }).sort(function(a,b){return (_clientApptSoonMs(a[0])||Infinity)-(_clientApptSoonMs(b[0])||Infinity);});
 }
+// Signed in and the account has not answered yet: what this device holds may be older than the
+// account (a card she cleared on her computer is still uncleared on the phone's copy), so any card
+// drawn now can be a false one that vanishes a second later. Wait for the answer. If it cannot be
+// read at all (offline), fall back to this device's copy rather than hide real work indefinitely.
+// Also keeps _attnFresh/_attnRetire from stamping and pushing during boot (CLAUDE.md §3).
+function _attnWaitForAccount(){
+  try{return !!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&!Cloud._pulledOnce&&!Cloud._pullFailed);}catch(e){return false;}
+}
 function _attnTilesHTML(){
+  if(_attnWaitForAccount())return '';
   const newCheckins=unreadCheckins();
   return `
   ${(()=>{const unseenReq=pendingRequests().filter(b=>!b.seen);return unseenReq.length?(`<div style="margin:0 16px 10px;">
@@ -32300,6 +32311,11 @@ try{
   loadCheckinCfg();  // restore the saved check-in config
   if(typeof loadCiDismissed==='function')loadCiDismissed();
   if(typeof _ciRestoreOnce==='function')_ciRestoreOnce();  // restore dismissed check-in nudges
+  // Which attention cards she already cleared. Only _reloadAll() read this, and that runs after the
+  // account answers, so Home's first draw (which happens before the network) saw an EMPTY cleared
+  // set and showed every card she had ever swiped away until the pull finished (Ashley, 2026-11-06).
+  // Plain disk reads, no writes.
+  try{_loadHomeDismissed();_loadAttnSeen();}catch(e){}
   loadVcState();  // restore virtual-consult invites + submissions
   loadPartners();  // restore any edits to partner discounts / contact info
   loadRoutines();  // restore saved routine templates

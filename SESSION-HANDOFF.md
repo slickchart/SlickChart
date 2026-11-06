@@ -8983,3 +8983,21 @@ free, same rule as $10 -> $100). No existing Stripe subscription is touched.
   `test-keyboard-visible` still 41/41 on the provider demo. (The client DEMO page pads its body 40px
   for the demo banner, so with the keyboard up its shell runs 40px past the visible area; demo only,
   the real client page is flush.)
+
+## 2026-11-06 — False "Needs your attention" cards on launch (build `2026-11-06a`)
+
+**Her observation:** "when first loading up the app, it shows a whole bunch of false 'needs your
+attention' cards before it rights itself."
+
+**Cause (reproduced, `scratchpad/test-attn-boot-flash.mjs`):** Home draws BEFORE the network (the early
+`nav('home')` in `_cloudInit`), but `sc_home_dismissed` / `sc_attn_seen` (the cards she already cleared)
+were only read by `_reloadAll()`, which runs after the account answers. So the first draw had an empty
+cleared set and showed every card she had ever swiped away, for as long as the pull took (14 frames on
+a quick answer, the whole 3 s on a slow one). It also let `_attnFresh` stamp those cards during boot.
+
+**Fix:** both keys are read at startup and again after IndexedDB hydration (pure disk reads), and
+`_attnTilesHTML()` returns nothing while signed in and the account has not answered
+(`_attnWaitForAccount`: token && !_pulledOnce && !_pullFailed), so a card cleared on her other device
+cannot flash either. If the account cannot be read, the device's own copy is shown. The test fails
+4/10 without the fix and passes 10/10 with it in Chromium and WebKit; a genuinely new completed form
+still shows once the account is read. Unrelated to the 04i events-download fix (no shared code).
