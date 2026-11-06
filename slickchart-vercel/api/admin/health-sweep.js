@@ -204,6 +204,18 @@ export async function runSweep(q) {
   });
 
   // 5. Devices whose saves are not reaching the account, or whose storage / loaders are failing.
+  // The provider app's events list is ONE response, and Vercel refuses one over ~4.5 MB. Past that,
+  // every poll failed and no form or check-in reached the provider (Josie, 2026-11-06). The list is
+  // slimmed since build 2026-11-04i; this says how big the whole thing would be, per account.
+  await check('events-size', 'Client submissions fit in one download', async () => {
+    const rows = await q`SELECT provider_id, count(*)::int AS n, sum(octet_length(payload::text))::bigint AS bytes FROM (
+        SELECT provider_id, payload, row_number() OVER (PARTITION BY provider_id ORDER BY created_at DESC) AS rn FROM client_events) t
+      WHERE rn <= 2000 GROUP BY provider_id HAVING sum(octet_length(payload::text)) > 2500000 ORDER BY bytes DESC`;
+    const items = rows.map(r => who(r.provider_id) + ': newest ' + r.n + ' events weigh ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB'
+      + (Number(r.bytes) > 4300000 ? ' (over the 4.5 MB limit: builds before 2026-11-04i get NO submissions)' : ''));
+    return { items, level: rows.some(r => Number(r.bytes) > 4300000) ? 'warn' : 'ok' };
+  });
+
   await check('device-health', 'Every device is saving to the account', async () => {
     const rows = await q`SELECT provider_id, device_key, report, updated_at FROM device_reports WHERE updated_at > now() - interval '3 days'`;
     const items = [];
@@ -214,6 +226,7 @@ export async function runSweep(q) {
       if ((p.memOnly || 0) > 0) bad.push(p.memOnly + ' items held only in memory');
       if (p.idbWorks === false) bad.push('device storage not working');
       if (p.reloadFails) bad.push('screens failing to reload: ' + String(p.reloadFails).slice(0, 80));
+      if ((p.evPollFails || 0) >= 3) bad.push('client submissions are not reaching it: the last ' + p.evPollFails + ' checks for new forms and check-ins failed (status ' + (p.evPollStatus || '?') + ')');
       if ((p.storageKB || 0) > 4300) bad.push('device storage nearly full (' + p.storageKB + ' KB of about 5000)');
       if (bad.length) items.push(who(r.provider_id) + ', ' + (p.platform || '?') + ' ' + (p.kind || '') + ' …' + String(r.device_key).slice(-4) + ': ' + bad.join('; '));
     }

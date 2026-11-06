@@ -20,7 +20,7 @@ export async function ensureDeviceReportsTable() {
 }
 
 // Only these fields, only these shapes. Anything else is dropped, so a report can never carry text.
-const NUM = ['summaryClients', 'summaryEntries', 'summariesOpen', 'homecareClients', 'clientsSaved', 'clientsOpen', 'storageKB', 'unsent', 'memOnly', 'dupesMerged', 'dupesLeft'];
+const NUM = ['summaryClients', 'summaryEntries', 'summariesOpen', 'homecareClients', 'clientsSaved', 'clientsOpen', 'storageKB', 'unsent', 'memOnly', 'dupesMerged', 'dupesLeft', 'evPollStatus', 'evPollFails', 'evPollOkAgoMin'];
 const BOOL = ['logo', 'idbWorks', 'standalone', 'native'];
 // clientsGone: the last few clients this device took off her list and why, as ids (never names).
 // pushPerm/pushPost/pushEnds: whether the phone is linked for alerts; pushEnds is the LAST 6 characters

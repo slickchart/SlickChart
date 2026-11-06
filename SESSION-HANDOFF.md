@@ -8149,6 +8149,22 @@ row first, device-only retry queue `scl_inperson_queue` flushed on every events 
 saved to the roster at all, can only come back from `kv_history` sc_clients copies (Recover clients →
 Earlier copies); not yet checked.
 
+**2026-11-06, her observation (after 04h went live early at her request, 2026-11-05 23:40 UTC):**
+Josie's intake still not showing; "first visit package not done". Also: only ONE Josie; Josie filled it
+at home (her app link) AND on Ashley's device with Sign here; "it kept going missing". So the
+routing theories (04d/04g) did not fit her situation (§1b rule 5).
+
+**New theory, NOT yet proven from her data:** `GET /api/clients` returns the newest 2000 events WITH
+full payloads (check-in/consult photos as data URLs, signatures). Over Vercel's ~4.5 MB response cap
+it fails on every poll, and `syncClientEvents` returns on `!r.ok` silently, so NO form or check-in
+reaches her app and nothing heals; a Sign here copy shows locally, then a merge drops it ("kept going
+missing"). Build `2026-11-04i`: the list is slimmed beyond a 2.5 MB budget (photos/signatures/photo
+answers dropped, counts kept, `slim:true`; last 3 days kept whole up to 3.8 MB for older builds), the
+app fetches what it must file whole with `?full=<id>` and holds back anything it could not fetch. The
+proof will come from health-sweep `events-size` (per account MB of the newest 2000 events) and the
+device report's `evPollStatus`/`evPollFails`. **Read those first** once 04i is live.
+Tests: `scratchpad/test-events-slim.mjs` 11/11, `test-health-sweep.mjs` all pass (16 checks).
+
 **If they still show after she opens 2026-11-04d:** ask for the one Recover clients paste for her own
 email (§1d) and read Cooper's and Josie's rows there before any theory.
 

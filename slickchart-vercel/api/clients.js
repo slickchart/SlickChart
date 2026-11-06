@@ -12,6 +12,42 @@ function providerId(req) {
   return c && c.u ? c : null;
 }
 
+// Vercel refuses a function response over ~4.5 MB, and this list carries every event's payload: a
+// check-in or photo consult can hold several photos as data URLs, an in-person form its signature.
+// Past that size EVERY poll failed, the app skipped it in silence (`if(!r.ok)return`), and no
+// submission reached the provider at all: forms, check-ins, nothing healed (Josie, 2026-11-06).
+// So the newest events go whole up to a budget, and older ones beyond it drop only their heavy parts
+// (`slim:true`, with counts kept); the app fetches any it still needs whole with ?full=. Events from
+// the last 3 days stay whole while the response can hold them, because a previous build does not
+// know `slim` and must never be the one to file a recent check-in without its photos.
+const EV_BUDGET = 2500000, EV_HARD = 3800000;
+function heavy(v) { return typeof v === 'string' && v.length > 2000 && /^data:/.test(v); }
+function slimPayload(p) {
+  if (!p || typeof p !== 'object') return p;
+  const o = Object.assign({}, p);
+  for (const k of ['photos', 'refs']) if (Array.isArray(o[k])) { o[k + 'Count'] = o[k].length; o[k] = []; }
+  for (const k of ['sigImg', 'avatar']) if (heavy(o[k])) delete o[k];
+  if (o.answers && typeof o.answers === 'object') {
+    const a = Array.isArray(o.answers) ? o.answers.slice() : Object.assign({}, o.answers);
+    for (const k of Object.keys(a)) if (heavy(a[k])) a[k] = '';
+    o.answers = a;
+  }
+  return o;
+}
+export function slimEvents(events) {
+  const recentCut = Date.now() - 3 * 86400000;
+  let total = 0;
+  const out = (events || []).map(e => {
+    let n = 0; try { n = JSON.stringify(e.payload || {}).length; } catch (x) {}
+    const recent = Number(e.created_at) >= recentCut;
+    if (total + n <= EV_BUDGET || (recent && total + n <= EV_HARD)) { total += n; return e; }
+    const sp = slimPayload(e.payload);
+    try { total += JSON.stringify(sp || {}).length; } catch (x) {}
+    return Object.assign({}, e, { payload: sp, slim: true });
+  });
+  return out;
+}
+
 export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(200).json({ ok: false, clients: [] }); return; }
   const claim = providerId(req);
@@ -28,7 +64,16 @@ export default async function handler(req, res) {
       // Additive field (older builds ignore it): removed copies that events still point at.
       let eventClients = [];
       try { eventClients = await listEventClients(provider, events); } catch (e) { eventClients = []; }
-      res.status(200).json({ ok: true, clients, events, eventClients });
+      // ?full=<id,id> returns those events whole (this provider's only), for an event the list below
+      // had to send slimmed.
+      const fullIds = String((req.query && req.query.full) || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 10);
+      if (fullIds.length) {
+        const rows = await sql()`SELECT id, client_id, kind, payload, seen, created_at FROM client_events
+          WHERE provider_id=${provider} AND id = ANY(${fullIds}::text[])`;
+        res.status(200).json({ ok: true, events: rows });
+        return;
+      }
+      res.status(200).json({ ok: true, clients, events: slimEvents(events), eventClients });
       return;
     }
     if (req.method === 'POST') {

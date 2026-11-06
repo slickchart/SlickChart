@@ -846,6 +846,7 @@ saved anywhere", not "does this always call that".
 | `_voiceSmartSave` | `/api/ai` | via `_aiComplete` |
 | `_voiceStop` | `/api/ai` | via `_aiComplete` |
 | `_voiceStopFromPause` | `/api/ai` | via `_aiComplete` |
+| `_wholeSlimEvents` | `/api/clients` | direct |
 | `_withClientToken` | `/api/app-launch` | via `_alSend` |
 | `_withClientToken` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_withClientToken` | `/api/logout` | via `_doLogout` |

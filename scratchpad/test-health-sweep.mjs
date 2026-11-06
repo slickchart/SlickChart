@@ -32,6 +32,7 @@ CREATE TABLE notify_log (id bigserial PRIMARY KEY, at timestamptz NOT NULL DEFAU
 CREATE TABLE feedback (id bigserial PRIMARY KEY, provider_id text, email text, rating int, message text, kind text, time_saved text, ts timestamptz DEFAULT now());
 CREATE TABLE device_reports (provider_id text NOT NULL, device_key text NOT NULL, report jsonb NOT NULL, updated_at timestamptz DEFAULT now(), PRIMARY KEY (provider_id, device_key));
 CREATE TABLE subscriptions (email text PRIMARY KEY, stripe_customer_id text, stripe_subscription_id text, status text NOT NULL DEFAULT 'inactive', plan_amount int, current_period_end timestamptz, updated_at timestamptz DEFAULT now());
+CREATE TABLE client_events (id text PRIMARY KEY, client_id text NOT NULL, provider_id text NOT NULL, kind text NOT NULL, payload jsonb DEFAULT '{}'::jsonb, seen int DEFAULT 0, created_at bigint);
 CREATE TABLE login_attempts (id bigserial PRIMARY KEY, email text NOT NULL, ts timestamptz DEFAULT now());
 CREATE TABLE app_launch_logs (device_key text PRIMARY KEY, provider_id text, email text, platform text, os text, build text, events jsonb NOT NULL DEFAULT '[]'::jsonb, updated_at timestamptz DEFAULT now());
 CREATE TABLE native_push_log (owner_id text NOT NULL, at timestamptz NOT NULL DEFAULT now(), platform text, ends text, shape text, outcome text, reason text);
@@ -40,6 +41,8 @@ INSERT INTO providers (id,email,created_at) VALUES ('good','healthy@ok.com', now
 INSERT INTO sessions (id,provider_id,last_seen_at) VALUES ('s1','good',now()),('s2','bad',now()),('s3','new1',now());
 INSERT INTO kv VALUES ('good','sc_onboarded','1'),('good','sc_clients','${'x'.repeat(5000)}'),('good','sc_bizinfo','{"name":"Glow"}'),
   ('bad','sc_onboarded','1'),('bad','sc_clients','[]'),('bad','sc_availability','null'),('good','sc_availability','{}'),('bad','sc_deleted_clients','{"c_dead":${now}}');
+INSERT INTO client_events (id,client_id,provider_id,kind,payload,created_at) SELECT 'bev'||g,'c1','bad','checkin',jsonb_build_object('photos',jsonb_build_array(repeat('A',500000))),g FROM generate_series(1,10) g;
+INSERT INTO client_events (id,client_id,provider_id,kind,payload,created_at) VALUES ('gev1','c2','good','form','{"title":"Intake"}',1);
 INSERT INTO kv_history (owner,k,bytes,items,reason,saved_at) VALUES ('bad','sc_clients',40153,120,'shrink',now()-interval '2 hours'),('good','sc_clients',5100,20,'shrink',now()-interval '2 hours'),('new1','sc_courses',977,3,'shrink',now()-interval '2 hours');
 INSERT INTO square_connections (provider_id,merchant_id,expires_at) VALUES ('good','M_GOOD',now()+interval '20 days'),('bad','M_SHARED',now()-interval '1 day'),('other','M_SHARED',now()+interval '20 days');
 INSERT INTO notify_log (kind,subject,skipped,devices,sent,at) VALUES ('paid-signup','someone@new.com','',2,2,now()-interval '3 hours'),('provider-signup','someone@new.com','already announced by the paid-provider ping',0,0,now()-interval '3 hours'),('feedback','trouble@x.com','no push transport configured',0,0,now()-interval '3 hours');
@@ -111,12 +114,13 @@ ok(denied.code === 403, 'no key, no founder session: refused');
 globalThis.__keyOk = true;
 const res = fakeRes(); await handler({ method: 'GET', headers: { authorization: 'Monitor x' } }, res);
 const j = res.body; const by = Object.fromEntries(j.checks.map(c => [c.id, c]));
-ok(res.code === 200 && j.checks.length === 15, 'all 15 checks reported', res.code + ' ' + (j.checks || []).length);
+ok(res.code === 200 && j.checks.length === 16, 'all 16 checks reported', res.code + ' ' + (j.checks || []).length);
 ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every check ran against real SQL', JSON.stringify(j.checks.filter(c => (c.items[0] || '').startsWith('could not run')).map(c => c.id + ': ' + c.items[0])));
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
 ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
 ok(by['settings-empty'].items.length === 1 && /sc_availability/.test(by['settings-empty'].items[0]), 'hours saved as null are flagged; hours never set ({}) are not');
 ok(by['founder-alerts'].level === 'alert' && by['founder-alerts'].items.some(i => /feedback alert/.test(i)) && !by['founder-alerts'].items.some(i => /paid-signup|provider-signup/.test(i)), 'the skipped feedback alert is flagged; a good one and a deliberate de-dup are not', JSON.stringify(by['founder-alerts'].items));
+ok(by['events-size'].level === 'warn' && by['events-size'].items.length === 1 && /tro…@x.com: newest 10 events weigh 5.0 MB \(over the 4.5 MB limit/.test(by['events-size'].items[0]), 'an account whose submissions are too big for one download is flagged; the small one is not', JSON.stringify(by['events-size'].items));
 ok(/7 changes not yet saved/.test(by['device-health'].items.join()) && /storage not working/.test(by['device-health'].items.join()) && by['device-health'].items.length === 1, 'the failing device is flagged; 2 unsent (save in its delay) is not');
 ok(by['scheduled-jobs'].level === 'alert' && by['scheduled-jobs'].items.some(i => /cron-checkins: no run recorded/.test(i)) && !by['scheduled-jobs'].items.some(i => /cron-reminders/.test(i)), 'a job with no run is flagged once recording has started', JSON.stringify(by['scheduled-jobs'].items));
 ok(by['scheduled-jobs'].items.some(i => /cron-events: started 1x in the last day and never finished/.test(i)) && !by['scheduled-jobs'].items.some(i => /cron-events: no run recorded/.test(i)), 'a run that started and never finished is named as such', JSON.stringify(by['scheduled-jobs'].items));

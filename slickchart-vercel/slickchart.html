@@ -315,7 +315,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-04h';
+const APP_BUILD='2026-11-04i';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -6131,6 +6131,7 @@ async function _sendDeviceReport(){
       // (held in memory only, so they are gone from the phone at the next launch until re-pulled).
       unsent:(function(){try{return Object.keys(_outboxRead().keys).length;}catch(e){return 0;}})(),
       memOnly:(function(){try{return Object.keys(Cloud._mem||{}).filter(function(k){return !(Cloud._offloaded&&Cloud._offloaded[k]);}).length;}catch(e){return 0;}})(),
+      evPollStatus:(window._evPoll&&window._evPoll.status)||0,evPollFails:(window._evPoll&&window._evPoll.fails)||0,evPollOkAgoMin:(window._evPoll&&window._evPoll.okAt)?Math.round((Date.now()-window._evPoll.okAt)/60000):undefined,
       reloadFails:(typeof _reloadFails!=='undefined'&&Array.isArray(_reloadFails))?_reloadFails.join(' | '):'',
       // Is THIS phone linked for alerts? Permission, how the last save went, and the last 6 characters
       // of its address (never the address), so the server can see a phone that is in use but not on
@@ -33121,6 +33122,26 @@ function _rosterNotReadYet(){
     return Object.keys(o).some(function(k){return !CL[k]&&!gone[k]&&!merged[k];});
   }catch(e){return false;}
 }
+// The events list sends older events SLIMMED (photos, signature images and photo answers left out)
+// once it is large, because a response over Vercel's ~4.5 MB limit failed every poll and NOTHING
+// arrived (Josie, 2026-11-06). Anything still to be filed, an unseen event or a form not on its
+// client's chart yet, is fetched whole first, a few per poll; one that could not be fetched yet is
+// held back from this poll entirely, so it is never filed without its photos or marked seen.
+async function _wholeSlimEvents(events,tok){
+  if(!Array.isArray(events)||!events.some(function(e){return e&&e.slim;}))return events;
+  const seen=_seenEventIds();
+  const onChart=function(ev){const c=CL[_resolveClientId(ev.client_id)];return !!(c&&Array.isArray(c.submittedForms)&&c.submittedForms.some(function(f){return f&&f.evId===ev.id;}));};
+  const need=events.filter(function(e){return e&&e.slim&&(seen.indexOf(e.id)<0||(e.kind==='form'&&CL[_resolveClientId(e.client_id)]&&!onChart(e)));});
+  if(!need.length)return events;
+  const got={};
+  for(const ev of need.slice(0,6)){
+    try{const r=await fetch('/api/clients?full='+encodeURIComponent(ev.id),{headers:{'Authorization':'Bearer '+tok}});
+      const jj=r&&r.ok?await r.json().catch(()=>null):null;
+      (jj&&Array.isArray(jj.events)?jj.events:[]).forEach(function(x){if(x&&x.id)got[x.id]=x;});}catch(e){}
+  }
+  const hold={};need.forEach(function(e){if(!got[e.id])hold[e.id]=1;});
+  return events.filter(function(e){return !(e&&hold[e.id]);}).map(function(e){return (e&&got[e.id])?got[e.id]:e;});
+}
 async function syncClientEvents(){
   if(_syncingEvents)return;
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
@@ -33135,9 +33156,13 @@ async function syncClientEvents(){
   _syncingEvents=true;
   try{
     const r=await fetch('/api/clients',{headers:{'Authorization':'Bearer '+tok}});
+    // How the poll went, for the device report: a poll that fails EVERY time means no client
+    // submission reaches this device at all, and the founder health sweep should say so.
+    try{const ep=window._evPoll||(window._evPoll={okAt:0,fails:0});ep.status=r.status;ep.at=Date.now();if(r.ok){ep.okAt=ep.at;ep.fails=0;}else ep.fails++;}catch(e){}
     if(!r.ok)return; // stale token / server error, skip this poll quietly, try again next tick
     const j=await r.json().catch(()=>null);
     if(!(j&&j.ok&&Array.isArray(j.events)))return;
+    try{j.events=await _wholeSlimEvents(j.events,tok);}catch(e){}
     const seen=_seenEventIds();
     const fresh=j.events.filter(e=>seen.indexOf(e.id)<0).reverse(); // oldest first so newest ends up on top
     let touchedRequests=false,touchedMsgs=false,touchedNotif=false,touchedCheckins=false,touchedForms=false,touchedVc=false,touchedClients=false,touchedPhotos=false;
