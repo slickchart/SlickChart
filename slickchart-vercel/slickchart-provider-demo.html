@@ -573,7 +573,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-06a';
+const APP_BUILD='2026-11-07a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -5318,6 +5318,17 @@ async function _hydrateOffloaded(){
 //
 // _navCur is {screen,data} — _reloadAfterHydrate was passing _navCur.arg, which has never existed,
 // so its redraw navigated with an undefined argument and a client screen bounced to the client list.
+function _inPersonFormStarted(){
+  try{
+    if(typeof _signPadInk!=='undefined'&&_signPadInk)return true;
+    if(window._sdAns&&Object.keys(window._sdAns).length)return true;
+    const root=document.getElementById('S')||document;
+    return Array.prototype.some.call(root.querySelectorAll('input,textarea,select'),function(el){
+      if(el.type==='checkbox'||el.type==='radio')return el.checked;
+      return el.type!=='hidden'&&String(el.value||'').trim()!=='';
+    });
+  }catch(e){return true;}
+}
 function _redrawCurrentScreen(){
   try{
     if(typeof _navCur==='undefined'||!_navCur||typeof nav!=='function')return;
@@ -5325,6 +5336,11 @@ function _redrawCurrentScreen(){
     const ae=document.activeElement;
     if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.isContentEditable))return;
     if(document.getElementById('confirm-modal'))return;
+    // A form a client is filling in or signing IN PERSON is never redrawn: the redraw builds it
+    // blank, signature pad and all. Every sync that changed anything ends here, and a finger on the
+    // signature pad is not a focused input, so Josie's intake on Ashley's device (2026-11-05) was
+    // wiped again and again before it could be signed: "it kept going missing".
+    if(_navCur.screen==='sign-form'&&_inPersonFormStarted())return;
     nav(_navCur.screen,_navCur.data);
   }catch(e){}
 }

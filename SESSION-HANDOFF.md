@@ -8165,6 +8165,20 @@ proof will come from health-sweep `events-size` (per account MB of the newest 20
 device report's `evPollStatus`/`evPollFails`. **Read those first** once 04i is live.
 Tests: `scratchpad/test-events-slim.mjs` 11/11, `test-health-sweep.mjs` all pass (16 checks).
 
+**2026-11-07, READ FROM HER DATA (`/api/admin/client-forms?name=josie`, monitor key, her yes):**
+78 server rows named Josie Statzer (4 live), her list record `c17914936877025vl5x` with
+`pendingForms:['intake']`, `fvpForms:['intake']`, **0 submitted forms**; **0 form events for any Josie
+row**, ever; 40 earlier copies of sc_clients back to 2026-10-13, **none holds a form for her**. Josie's
+link was opened 2026-11-05 17:07 UTC and a **check-in** arrived 17:09; no form. Her account's events
+weigh 2.7 MB (380), so the 04i size theory was wrong for her. **Conclusion: neither the at-home intake
+nor the Sign here ever reached the server or the account list; there is nothing to restore.**
+**Cause found for Sign here ("it kept going missing"):** every sync that changes anything ends in
+`_reloadAll` → `redraw` → `_redrawCurrentScreen()` → `nav('sign-form')`, which rebuilds the form BLANK.
+Its only guard was a focused input, and a finger on the signature pad is not one. Build `2026-11-07a`:
+`_inPersonFormStarted()` (ink, answers, any typed/ticked field) blocks that redraw.
+`scratchpad/test-sign-form-not-wiped.mjs` 4/4, CONTROL fails 2. **Not explained:** why the at-home
+intake did not arrive while the check-in did (client app); not reproduced.
+
 **If they still show after she opens 2026-11-04d:** ask for the one Recover clients paste for her own
 email (§1d) and read Cooper's and Josie's rows there before any theory.
 
