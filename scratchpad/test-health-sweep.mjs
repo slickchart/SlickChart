@@ -66,6 +66,15 @@ INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead
     [JSON.stringify(three), JSON.stringify({ oc3: now, oc4: now, oc5: -now }), JSON.stringify([{ id: 'k1', t: 'y'.repeat(300) }, { id: 'k2', t: 'y'.repeat(300) }]), JSON.stringify({ k3: now })]);
   const oldC = JSON.stringify(six), oldK = JSON.stringify([{ id: 'k1', t: 'y'.repeat(300) }, { id: 'k2', t: 'y'.repeat(300) }, { id: 'k3', t: 'y'.repeat(900) }]);
   await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('other','sc_clients',$1,$2,6,'shrink',now()-interval '1 hour'),('other','sc_courses',$3,$4,3,'shrink',now()-interval '1 hour')", [oldC, oldC.length, oldK, oldK.length]); }
+// Sample courses (2026-11-08 ros…): a profession change swaps her untouched sample courses for none,
+// with no delete record. 'samp' lost only samples (not listed); 'mix' lost a sample and one of her own.
+{ const S = (id) => ({ id, title: 'Sample ' + id, status: 'Draft', price: 'Free', modules: 4, enrolled: 0, revenue: 0, progress: 0, desc: 'd'.repeat(250) });
+  const oldS = JSON.stringify([S('cs1'), S('cs2'), S('cs3')]);
+  const mine = Object.assign(S('my1'), { _ts: 5, title: 'My own course' });
+  const oldM = JSON.stringify([S('cs1'), mine, S('cs2')]);
+  await db.query("INSERT INTO providers (id,email,created_at) VALUES ('samp','sample@new.com', now()-interval '1 day'),('mix','mixed@x.com', now()-interval '9 days')");
+  await db.query("INSERT INTO kv VALUES ('samp','sc_courses','[]'),('mix','sc_courses',$1)", [JSON.stringify([S('cs2')])]);
+  await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('samp','sc_courses',$1,$2,3,'shrink',now()-interval '1 hour'),('mix','sc_courses',$3,$4,3,'shrink',now()-interval '1 hour')", [oldS, oldS.length, oldM, oldM.length]); }
 // Note drafts (2026-11-05: three accounts read as alerts because the expiry record is "nd:<id>").
 { const pad = 'z'.repeat(700);
   const old = { nd1: { date: '2026-10-01', sections: { a: pad }, committed: true, ts: 1 }, oc3: { date: '2026-10-02', sections: { a: pad }, ts: 1 },
@@ -117,7 +126,7 @@ const j = res.body; const by = Object.fromEntries(j.checks.map(c => [c.id, c]));
 ok(res.code === 200 && j.checks.length === 16, 'all 16 checks reported', res.code + ' ' + (j.checks || []).length);
 ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every check ran against real SQL', JSON.stringify(j.checks.filter(c => (c.items[0] || '').startsWith('could not run')).map(c => c.id + ': ' + c.items[0])));
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
-ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
+ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only|mix…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only|mix…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
 ok(by['settings-empty'].items.length === 1 && /sc_availability/.test(by['settings-empty'].items[0]), 'hours saved as null are flagged; hours never set ({}) are not');
 ok(by['founder-alerts'].level === 'alert' && by['founder-alerts'].items.some(i => /feedback alert/.test(i)) && !by['founder-alerts'].items.some(i => /paid-signup|provider-signup/.test(i)), 'the skipped feedback alert is flagged; a good one and a deliberate de-dup are not', JSON.stringify(by['founder-alerts'].items));
 ok(by['events-size'].level === 'warn' && by['events-size'].items.length === 1 && /tro…@x.com: newest 10 events weigh 5.0 MB \(over the 4.5 MB limit/.test(by['events-size'].items[0]), 'an account whose submissions are too big for one download is flagged; the small one is not', JSON.stringify(by['events-size'].items));
@@ -150,6 +159,10 @@ ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-
   ok(/Entries: 5 before, 1 now \(3 of the 4 gone were deleted by her\)\. Gone: 1 expired \(visit saved\), 1 client removed or merged, 1 saved visit, 1 UNSAVED \(711 typed characters\)/.test(nd), 'a note-draft shrink sorts each gone draft: expired, client removed, saved visit, unsaved with its typed characters', nd);
   ok(/\(3 of the 3 gone were deleted by her\)\. Gone: 3 expired/.test(ne), 'drafts that all expired count as hers (the nd: record is read)', ne);
   ok(!/Hello world|zzzz/.test(JSON.stringify(items)), 'no draft text in the reply'); }
+{ const items = by['data-shrink'].items;
+  ok(!items.some(i => /sam…@new.com/.test(i)), 'only untouched sample courses gone (a profession change): not listed', JSON.stringify(items));
+  const mx = items.find(i => /mix…@x.com: sc_courses/.test(i)) || '';
+  ok(/\(0 of the 2 gone were deleted by her\)\. Gone: 1 untouched sample courses, 1 of her own/.test(mx), 'a course of her own going is still listed, with the samples counted apart', mx); }
 ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|fam0@home|twice0@c|Twice Person|locked@out|ghost@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
 ok(j.problems.length > 0 && j.problems[0].startsWith('ALERT'), 'problems list is worst first');
 ok(!JSON.stringify(j).match(/hea…@ok\.com/), 'the healthy account appears nowhere');

@@ -93,6 +93,19 @@ export function explainNoteDrafts(oldV, nowV, tomb, goneClients) {
   if (moved) out += '; ' + moved + ' emptied in place';
   return out;
 }
+// A new provider's Courses tab starts with her profession's sample courses. Changing her profession
+// swaps that untouched set for the new one (often none), with no delete record because she deleted
+// nothing (slickchart.html _reseedCoursesIfDefault). Read live it raised a warning for every new
+// provider (2026-10-29, 2026-11-08 ros…). A course she made or edited carries _ts; a sample she never
+// touched is a Draft with no _ts, no lessons, no cover and nobody enrolled.
+export function courseSampleGone(oldV, nowV) {
+  let a, b; try { a = JSON.parse(oldV); b = nowV == null ? [] : JSON.parse(nowV); } catch (e) { return null; }
+  if (!Array.isArray(a)) return null;
+  const now = new Set((Array.isArray(b) ? b : []).map(c => c && c.id));
+  const gone = a.filter(c => c && c.id && !now.has(c.id));
+  const sample = c => String(c.status || '') === 'Draft' && !c._ts && !(Number(c.enrolled) > 0) && !(Number(c.revenue) > 0) && !(Array.isArray(c.lessons) && c.lessons.length) && !c.cover;
+  return { gone: gone.length, samples: gone.filter(sample).length, sampleIds: gone.filter(sample).map(c => c.id) };
+}
 export function explainShrink(k, oldV, nowV, hiddenV) {
   let a, b, hid = {};
   try { a = JSON.parse(oldV); b = nowV == null ? null : JSON.parse(nowV); } catch (e) { return ''; }
@@ -171,7 +184,17 @@ export async function runSweep(q) {
       } else why = explainShrink(r.k, r.old_v, r.now_v, del);
       // Every missing entry is one she deleted (or a finished draft): tidying, not loss. Still listed.
       const m = / \((\d+) of the (\d+) gone were deleted by her\)/.exec(why);
-      const allHers = !!(m && m[1] === m[2]);
+      let allHers = !!(m && m[1] === m[2]);
+      if (r.k === 'sc_courses') {
+        const cs = courseSampleGone(r.old_v, r.now_v);
+        if (cs && cs.samples) {
+          const hidden = cs.sampleIds.filter(id => id in del).length;
+          // Only untouched sample courses went: a profession reseed, nothing of hers. Not listed.
+          if (cs.samples === cs.gone) continue;
+          why += '. Gone: ' + cs.samples + ' untouched sample courses, ' + (cs.gone - cs.samples) + ' of her own';
+          if (m && Number(m[1]) + cs.samples - hidden >= Number(m[2])) allHers = true;
+        }
+      }
       if ((r.old_bytes || 0) > 2000 && !allHers) big = true;
       items.push(who(r.owner) + ': ' + r.k + ' went from ' + r.old_bytes + ' to ' + (r.now_bytes || 0) + ' bytes (' + (r.old_items != null ? r.old_items + ' items before; ' : '') + 'earlier copy kept)' + why);
     }
