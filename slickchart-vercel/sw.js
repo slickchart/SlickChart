@@ -18,7 +18,8 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.startsWith('/api/')) return;      // never cache API / auth responses
   // The app's code file is content-hashed (assets/app-<hash>.js, made at deploy): its bytes never
   // change under that name, so the saved copy is always right. Serve it from the cache, no network.
-  if (/^\/assets\/app-[a-f0-9]+\.js$/.test(url.pathname)) {
+  // The self-hosted fonts are content-hashed the same way (assets/fonts/<name>-<hash>.woff2, 2026-11-07).
+  if (/^\/assets\/app-[a-f0-9]+\.js$/.test(url.pathname) || /^\/assets\/fonts\/[a-z0-9-]+-[a-f0-9]{10,}\.woff2$/.test(url.pathname)) {
     e.respondWith((async () => {
       const hit = await caches.match(req); if (hit) return hit;
       const res = await fetch(req);

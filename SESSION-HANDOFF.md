@@ -9015,3 +9015,54 @@ a quick answer, the whole 3 s on a slow one). It also let `_attnFresh` stamp tho
 cannot flash either. If the account cannot be read, the device's own copy is shown. The test fails
 4/10 without the fix and passes 10/10 with it in Chromium and WebKit; a genuinely new completed form
 still shows once the account is read. Unrelated to the 04i events-download fix (no shared code).
+
+## 2026-11-07 — Faster, steadier opening with no made-up numbers (build `2026-11-07b`)
+
+**Her words:** "app load times are still quite slow and I would rather it not show any false info while
+loading" and "make sure you are checking every single way possible that it could be faster and more
+efficient and smoother".
+
+**What the opening showed that was not true (reproduced, `scratchpad/probe-load-frames.mjs`):** the bell
+carried a hard-coded "2" in the page shell until the code ran; the screen was blank while the 3.9 MB code
+compiled; and Home said **Today's appts 0** and **This week 0 / 0** for 1-2 s on a fully booked day,
+because Square's schedule is fetched fresh on every open and nothing was drawn until it answered.
+
+**Changes:**
+- Shell: bell badge starts hidden and empty; `#S` holds grey placeholder blocks shaped like Home
+  (`.boot-skel`, `.sk`), replaced by the first real draw.
+- Square schedule: `sc_sq_appts_cache` (device-only, in `_SYNC_SKIP`, owner-stamped with `_tokenOwner()`,
+  trusted for 24 h, cleared at sign-out with every `sc_` key). `_sqApptsForDisplay()` = live answer, or the
+  saved copy while Square is answering or unreachable (never after `nosquare`/`auth`). Only DRAWING reads
+  it (`_realApptsMerged`, Home "Up next"); the calendar feed, next-visit stamps, client import and
+  double-booking checks still use the live answer only. With no saved copy, `_sqCountsUnknown()` draws
+  grey blocks instead of 0.
+- Account read starts in parallel with `/api/cloud-status` (`Cloud._prefetchStore()` right after
+  `_handleAuthParams`, consumed once by `_pullInner` via `_takePrefetch`, same pass only, 60 s max).
+- Icons and text fonts self-hosted: Tabler subset (321 icons, 865 KB -> 60 KB,
+  `assets/fonts/tabler-<hash>.woff2`, rules inlined between `ICON-SUBSET` markers, preloaded) and DM Sans /
+  Cormorant Garamond latin + latin-ext. No more render-blocking stylesheets from jsDelivr and Google Fonts
+  (Google's expired daily, so the first open of each day waited on it). `/assets/fonts/*` is immutable in
+  `vercel.json` and cache-first in `sw.js` (icons now also work offline). **Adding an icon:** CI
+  (`scripts/check-icon-subset.cjs`) fails until you run `python3 scratchpad/fonts/build-icon-subset.py
+  <tabler-icons.min.css> <tabler-icons.woff2>` (Tabler 3.19.0, needs `pip install fonttools brotli`).
+- `/api/clients` GET (the 15-second form check) sends an ETag of the caller's own answer; the app sends
+  it back and gets a bare 304 when nothing changed, then runs the kept copy through exactly as before.
+  Her account's answer was ~2.7 MB every 15 s. Older builds never send the tag and get the full list.
+- Deploy-time split now also minifies the code file with esbuild (whitespace and comments only, no
+  renaming, `target: esnext`, source map beside it); missing/failed esbuild ships it unminified as before.
+  esbuild 0.24.0 is a devDependency. Error lines in the launch log now carry `line:column`.
+- Launch log (`/api/admin/app-launches`) gets a `boot-ms` line per open: html, js (+ "cached"), run,
+  home, acct, done, sq, all ms since the tap. **Read this for any "it's slow" report.**
+
+**Measured (4x-slowed CPU, 4G, 300 clients, Vercel-like server, `scratchpad/perf-boot.mjs`):** first
+paint on repeat open 420-470 ms -> 140-200 ms; Home 480-580 ms -> 350-430 ms; all data 1.30-1.45 s ->
+0.93-1.0 s; first open after an update Home ~2.0 s -> ~1.7 s (minified).
+
+**Tests:** `scratchpad/test-load-no-false-info.mjs` 16/16 in Chromium and WebKit (3/16 on the previous
+build). Still passing: test-attn-boot-flash, test-booking-toast-boot, test-busy-courses-boot (32/32 both
+engines), sweep-offline-boot, test-safari-storage-hook, test-sw-shell (split build), all CI checks.
+Note: `scratchpad/sweep-crossdevice.mjs` named in CLAUDE.md §3 is not in the repo.
+
+**Not done, worth doing next:** the client page (`api/client-page.js`) is still sent `no-store`, 551 KB
+on every client open; the iOS app re-checks the page with the server on every open (no service worker in
+WKWebView), which only a native-shell change can avoid.

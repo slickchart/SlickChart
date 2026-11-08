@@ -2,6 +2,7 @@
 // the server (POST), and read them back with link tokens & invite status (GET).
 import { verifyToken, isSessionValid } from '../lib/auth.js';
 import { dbEnabled, sql } from '../lib/db.js';
+import { createHash } from 'crypto';
 import { ensureClientTables, upsertClient, listClients, listEvents, listEventClients, markClientDeleted, mergeClientRows } from '../lib/clients.js';
 
 function providerId(req) {
@@ -73,7 +74,19 @@ export default async function handler(req, res) {
         res.status(200).json({ ok: true, events: rows });
         return;
       }
-      res.status(200).json({ ok: true, clients, events: slimEvents(events), eventClients });
+      // The app asks for this list every 15 seconds while it is open, and a busy account's answer is
+      // megabytes (Ashley's: 380 submissions, 2.7 MB). Almost every time it is exactly what the phone
+      // already has. So the answer carries a fingerprint, and a phone that sends it back gets a bare
+      // "304 nothing changed" instead of the whole list again (2026-11-07). The fingerprint is of
+      // THIS caller's own answer, computed fresh every time, so it can never stand in for anyone
+      // else's data. Builds that do not send it get the full list exactly as before.
+      const body = JSON.stringify({ ok: true, clients, events: slimEvents(events), eventClients });
+      const etag = '"' + createHash('sha1').update(body).digest('base64').replace(/=+$/, '') + '"';
+      res.setHeader('ETag', etag);
+      res.setHeader('Cache-Control', 'private, no-store');
+      if (String(req.headers['if-none-match'] || '') === etag) { res.status(304).end(); return; }
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.status(200).send(body);
       return;
     }
     if (req.method === 'POST') {

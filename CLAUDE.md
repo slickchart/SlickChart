@@ -456,6 +456,12 @@ itself). Run anything touching storage, sync, boot or the native app in BOTH eng
   the split locally: copy the folder, run `VERCEL=1 node scripts/build-app-split.cjs` in the copy, serve
   it with `scratchpad/vercel-like-server.mjs <dir> <port>`; `scratchpad/test-sw-shell.mjs` covers the
   service worker, `scratchpad/perf-boot.mjs` the timings.
+  Since 2026-11-07 the same step also minifies that file with esbuild (devDependency; whitespace and
+  comments only, source map beside it; no esbuild = unminified, as before). Icons and text fonts are
+  self-hosted in `assets/fonts/`: the Tabler icons are a SUBSET, so a new `ti-*` icon fails CI
+  (`check-icon-subset.cjs`) until `scratchpad/fonts/build-icon-subset.py` is re-run. While Square is
+  answering, Home draws her last schedule (`sc_sq_appts_cache`, device-only) or grey blocks, never a 0.
+  Each phone-app open logs `boot-ms` timings in the launch log: read those before asking her anything.
 - **Deploy:** Vercel auto-deploys from `main`, but **you do not push `main`** — §1a does, overnight,
   from `release`. JS runs live from the server, so JS fixes reach the native app without an app-store
   resubmit; native *plugin* changes need a rebuild. Because the JS is live, the previous build stays
