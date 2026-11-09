@@ -1,7 +1,7 @@
 ---
 title: Two trades, one app
 h1: Doing two trades at once: skin and lashes, hair and nails, in one app
-description: When clients book a facial and a lash lift together, two sets of forms, rules and timings meet. Why that is hard for generic booking apps and easier in your own.
+description: Book a facial and a lash lift together and two sets of forms, rules and timings meet. Why generic booking apps struggle, and how your own app can cope.
 date: 2026-11-09
 keywords: esthetician and lash artist, booking app for multiple services, combo services booking, build your own booking app, beauty business app, salon app forms, build an app with ai
 draft: true
