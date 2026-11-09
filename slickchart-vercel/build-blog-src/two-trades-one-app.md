@@ -4,10 +4,9 @@ h1: Doing two trades at once: skin and lashes, hair and nails, in one app
 description: Book a facial and a lash lift together and two sets of forms, rules and timings meet. Why generic booking apps struggle, and how your own app can cope.
 date: 2026-11-09
 keywords: esthetician and lash artist, booking app for multiple services, combo services booking, build your own booking app, beauty business app, salon app forms, build an app with ai
-draft: true
 ---
 
-Plenty of beauty pros do more than one thing. Skin and lashes. Brows and lashes. Hair and nails. Facials and waxing. Clients love it, because one visit covers two jobs. Your booking app, on the other hand, often handles it badly.
+Plenty of beauty pros do more than one thing. Skin and lashes. Brows and lashes. Hair and nails. Facials and waxing. Clients love it, because one visit covers two jobs. In my own business, I pair nutrition consults with skin treatments. The treatment comes first, then we talk about what is happening on the inside. Your booking app, on the other hand, often handles it badly.
 
 Look at booking pages from pros who offer two trades and the same patterns come up. Some sell the pairing as a single "combo" service with its own name and price. Some ask clients to book the second service separately, with a note saying it must come straight after the first. Some list one service as an add-on to another. Each is a reasonable workaround. None of them is the booking app understanding that two different trades just met in one appointment.
 
@@ -34,7 +33,7 @@ That one decision means you never maintain a "facial plus lash lift" form, a "fa
 
 ## You still decide everything that matters
 
-As with any rule in your own app, the software does not decide what is safe or sensible. You do, from your training, your product instructions, your insurer and your state board. That includes whether two services should be done on the same day at all, which order they go in, and whether anything rules one out when the other is booked. If a combination is never a good idea, that is a rule too, and your app can hold it.
+As with any rule in your own app, the software does not decide what is safe or sensible. You do, from your training, your product instructions, your insurer and your state board. That includes whether two services should be done on the same day at all, which order they go in, and whether anything rules one out when the other is booked. If a combination is never a good idea, that is a rule too, and your app can hold it. For me, there is no pairing I refuse to do on the same day. Your training may tell you differently for yours, and your app should follow your call, not mine.
 
 What the app does is apply your decisions the same way every time, so a busy Saturday does not depend on you remembering which forms a particular pairing needs.
 

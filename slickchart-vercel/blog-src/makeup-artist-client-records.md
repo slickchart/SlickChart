@@ -4,7 +4,6 @@ h1: Makeup artist client records: what to track for bridal trials, parties and r
 description: The trial look, the exact shades, what changed before the wedding and how it held up. What a makeup artist's client record should hold, and where to keep it.
 date: 2026-11-09
 keywords: makeup artist client records, bridal trial notes, makeup artist face chart, mua client intake form, makeup artist software, bridal makeup consultation form
-draft: true
 ---
 
 A makeup artist's best work often happens twice. Once at the trial, and once on the day, months later, when the bride expects to see exactly the face she approved. In between sit a few hundred other faces, a product shelf that has changed, and a phone full of photos with no names on them.
@@ -19,6 +18,9 @@ Before any brush touches skin, a few things belong on record:
 
 - **Skin type and concerns.** Dry patches, oiliness, active breakouts, sensitivity.
 - **Known allergies and reactions.** Products, ingredients, lash glue, latex sponges. Ask every time, not just the first time. A client who reacted to something new since you last saw them will not always think to mention it.
+
+I learned this one the hard way in my own treatment room. A client never mentioned her metal allergy, and she had a reaction to a treatment. She was not hiding anything. It simply did not occur to her that it mattered. Now I ask about allergies at every visit, metals included, and I write down the answer.
+
 - **Eye sensitivity and contact lenses.** It changes which products and techniques you reach for.
 - **Photo permission.** Whether you may photograph them, and separately, whether you may post the photos. Brides in particular often want their photos kept private until after the wedding, and some forever.
 
@@ -49,7 +51,7 @@ A bridesmaid who loved her makeup at a wedding is one of the most natural future
 
 ## For repeat clients: the note that saves the first ten minutes
 
-Regulars come back for a reason: they liked what you did. Your record should let you do it again without re-matching from scratch. Keep their shade matches, their preferred finish, the products they react to, and a line or two of "likes and dislikes." Shades can shift with the seasons or a tan, so note when a match was made, not just what it was.
+Regulars come back for a reason: they liked what you did. Your record should let you do it again without re-matching from scratch. Keep their shade matches, their preferred finish, the products they react to, and a line or two of "likes and dislikes." I also add the big things happening in their life, like a wedding, a new baby or a move, so I remember to ask about them next time. Clients tell me my memory is incredible. Really, it is the note, and what they feel is that I care. Shades can shift with the seasons or a tan, so note when a match was made, not just what it was.
 
 I wrote more about what makes a chart useful in [what to record in a client chart](/blog/esthetician-client-charting), and about keeping regulars coming back in [rebooking habits for solo pros](/blog/solo-esthetician-rebooking). Both were written for estheticians, but most of it carries straight across.
 
