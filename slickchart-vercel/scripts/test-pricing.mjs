@@ -2,13 +2,13 @@ import assert from 'assert';
 const base=new URL('../lib/', import.meta.url).href;
 const P = await import(base+'pricing.js');
 const fri=Date.parse('2026-11-06T23:59:00-08:00'), sat=Date.parse('2026-11-07T00:00:00-08:00');
-// no links yet -> $10 even after cutoff (fail-safe)
-assert.equal(P.signupPricing(sat).month,10);
-assert.equal(P.newPriceLive(sat),false);
-process.env.STRIPE_PAYMENT_LINK_17='https://buy.stripe.com/new17';
-assert.equal(P.signupPricing(sat).month,10,'one link is not enough');
-process.env.STRIPE_PAYMENT_LINK_YEARLY_170='https://buy.stripe.com/new170';
+// before the cutoff -> $10 on the old link; after it -> $17 on the links in lib/pricing.js
 assert.equal(P.signupPricing(fri).month,10); assert.equal(P.signupPricing(fri).checkoutUrl,'https://buy.stripe.com/14AeVc0YH1Qd2DO1yl4wM00');
+assert.equal(P.newPriceLive(sat),true);
+assert.deepEqual([P.signupPricing(sat).checkoutUrl,P.signupPricing(sat).checkoutUrlYear],[P.NEW_MONTHLY_LINK,P.NEW_YEARLY_LINK]);
+// env overrides the built-in links
+process.env.STRIPE_PAYMENT_LINK_17='https://buy.stripe.com/new17';
+process.env.STRIPE_PAYMENT_LINK_YEARLY_170='https://buy.stripe.com/new170';
 const s=P.signupPricing(sat); assert.deepEqual([s.month,s.year,s.yearFull,s.checkoutUrl,s.checkoutUrlYear],[17,170,204,'https://buy.stripe.com/new17','https://buy.stripe.com/new170']);
 // renewals
 const late=sat+86400e3;
