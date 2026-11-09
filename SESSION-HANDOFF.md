@@ -8973,6 +8973,11 @@ free, same rule as $10 -> $100). No existing Stripe subscription is touched.
 - Landing page: a "Price goes to $17/month on Saturday, Nov 7. Join before then and keep $10/month
   for life." note under the hero price until the change; prices are `data-pm`/`data-py` spans swapped
   by script after it. The `<meta>` descriptions and JSON-LD still say $10 until a static edit.
+  **Done 2026-11-09:** the static page now says $17/$170 everywhere (meta, og/twitter, JSON-LD offer
+  and FAQ, every `data-pm`/`data-py` span), the buttons use only the $17/$170 links, and the
+  past-date "Price goes to $17" note and its date switch are gone. Checked live the same day: the
+  $17 link charges $17.00/month, the $170 link $170.00/year, and the old $10 link still works for
+  early-provider renewals (lib/pricing.js).
 - Old $10/$100 links stay ON: they are how a lapsed early provider renews at $10.
 - Tests: `scripts/test-pricing.mjs`.
 

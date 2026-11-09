@@ -54,7 +54,7 @@ no-login web link and never pay anything.
 
 Providers purchase a SlickChart subscription only on our website,
 https://slickchart.app, processed by Stripe. There is no purchase of any kind
-inside the iOS app. The subscription ($10/month) is a software-as-a-service
+inside the iOS app. The subscription ($17/month) is a software-as-a-service
 subscription for professional practice-management software — the same model as
 companion apps like Square, QuickBooks, or Shopify.
 
