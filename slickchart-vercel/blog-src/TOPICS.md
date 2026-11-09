@@ -45,7 +45,7 @@ rates that weren't obvious up front; and fear of migration.
 
 - [x] What to look for in waxing studio software when you're a one-person shop — drafted 2026-10-19 (`waxing-software-one-person-studio.md`)
 - [x] PMU software: booking, consent forms, and healed-result photos without three subscriptions (2026-11-02, `pmu-software-one-place.md`, draft)
-- [ ] Makeup artist client records: what to track for bridal trials, parties and repeat clients
+- [x] Makeup artist client records: what to track for bridal trials, parties and repeat clients (2026-11-09, `makeup-artist-client-records.md`, draft)
 - [ ] Switching beauty software without losing your client history: a migration checklist
 - [ ] All-in-one vs. best-of-breed: when replacing everything is the wrong move
 
