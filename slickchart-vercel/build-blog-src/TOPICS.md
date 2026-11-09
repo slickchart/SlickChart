@@ -28,7 +28,8 @@ committed to anything, the later ones are for people mid-build.
 - [x] **Lash fills, color touch-ups and the pricing your app cannot do.** Drafted 2026-11-02
       (`fill-pricing-your-app-cannot-do.md`). Time-since-last-visit pricing
       as the clearest example of a trade rule generic software skips.
-- [ ] **Doing two trades at once: skin and lashes, hair and nails.** Booking services clients take
+- [x] **Doing two trades at once: skin and lashes, hair and nails.** Drafted 2026-11-09
+      (`two-trades-one-app.md`). Booking services clients take
       together, and which forms and rules belong to which service.
 - [ ] **Moving your clients onto your own app without losing anyone.** Respectful, no competitor
       claims; what to export, what to tell clients.
