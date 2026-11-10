@@ -107,7 +107,7 @@ function head({ title, description, canonical, keywords, jsonld, ogType, headerC
 <meta name="description" content="${esc(description)}">
 ${keywords ? `<meta name="keywords" content="${esc(keywords)}">\n` : ''}<link rel="canonical" href="${esc(canonical)}">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
-<meta name="author" content="Ashley Watson, Botanical Aesthetics">
+<meta name="author" content="Ashley Watson">
 <meta name="theme-color" content="#0a1719">
 <link rel="icon" href="/favicon.ico?v=3" sizes="any">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">

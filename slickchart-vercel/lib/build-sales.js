@@ -253,7 +253,7 @@ export function accessEmailBody(sessionId, links) {
       + '<p style="font-size:13.5px;line-height:1.65;color:#5D5149;margin:0;"><b style="color:#1a2a28;">Lost this email?</b> You don’t need it. Go to <a href="' + accessUrl + '" style="color:#1e9e88;">' + accessLabel + '</a>, put in the email you paid with, and it comes straight back to you. Your <a href="' + back + '" style="color:#1e9e88;">access page</a> is always there too.</p>'
       + '</div>'
 
-      + '<p style="font-size:15px;line-height:1.7;margin:26px 0 0;color:#1a2a28;">Go build it.<br><strong>Ashley</strong><br><span style="color:#999;font-size:13px;">Founder, SlickChart · Botanical Aesthetics</span></p>'
+      + '<p style="font-size:15px;line-height:1.7;margin:26px 0 0;color:#1a2a28;">Go build it.<br><strong>Ashley</strong><br><span style="color:#999;font-size:13px;">Founder, SlickChart</span></p>'
       + '</div>'
 
       + '<div style="padding:20px 26px 24px;text-align:center;">'
