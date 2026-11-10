@@ -52,11 +52,11 @@ function wrap(bodyHtml, email) {
     </div>
     <div style="padding:26px 6px 6px;font-size:16px;line-height:1.7;color:#2a2a2a;">
       ${bodyHtml}
-      <p style="font-size:16px;line-height:1.7;margin:22px 0 0;">With love,<br><strong>Ashley</strong><br><span style="color:#888;font-size:13px;">Founder, SlickChart · Botanical Aesthetics</span></p>
+      <p style="font-size:16px;line-height:1.7;margin:22px 0 0;">With love,<br><strong>Ashley</strong><br><span style="color:#888;font-size:13px;">Founder, SlickChart</span></p>
     </div>
     <div style="margin-top:22px;padding-top:14px;border-top:1px solid #eee;text-align:center;font-size:12px;color:#9a9a9a;line-height:1.6;">
       You're getting this because you signed up at slickchart.app.<br>
-      <a href="${unsubUrl(email)}" style="color:#9a9a9a;text-decoration:underline;">Unsubscribe</a> · SlickChart · Botanical Aesthetics${ADDR ? '<br>' + esc(ADDR) : ''}
+      <a href="${unsubUrl(email)}" style="color:#9a9a9a;text-decoration:underline;">Unsubscribe</a> · SlickChart${ADDR ? '<br>' + esc(ADDR) : ''}
     </div>
   </div>`;
 }

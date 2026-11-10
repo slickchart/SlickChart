@@ -149,7 +149,7 @@ export function welcomeEmailHtml({ name, link }) {
       </div>
 
       <p style="font-size:16px;line-height:1.7;color:#3a3a3a;margin:0 0 6px;">Something confusing, broken, or missing? Just reply to this email, or tap <strong>Share beta feedback</strong> right in the app. I read every single one myself.</p>
-      <p style="font-size:16px;line-height:1.7;margin:22px 0 0;">Thank you for being here from the start.<br>With love,<br><strong>Ashley</strong><br><span style="color:#888;font-size:13px;">Founder, SlickChart · Botanical Aesthetics</span></p>
+      <p style="font-size:16px;line-height:1.7;margin:22px 0 0;">Thank you for being here from the start.<br>With love,<br><strong>Ashley</strong><br><span style="color:#888;font-size:13px;">Founder, SlickChart</span></p>
     </div>
   </div>`;
 }
@@ -195,7 +195,7 @@ Something confusing, broken, or missing? Just reply to this email, or tap "Share
 Thank you for being here from the start.
 With love,
 Ashley
-Founder, SlickChart · Botanical Aesthetics`;
+Founder, SlickChart`;
 }
 // Notification a provider gets when someone submits their public consult link. The whole point of
 // the link is lead capture, so the request has to reach them without them polling the app. Reply-To
