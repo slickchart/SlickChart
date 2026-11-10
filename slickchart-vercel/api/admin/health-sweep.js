@@ -98,6 +98,21 @@ export function explainNoteDrafts(oldV, nowV, tomb, goneClients) {
 // nothing (slickchart.html _reseedCoursesIfDefault). Read live it raised a warning for every new
 // provider (2026-10-29, 2026-11-08 ros…). A course she made or edited carries _ts; a sample she never
 // touched is a Draft with no _ts, no lessons, no cover and nobody enrolled.
+// A "prev-launch-cut-off" is logged at the START of a launch about the launch before it. That earlier
+// launch only died mid-launch if it never logged its boot timings ("boot-ms ... done"); if it did, the
+// app had fully opened and was closed later while in use. Reporting both as "mid-launch" was a false alarm.
+export function cutOffKinds(events) {
+  const ev = (Array.isArray(events) ? events : []).filter(e => e && e.e);
+  let midLaunch = 0, whileOpen = 0, opened = null; // null = nothing seen yet in the window
+  for (const e of ev) {
+    if (e.e === 'prev-launch-cut-off') {
+      if (opened === true) whileOpen++; else midLaunch++;
+    } else if (e.e === 'launch') opened = false;
+    else if (e.e === 'boot-ms' && /\bdone\b/.test(String(e.d || ''))) opened = true;
+  }
+  return { midLaunch, whileOpen };
+}
+
 export function courseSampleGone(oldV, nowV) {
   let a, b; try { a = JSON.parse(oldV); b = nowV == null ? [] : JSON.parse(nowV); } catch (e) { return null; }
   if (!Array.isArray(a)) return null;
@@ -350,12 +365,15 @@ export async function runSweep(q) {
       const dropped = ev.filter(e => e.e === 'token-dropped').length;
       const errs = ev.filter(e => e.e === 'error').length;
       const offline = ev.filter(e => e.e === 'offline-page-shown').length;
-      const cut = ev.filter(e => e.e === 'prev-launch-cut-off').length;
+      const { midLaunch: cut, whileOpen } = cutOffKinds(ev);
       const bits = [];
       if (dropped) bits.push('signed out by the app ' + dropped + 'x');
       if (errs) bits.push(errs + ' error(s)');
       if (offline) bits.push('offline page shown ' + offline + 'x');
       if (cut > 1) bits.push('app closed mid-launch ' + cut + 'x');
+      // Closed after it had fully opened (swiped away, or the phone reclaimed it while she used it):
+      // only worth a line when it keeps happening.
+      if (whileOpen > 3) bits.push('app closed while open ' + whileOpen + 'x (it had finished opening)');
       if (bits.length) items.push((maskEmail(r.email) || '(not signed in)') + ', ' + r.platform + ' ' + (r.build || '') + ': ' + bits.join(', '));
     }
     return { items };

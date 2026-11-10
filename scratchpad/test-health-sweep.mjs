@@ -55,7 +55,9 @@ CREATE TABLE nurture_optout (email text PRIMARY KEY, ts timestamptz DEFAULT now(
 INSERT INTO nurture_sends (email,seq,step,sent_at) VALUES ('ghost@paid.com','orphan',0,now()-interval '2 hours');
 INSERT INTO login_attempts (email,ts) SELECT 'locked@out.com', now()-interval '1 hour' FROM generate_series(1,5);
 INSERT INTO app_launch_logs (device_key,provider_id,email,platform,build,events,updated_at) VALUES ('d1','bad','trouble@x.com','android','2026-10-24f','[{"t":${now - H},"e":"token-dropped","d":"x"},{"t":${now - H},"e":"screen","d":"home"}]',now()),
-  ('d2','good','healthy@ok.com','ios','${CUR}','[{"t":${now - H},"e":"launch"},{"t":${now - H},"e":"prev-launch-cut-off"}]',now());
+  ('d2','good','healthy@ok.com','ios','${CUR}','[{"t":${now - H},"e":"launch"},{"t":${now - H},"e":"prev-launch-cut-off"}]',now()),
+  ('d3','used','swiped@ok.com','android','${CUR}','[{"t":${now - 5*H},"e":"boot-ms","d":"html 500 · done 4000"},{"t":${now - 4*H},"e":"prev-launch-cut-off","d":"last step: screen"},{"t":${now - 4*H},"e":"launch"},{"t":${now - 4*H},"e":"boot-ms","d":"html 300 · done 6000"},{"t":${now - 3*H},"e":"prev-launch-cut-off","d":"last step: visible"},{"t":${now - 3*H},"e":"launch"},{"t":${now - 3*H},"e":"boot-ms","d":"html 300 · done 3000"},{"t":${now - 2*H},"e":"prev-launch-cut-off","d":"last step: screen"},{"t":${now - 2*H},"e":"launch"}]',now()),
+  ('d4','stuck','stuck@x.com','ios','${CUR}','[{"t":${now - H},"e":"launch"},{"t":${now - H},"e":"prev-launch-cut-off"},{"t":${now - H},"e":"launch"},{"t":${now - H},"e":"prev-launch-cut-off"},{"t":${now - H},"e":"launch"}]',now());
 INSERT INTO native_push_log (owner_id,outcome,reason,at) VALUES ('good','linked','',now()),('bad','send failed','UNREGISTERED',now());
 INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead','bad','t1','Cooper Secretname','cooper@client.com',${now - 30 * 24 * H}),('c_ok','good','t2','Ann Private','ann@client.com',${now - H});
 `);
@@ -138,7 +140,10 @@ ok(by['scheduled-jobs'].items.some(i => /cron-events: started 1x in the last day
 ok(by['square-tokens'].level === 'alert' && by['square-tokens'].items.length === 1 && /EXPIRED/.test(by['square-tokens'].items[0]), 'the expired Square sign-in is an ALERT');
 ok(by['billing'].level === 'alert' && by['billing'].items.some(i => /past due/.test(i)) && by['billing'].items.some(i => /gho…@paid.com: paid but has no SlickChart account; setup email sent \w{3} \d\d \d\d:\d\d UTC/.test(i)), 'past-due-but-using and paid-with-no-account are flagged, with when the setup email went', JSON.stringify(by['billing'].items));
 ok(by['sign-in'].items.length === 1 && /5 failed sign-ins/.test(by['sign-in'].items[0]), 'someone stuck at sign-in is flagged');
-ok(by['app-logs'].items.length === 1 && /signed out by the app 1x/.test(by['app-logs'].items[0]), 'a sign-out in the launch log is flagged; one mid-launch close is not', JSON.stringify(by['app-logs'].items));
+const _al = by['app-logs'].items;
+ok(_al.some(i => /^tro…/.test(i) && /signed out by the app 1x/.test(i)) && !_al.some(i => /^hea…/.test(i)), 'a sign-out in the launch log is flagged; one mid-launch close is not', JSON.stringify(_al));
+ok(!_al.some(i => /^swi…/.test(i)), 'closes AFTER the app finished opening (3x) are not called mid-launch', JSON.stringify(_al));
+ok(_al.some(i => /^stu…/.test(i) && /mid-launch 2x/.test(i)), 'launches that never finished opening are still flagged mid-launch', JSON.stringify(_al));
 ok(by['stale-builds'].items.length === 1 && /2026-10-10a/.test(by['stale-builds'].items[0]), 'the device on an old build is flagged');
 ok(by['phone-push'].items.length === 1 && /send failed: UNREGISTERED/.test(by['phone-push'].items[0]), 'a refused phone push is flagged, a link is not');
 ok(/\(last [A-Z][a-z]{2} \d\d \d\d:\d\d UTC\)$/.test(by['phone-push'].items[0] || ''), 'a phone push failure says when it last happened', by['phone-push'].items[0]);
