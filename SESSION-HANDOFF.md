@@ -8978,6 +8978,10 @@ free, same rule as $10 -> $100). No existing Stripe subscription is touched.
   past-date "Price goes to $17" note and its date switch are gone. Checked live the same day: the
   $17 link charges $17.00/month, the $170 link $170.00/year, and the old $10 link still works for
   early-provider renewals (lib/pricing.js).
+  **2026-11-10, Ashley:** the landing page now PROMISES "$17/month for life" to this round of sign-ups,
+  as a thank-you for feedback and ideas (same deal the $10 providers got). So any FUTURE price rise must
+  keep $17 payers at $17: `renewPricing` today sends a $17 payer to `signupPricing()`, which would
+  quote the new price once there is one. Give $17 its own tier (like OLD) in the same change.
 - Old $10/$100 links stay ON: they are how a lapsed early provider renews at $10.
 - Tests: `scripts/test-pricing.mjs`.
 
