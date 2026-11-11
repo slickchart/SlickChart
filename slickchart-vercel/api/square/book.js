@@ -10,7 +10,8 @@
 // from the chosen date + time before calling.
 //
 // Requires the token to have "Appointments (write)" + "Customers (write/read)".
-import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+import { sqContext, resolveLocationId } from '../../lib/square.js';
+import { resolveSquareCustomer, createSquareBooking } from '../../lib/square-book.js';
 import { sendEmail } from '../../lib/email.js';
 import { logSquareCreate } from '../../lib/db.js';
 
@@ -37,7 +38,6 @@ async function sendBookingEmail({ to, first, svcName, whenText, biz }) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   const ctx = await sqContext(req, res); if (!ctx) return;
-  const sf = (p, o) => _sqf(p, o, ctx.token);
 
   try {
     const body = (req.body && typeof req.body === 'object') ? req.body : JSON.parse(req.body || '{}');
@@ -52,79 +52,19 @@ export default async function handler(req, res) {
     const locationId = await resolveLocationId(ctx.token, ctx.locationId);
     if (!locationId) { res.status(400).json({ error: 'No Square location found for this account.' }); return; }
 
-    // ── Resolve the customer: use the given id, else find by email, else create ──
-    let customerId = (body.customerId || '').trim();
-    if (!customerId) {
-      const name = (body.customerName || '').trim();
-      const email = (body.customerEmail || '').trim();
-      if (email) {
-        try {
-          const found = await sf('/v2/customers/search', {
-            method: 'POST',
-            body: { limit: 1, query: { filter: { email_address: { exact: email } } } }
-          });
-          if (found.customers && found.customers[0]) customerId = found.customers[0].id;
-        } catch (e) { /* fall through to create */ }
-      }
-      // A client she has in Square by PHONE only used to get a brand-new Square customer on every
-      // booking (which then synced back into SlickChart as another chart).
-      const phone = String(body.customerPhone || '').replace(/[^0-9+]/g, '');
-      if (!customerId && phone.replace(/\D/g, '').length >= 7) {
-        try {
-          const e164 = phone.startsWith('+') ? phone : ('+1' + phone.replace(/\D/g, '').slice(-10));
-          const found = await sf('/v2/customers/search', {
-            method: 'POST',
-            body: { limit: 1, query: { filter: { phone_number: { exact: e164 } } } }
-          });
-          if (found.customers && found.customers[0]) customerId = found.customers[0].id;
-        } catch (e) { /* fall through to create */ }
-      }
-      if (!customerId) {
-        const parts = name.split(/\s+/).filter(Boolean);
-        // Keyed off the booking's own key, so a retry finds the customer the first try made instead of
-        // creating a second one (and then failing the booking with "idempotency key reused").
-        const ck = String(body.idempotencyKey || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 43);
-        const created = await sf('/v2/customers', {
-          method: 'POST',
-          body: {
-            idempotency_key: ck ? (ck + '-c') : undefined,
-            given_name: parts[0] || name || 'Client',
-            family_name: parts.length > 1 ? parts.slice(1).join(' ') : undefined,
-            email_address: email || undefined
-          }
-        });
-        customerId = created.customer && created.customer.id;
-        try { await logSquareCreate(ctx.providerId, ctx.merchantId, 'book', false); } catch (e) {}
-      }
-    }
+    // ── Resolve the customer (given id, else email, else phone, else create) and book ──
+    // One implementation, shared with the booking link's instant path (lib/square-book.js).
+    const customerId = await resolveSquareCustomer(ctx.token, {
+      customerId: body.customerId, name: body.customerName, email: body.customerEmail,
+      phone: body.customerPhone, idempotencyKey: body.idempotencyKey
+    }, () => logSquareCreate(ctx.providerId, ctx.merchantId, 'book', false));
     if (!customerId) { res.status(400).json({ error: 'Could not find or create a customer for this booking.' }); return; }
 
-    // ── Build the appointment segment + create the booking ──
-    const segment = {
-      team_member_id: teamMemberId,
-      service_variation_id: serviceVariationId,
-      duration_minutes: Math.max(parseInt(body.durationMinutes, 10) || 60, 1)
-    };
-    if (body.serviceVariationVersion != null) segment.service_variation_version = body.serviceVariationVersion;
-
-    // Prefer the client's stable key so a retried booking (lost response, tap-after-error) resolves
-    // to the SAME appointment instead of creating a duplicate. Fall back to a generated one.
-    const clientKey = String(body.idempotencyKey || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 45);
-    const bookKey = clientKey || ('sc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
-    const result = await sf('/v2/bookings', {
-      method: 'POST',
-      body: {
-        idempotency_key: bookKey,
-        booking: {
-          location_id: locationId,
-          customer_id: customerId,
-          start_at: startAt,
-          appointment_segments: [segment]
-        }
-      }
+    const b = await createSquareBooking(ctx.token, {
+      locationId, customerId, startAt, teamMemberId, serviceVariationId,
+      serviceVariationVersion: body.serviceVariationVersion, durationMinutes: body.durationMinutes,
+      idempotencyKey: body.idempotencyKey
     });
-
-    const b = result.booking || {};
 
     // Notify the client by email (best-effort — never fail the booking if email has trouble).
     const notifyEmail = String(body.customerEmail || '').trim();

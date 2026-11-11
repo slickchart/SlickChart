@@ -354,7 +354,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-11c';
+const APP_BUILD='2026-11-11d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -33502,7 +33502,12 @@ async function syncClientEvents(){
         // how a client's booking could exist on the server and on no screen anywhere.
         SlickBridge.upsertBooking(b);
         touchedRequests=true;touchedNotif=true;
-        if(_instant){try{addConfirmedAppt(b);}catch(e){}}
+        if(_instant){try{addConfirmedAppt(b);}catch(e){}
+          // ...and it has to LEAVE the app, exactly like one she confirms by hand. It used to stop at
+          // addConfirmedAppt, so an instant booking sat on her SlickChart calendar and never reached
+          // her Square or her Google. The server books Square at the moment of booking now; this
+          // finishes whatever it could not (see _instantSyncOut).
+          try{_instantSyncOut(b,payload);}catch(e){}}
         const _bt=_instant?'New booking':'New appointment request';
         try{pushBookingNotif({title:_bt,body:_instant?`${name} booked ${b.treatment} on ${fmtBookingDate(b)} at ${b.time}.`:`${name} requested ${b.treatment} on ${fmtBookingDate(b)} at ${b.time}.`});}catch(e){}
         try{providerSystemNotify(_bt,`${name} \u00b7 ${b.treatment} \u00b7 ${fmtBookingDate(b)} ${b.time}`);}catch(e){}
@@ -35514,7 +35519,10 @@ function _reqToLocalAppt(b){
     if(typeof manualAppts==='undefined'||!Array.isArray(manualAppts))return false;
     const same=function(a){return a&&String(a.client||'')===String(b.client||'')&&a.date===b.date&&String(a.time||'')===String(b.time||'');};
     if(manualAppts.some(same))return true;
-    manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),clientId:b.clientId||undefined,
+    // A fixed id per request: two devices filing the same booking must collapse into ONE entry when
+    // sc_manual_appts merges by id, or her Google would get the visit twice.
+    const _rid=String((b&&b.id)||'').replace(/[^A-Za-z0-9_-]/g,'').slice(-40);
+    manualAppts.unshift({id:_rid?('ma_rq_'+_rid):('ma_'+Math.random().toString(36).slice(2,10)),clientId:b.clientId||undefined,
       client:b.client,tx:b.treatment,date:b.date,dateLabel:fmtBookingDate(b),time:b.time,
       ic:'var(--accent-strong)',_ts:Date.now()});
     _saveManualAppts();                       // also schedules the Google push
@@ -35524,8 +35532,16 @@ function _reqToLocalAppt(b){
 }
 // Never fail silently. The whole bug was an appointment that looked confirmed and went nowhere, so
 // when Square will not take it, say so and offer the sheet that can finish the job, pre-filled.
-function _reqSquareMissed(b,why){
+function _reqSquareMissed(b,why,quiet){
   try{
+    // An instant booking is filed in the background (a sync, a boot), not by a tap of hers, so a
+    // pop-up there would land in the middle of whatever she is doing. Tell her in the feed instead.
+    if(quiet){
+      pushBookingNotif({icon:'ti-alert-triangle',col:'var(--p-red-bg)',ic:'var(--p-red)',title:'Not added to Square',
+        body:(b.client||'A client')+' \u00b7 '+(b.treatment||'Appointment')+' \u00b7 '+fmtBookingDate(b)+' '+(b.time||'')+'. '+(why||'Square would not take it')+'. It is on your SlickChart calendar. Add it in Square with Book in Square.'});
+      try{if(typeof proToast==='function')proToast('Booked, but not added to Square');}catch(e){}
+      return;
+    }
     let email='';try{if(b.clientId&&CL[b.clientId])email=CL[b.clientId].email||'';}catch(e){}
     const msg=(why||'Square would not take it')+'. It is saved on your SlickChart calendar. Open Book in Square to add it there too?';
     if(typeof confirmModal==='function'){
@@ -35535,7 +35551,39 @@ function _reqSquareMissed(b,why){
     }else if(typeof proToast==='function')proToast('Confirmed, but not added to Square');
   }catch(e){}
 }
-async function _reqSyncOut(b){
+// The Square idempotency key for a request. Was 'req-'+id cut to 45 characters, but event ids are
+// 'ev_idem_<provider>_<client>_<key>', so the first 45 characters were the same for every booking one
+// client ever made and Square refused her second one as a reused key. The TAIL is what differs.
+// lib/square-book.js requestIdemKey computes the same thing, so a device retrying what the server
+// already booked lands on the same appointment instead of a second one.
+function _reqIdemKey(id){return 'req-'+String(id||'').replace(/[^A-Za-z0-9_-]/g,'').slice(-41);}
+// An INSTANT booking from her public link. The server tries Square at the moment of booking and
+// writes what happened onto the event (api/book-request.js):
+//   sqBookingId  it is in her Square already, and so on her Google through Square's own sync
+//   sqSkip       she had no Square then, so Google gets it from us (a manualAppts entry)
+//   neither      the server could not book it (or the event is older than that): do it from here
+async function _instantSyncOut(b,payload){
+  payload=payload||{};
+  if(payload.sqBookingId){try{_loadSquareAppts(true);}catch(e){}return;}
+  if(payload.sqSkip===true&&!(typeof _apptsLive==='function'&&_apptsLive())){_reqToLocalAppt(b);return;}
+  // This runs during a sync, often at launch, before her Square schedule has loaded on this device.
+  // _reqSyncOut reads "Square not loaded" as "no Square" and would send it to Google only, so wait
+  // for Square to settle first (bounded, so a dead connection cannot hold it forever).
+  try{
+    if(typeof _sqApptsState!=='undefined'&&(_sqApptsState==='idle'||_sqApptsState==='loading')){
+      try{_loadSquareAppts();}catch(e){}
+      for(let i=0;i<40&&(_sqApptsState==='idle'||_sqApptsState==='loading');i++)await new Promise(r=>setTimeout(r,500));
+    }
+  }catch(e){}
+  // Square answered with an error that is not "no Square": we cannot tell, so do not guess. Tell her
+  // rather than sending it to Google alone, where Square's own sync could later add it a second time.
+  if(typeof _sqApptsState!=='undefined'&&_sqApptsState==='error'&&_sqApptsErr!=='nosquare'){
+    _reqSquareMissed(b,payload.sqMissed||'Square did not answer',true);return;
+  }
+  return _reqSyncOut(b,{quiet:true});
+}
+async function _reqSyncOut(b,o){
+  const quiet=!!(o&&o.quiet);
   const startAt=_reqStartISO(b);
   // No parseable date/time means nothing can be booked anywhere. Leave it as the in-app record it
   // already is rather than inventing a time for it.
@@ -35555,7 +35603,7 @@ async function _reqSyncOut(b){
   const teamMemberId=(svc&&svc.teamMemberIds&&svc.teamMemberIds[0])||(tms[0]&&tms[0].id)||'';
   if(!svc||!teamMemberId){
     _reqToLocalAppt(b);
-    _reqSquareMissed(b,svc?'No bookable team member in your Square':'No Square service matches "'+(b.treatment||'')+'"');
+    _reqSquareMissed(b,svc?'No bookable team member in your Square':'No Square service matches "'+(b.treatment||'')+'"',quiet);
     return;
   }
   let email='';try{if(b.clientId&&CL[b.clientId])email=CL[b.clientId].email||'';}catch(e){}
@@ -35571,7 +35619,7 @@ async function _reqSyncOut(b){
       notify:false,
       // Keyed on the REQUEST id, so a double-tap on Confirm or a retry cannot create two bookings
       // for the same request. The server strips this to [A-Za-z0-9_-] and 45 chars.
-      idempotencyKey:'req-'+String(b.id||'')}});
+      idempotencyKey:_reqIdemKey(b.id)}});
     try{_loadSquareAppts(true);}catch(e){}
     try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='calendar'&&typeof renderCalendar==='function')renderCalendar();}catch(e){}
     try{if(typeof proToast==='function')proToast('Added to your Square calendar');}catch(e){}
@@ -35586,7 +35634,7 @@ async function _reqSyncOut(b){
       return;
     }
     _reqToLocalAppt(b);
-    _reqSquareMissed(b,(e&&e.message)||'Square would not take it');
+    _reqSquareMissed(b,(e&&e.message)||'Square would not take it',quiet);
   }
 }
 // Did the booking actually land, whatever the response said? Re-reads Square rather than guessing

@@ -14,7 +14,7 @@ import fs from 'fs'; import os from 'os'; import path from 'path';
 const VERCEL = '/home/user/SlickChart/slickchart-vercel';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sw2slots-'));
 fs.mkdirSync(path.join(root, 'lib'));
-for (const f of ['booking.js', 'square.js', 'google-cal.js']) fs.copyFileSync(path.join(VERCEL, 'lib', f), path.join(root, 'lib', f));
+for (const f of ['booking.js', 'square.js', 'square-book.js', 'google-cal.js']) fs.copyFileSync(path.join(VERCEL, 'lib', f), path.join(root, 'lib', f));
 fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');
 fs.writeFileSync(path.join(root, 'lib', 'db.js'), `
 export const KV = {};

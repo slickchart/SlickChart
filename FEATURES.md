@@ -355,6 +355,10 @@ saved anywhere", not "does this always call that".
 | `_initDeepLinks` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_initDeepLinks` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_inkScanField` | `/api/ai` | via `_aiComplete` |
+| `_instantSyncOut` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_instantSyncOut` | `/api/square/availability` | via `_sqLoadSlots` |
+| `_instantSyncOut` | `/api/square/book` | via `_reqSyncOut` |
+| `_instantSyncOut` | `/api/square/booking-options` | via `_reqSyncOut` |
 | `_inviteResetDefault` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_inviteResetDefault` | `/api/logout` | via `_doLogout` |
 | `_inviteResetDefault` | `/api/native-push` | via `_doLogout` |

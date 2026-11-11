@@ -9145,3 +9145,33 @@ health sweep, so a missed webhook cannot hide one. The sweep's top-level `trials
 `trial-outcomes`, level ok, never in `problems`) has last24h / last30d / endingSoon lines (first name +
 masked email + Stripe feedback), counts and the conversion rate. Test: `scratchpad/test-health-sweep.mjs`
 (PGLITE=<dir with @electric-sql/pglite>).
+
+## 2026-11-11 Build 2026-11-11d: INSTANT link bookings now reach Square (and Google)
+
+Ashley forwarded a code-reading note: "instant" bookings from the public link show as confirmed in
+SlickChart but may never reach Square or Google. **Confirmed real.** `syncClientEvents` filed an
+`autoConfirmed` booking with `addConfirmedAppt` only; that list is neither Square nor `manualAppts`
+(what `_gcalAppts` pushes to Google). The manual Confirm path had been wired out (`_reqSyncOut`,
+§2as) but the instant path never was. Square's own booking page also kept offering the slot.
+
+Fix:
+- **Server books Square at the moment of booking.** `api/book-request.js` → `squareBookInstant`
+  (lib/booking.js) using `getConnection(<slug owner>)` only. Writes the outcome onto the event:
+  `sqBookingId` | `sqSkip` (no Square) | `sqMissed: <reason>`. Never fatal to the booking.
+- **Customer find-or-create + CreateBooking are ONE implementation now**, `lib/square-book.js`,
+  used by `api/square/book.js` (response shape unchanged) and the instant path.
+- **App** (`_instantSyncOut`): sqBookingId → just refresh Square; sqSkip → `manualAppts` (Google);
+  otherwise waits for Square to load, then `_reqSyncOut(b,{quiet:true})`. Quiet = a "Not added to
+  Square" feed notice, never a pop-up mid-work. `_reqToLocalAppt` ids are fixed per request
+  (`ma_rq_<id tail>`) so two devices collapse to one entry.
+- **Existing bug fixed on the way:** the Square idempotency key was `'req-'+eventId` cut to 45
+  chars, and event ids are `ev_idem_<provider>_<client>_<key>`, so every booking by one client had
+  the SAME key and Square refused her second. Now the TAIL (`_reqIdemKey` / `requestIdemKey`), same
+  on server and app so a retry lands on one appointment.
+- Not done: instant bookings made BEFORE this build that were already filed are not back-filled
+  into Square (the app only processes an event once).
+
+Tests: `scratchpad/test-instant-booking-square.mjs` (server, real handler + libs, mocked Square)
+ALL PASS in UTC and New York; `scratchpad/test-instant-booking-app.mjs` 16/16 Chromium AND WebKit,
+8/16 on the old build (proves it sees the bug); `test-reqsync` (manual confirm) all four paths
+behave. All CI checks clean.

@@ -19,7 +19,8 @@
 // be an enumeration oracle for her client list. Free/busy is reduced to start+end times before it
 // leaves this module; the appointments it was computed from never go over the wire.
 import { sql, getKVValue } from './db.js';
-import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey, zonedMinutes } from './square.js';
+import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey, zonedMinutes, zonedWallToUtc } from './square.js';
+import { resolveSquareCustomer, createSquareBooking, requestIdemKey } from './square-book.js';
 import { getGoogleConnection, googleBusyMinutes } from './google-cal.js';
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -455,6 +456,64 @@ export async function openSlots(providerId, dateISO, cfg, hours, serviceName) {
     if (out.length >= 40) break;
   }
   return out;
+}
+
+// ── An INSTANT booking goes into her Square the moment it is made ───────────────────────────────
+// The link told the person "Booked", so the appointment has to exist where she actually runs her day.
+// It used to exist only as an event in SlickChart: her app filed it on her SlickChart calendar and
+// nowhere else, so it never reached Square (or, through Square's own sync, her Google Calendar), and
+// Square's own booking page kept offering the slot to someone else. Booking it here, at the moment
+// of the booking, closes that window instead of waiting for her to open the app.
+//
+// ISOLATION (CLAUDE.md §0.2): the connection is getConnection(providerId) for the provider who OWNS
+// the slug that was booked. Nothing from the request body chooses an account. No connection, no call.
+//
+// Never throws and never decides the booking: the caller has already recorded it. Returns
+//   { ok:true, bookingId }        booked (or already booked: the key is stable, so a retry is a no-op)
+//   { ok:false, reason, skip? }    not booked; skip:true means she has no Square at all, which is
+//                                  not a failure, and her app sends the visit to Google itself.
+export async function squareBookInstant(providerId, { eventId, serviceName, date, time, name, email, phone }) {
+  let conn = null;
+  try { conn = await getConnection(providerId); } catch (e) { return { ok: false, reason: 'Could not read your Square connection' }; }
+  if (!conn || !conn.token) return { ok: false, skip: true, reason: 'No Square connected' };
+  try {
+    const services = await listBookableServices(conn.token);
+    const svc = matchSquareService(services, serviceName);
+    if (!svc || !svc.variationId) return { ok: false, reason: 'No Square service matches "' + String(serviceName || '') + '"' };
+    const locationId = await resolveLocationId(conn.token, conn.locationId);
+    if (!locationId) return { ok: false, reason: 'No Square location found' };
+    // Her wall-clock time in HER zone. Without a zone we would be guessing the hour, and a booking at
+    // the wrong hour is worse than none, so leave it to her app instead.
+    const tz = await resolveLocationTz(conn.token, locationId);
+    const day = isoDay(date), mins = toMins(time);
+    if (!tz || !day || mins == null) return { ok: false, reason: 'Could not work out the time in your time zone' };
+    const [Y, M, D] = day.split('-').map(Number);
+    const startAt = zonedWallToUtc(Y, M, D, Math.floor(mins / 60), mins % 60, 0, tz).toISOString();
+
+    let teamMemberId = (svc.teamMemberIds && svc.teamMemberIds[0]) || '';
+    if (!teamMemberId) {
+      try {
+        const qs = new URLSearchParams({ bookable_only: 'true', location_id: locationId });
+        const tm = await squareFetch('/v2/bookings/team-member-booking-profiles?' + qs.toString(), {}, conn.token);
+        const p = (tm.team_member_booking_profiles || []).find(x => x && x.team_member_id);
+        teamMemberId = p ? p.team_member_id : '';
+      } catch (e) {}
+    }
+    if (!teamMemberId) return { ok: false, reason: 'No bookable team member in your Square' };
+
+    const idempotencyKey = requestIdemKey(eventId);
+    const customerId = await resolveSquareCustomer(conn.token, { name, email, phone, idempotencyKey },
+      async () => { const db = await import('./db.js'); if (db.logSquareCreate) await db.logSquareCreate(providerId, conn.merchantId || null, 'book-link', false); });
+    if (!customerId) return { ok: false, reason: 'Could not find or create the customer in Square' };
+    const b = await createSquareBooking(conn.token, {
+      locationId, customerId, startAt, teamMemberId, serviceVariationId: svc.variationId,
+      serviceVariationVersion: svc.variationVersion, durationMinutes: svc.durationMinutes || 60, idempotencyKey
+    });
+    if (!b || !b.id) return { ok: false, reason: 'Square did not return a booking' };
+    return { ok: true, bookingId: b.id, startAt };
+  } catch (e) {
+    return { ok: false, reason: String((e && e.message) || 'Square would not take it').slice(0, 200) };
+  }
 }
 
 // Which days are worth offering at all — used to grey out her closed days on the page.

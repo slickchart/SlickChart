@@ -125,7 +125,7 @@ function tzOffsetAt(instant, tz) {
 // hour: a single offset taken at noon and applied to both ends of the day is wrong on the two days
 // a year the offset changes, which made a 25-hour day come out 24 hours long and started the
 // following spring's day an hour before midnight. Two passes converge everywhere.
-function zonedWallToUtc(Y, M, D, h, mi, sec, tz) {
+export function zonedWallToUtc(Y, M, D, h, mi, sec, tz) {
   const naive = Date.UTC(Y, M - 1, D, h, mi, sec);
   let guess = naive;
   for (let i = 0; i < 2; i++) guess = naive - tzOffsetAt(new Date(guess), tz);

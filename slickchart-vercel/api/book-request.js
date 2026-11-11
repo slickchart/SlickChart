@@ -15,7 +15,7 @@ import { dbEnabled, sql } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
 import { ensureClientTables, upsertClient, logEvent, logEventOnce, genToken } from '../lib/clients.js';
 import { getBookingConfig, getServices, getHours, openSlots, toMins, isoDay, DAY_KEYS,
-         pickService, serviceMins, serviceDeposit, depositLinkFor } from '../lib/booking.js';
+         pickService, serviceMins, serviceDeposit, depositLinkFor, squareBookInstant } from '../lib/booking.js';
 import { sendEmail, trustedOrigin, bookingGuestEmailHtml, bookingGuestEmailText,
          bookingProviderEmailHtml, bookingProviderEmailText } from '../lib/email.js';
 import { getKVValue } from '../lib/db.js';
@@ -151,6 +151,25 @@ export default async function handler(req, res) {
       note, via: 'booking-link', autoConfirmed: confirmed
     }, bkKey);
     const firstTime = !!(logged && logged.inserted);
+
+    // INSTANT means the person was just told "Booked", so the visit goes into her own Square now,
+    // not when she next opens the app (it used to go nowhere at all: it sat on her SlickChart
+    // calendar and never reached Square or her Google). The outcome is written onto the event so her
+    // app knows whether to finish the job itself (Google when she has no Square, a retry and a notice
+    // when Square refused). Never fatal: the booking is already recorded and the person already has
+    // their answer. A retry of the same booking reuses the same Square key, so it cannot book twice.
+    if (confirmed && logged && logged.id) {
+      let sq = null;
+      try { sq = await squareBookInstant(prov.id, { eventId: logged.id, serviceName: treatment, date, time, name, email, phone }); }
+      catch (e) { sq = { ok: false, reason: 'Square would not take it' }; }
+      const mark = sq && sq.ok ? { sqBookingId: sq.bookingId }
+        : (sq && sq.skip ? { sqSkip: true } : { sqMissed: String((sq && sq.reason) || 'Square would not take it').slice(0, 200) });
+      try {
+        await q`UPDATE client_events SET payload = payload || ${JSON.stringify(mark)}::jsonb
+          WHERE id = ${logged.id} AND provider_id = ${prov.id} AND kind = 'booking'`;
+      } catch (e) { console.error('[book-request] could not record the Square result:', e && e.message); }
+      if (sq && !sq.ok && !sq.skip) console.error('[book-request] instant booking not added to Square:', sq.reason);
+    }
 
     const when = lbl + ' at ' + time;
 
