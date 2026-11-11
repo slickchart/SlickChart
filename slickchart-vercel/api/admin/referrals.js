@@ -4,6 +4,7 @@
 //   POST {action:'setup'}        one tap: friend reward in Stripe, codes allowed on both sign-up links,
 //                                webhook hears invoice.paid. Reports what it did.
 //   POST {action:'retry'}        re-try every sharer credit Stripe refused
+//   GET ?check=stripe            read-only: do both links accept codes, does the webhook hear payments
 //
 // Gated to FOUNDER_EMAILS via the verified session token's email (CLAUDE.md §0.5). GET also accepts the
 // Monitor key (Authorization: Monitor <key>, as /api/admin/push-state does) so the Monday brief can read
@@ -12,8 +13,12 @@ import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
 import { monitorKeyOk } from '../feedback.js';
 import { NEW_MONTHLY_LINK, NEW_YEARLY_LINK } from '../../lib/pricing.js';
-import { REFERRAL_SETTINGS, getReferralSettings, setReferralSetting, referralMetrics, setupStripeForReferrals, retryFailedRewards } from '../../lib/referral.js';
+import { REFERRAL_SETTINGS, getReferralSettings, setReferralSetting, referralMetrics, setupStripeForReferrals, retryFailedRewards, checkStripeForReferrals } from '../../lib/referral.js';
 
+function signupLinks() {
+  return [{ label: '$17 monthly link', url: process.env.STRIPE_PAYMENT_LINK_17 || NEW_MONTHLY_LINK },
+    { label: '$170 yearly link', url: process.env.STRIPE_PAYMENT_LINK_YEARLY_170 || NEW_YEARLY_LINK }];
+}
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
 async function founderFromBearer(req, q) {
@@ -45,8 +50,7 @@ export default async function handler(req, res) {
       let b = req.body || {};
       if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = {}; } }
       if (b.action === 'setup') {
-        const r = await setupStripeForReferrals(q, [{ label: '$17 monthly link', url: process.env.STRIPE_PAYMENT_LINK_17 || NEW_MONTHLY_LINK },
-          { label: '$170 yearly link', url: process.env.STRIPE_PAYMENT_LINK_YEARLY_170 || NEW_YEARLY_LINK }]);
+        const r = await setupStripeForReferrals(q, signupLinks());
         res.status(200).json({ ok: true, setup: r }); return;
       }
       if (b.action === 'retry') { res.status(200).json({ ok: true, retried: await retryFailedRewards(q) }); return; }
@@ -54,6 +58,9 @@ export default async function handler(req, res) {
       for (const k of Object.keys(REFERRAL_SETTINGS)) if (b[k] != null && b[k] !== '') { const v = await setReferralSetting(q, k, b[k]); if (v != null) saved[k] = v; }
       if (typeof b.message === 'string' && b.message.trim()) { const v = await setReferralSetting(q, 'message', b.message); if (v != null) saved.message = v; }
       res.status(200).json({ ok: true, saved, settings: await getReferralSettings(q) }); return;
+    }
+    if (String((req.query && req.query.check) || '') === 'stripe') {
+      res.status(200).json({ ok: true, stripe: await checkStripeForReferrals(signupLinks()) }); return;
     }
     const labels = {};
     for (const k of Object.keys(REFERRAL_SETTINGS)) { const d = REFERRAL_SETTINGS[k]; labels[k] = { label: d.label, min: d.min, max: d.max, def: d.def, unit: d.unit }; }

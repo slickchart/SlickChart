@@ -1,0 +1,67 @@
+// "What's new" emailed to providers (2026-11-11): real SQL (PGlite), Resend stubbed.
+//   PGLITE=<dir with @electric-sql/pglite> node scratchpad/test-announce-email.mjs
+import fs from 'fs'; import os from 'os'; import path from 'path'; import { pathToFileURL } from 'url';
+const SRC = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../slickchart-vercel');
+const PGL = process.env.PGLITE || '/tmp/claude-0/pgl';
+const { PGlite } = await import(pathToFileURL(path.join(PGL, 'node_modules/@electric-sql/pglite/dist/index.js')));
+const db = new PGlite(); globalThis.__db = db;
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'annem-'));
+fs.mkdirSync(dir + '/lib', { recursive: true }); fs.mkdirSync(dir + '/api', { recursive: true });
+fs.writeFileSync(dir + '/package.json', '{"type":"module"}');
+for (const f of ['announce-email.js', 'nurture.js']) fs.copyFileSync(SRC + '/lib/' + f, dir + '/lib/' + f);
+fs.copyFileSync(SRC + '/api/announcements.js', dir + '/api/announcements.js');
+const nurtureImports = [...fs.readFileSync(SRC + '/lib/nurture.js', 'utf8').matchAll(/from '\.\/([^']+)'/g)].map(m => m[1]);
+fs.writeFileSync(dir + '/lib/db.js', `export function dbEnabled(){return true;} export async function ensureProvidersTable(){}
+export function sql(){ return async (strs, ...v) => { let t=''; strs.forEach((s,i)=>{t+=s+(i<v.length?'$'+(i+1):'');}); return (await globalThis.__db.query(t, v)).rows; }; }`);
+for (const f of nurtureImports) if (f !== 'db.js' && !fs.existsSync(dir + '/lib/' + f)) fs.copyFileSync(SRC + '/lib/' + f, dir + '/lib/' + f);
+fs.writeFileSync(dir + '/lib/email.js', 'export async function sendEmail(m){ (globalThis.__mail ||= []).push(m); return {}; } export function trustedOrigin(){ return "https://slickchart.app"; }');
+fs.writeFileSync(dir + '/lib/auth.js', 'export function verifyToken(){ return null; } export async function sessionOk(){ return true; }');
+fs.writeFileSync(dir + '/lib/announce-push.js', 'export async function pushAnnouncementToProviders(){ return { sent: 3 }; }');
+fs.writeFileSync(dir + '/api/feedback.js', 'export async function monitorKeyOk(){ return true; }');
+process.env.RESEND_API_KEY = 'k'; process.env.SESSION_SECRET = 's'; process.env.OWNER_EMAIL = 'owner@x.com';
+const batches = []; let failNext = false;
+globalThis.fetch = async (url, o) => {
+  if (String(url).includes('/emails/batch')) { if (failNext) { failNext = false; return { ok: false, status: 500 }; } batches.push(JSON.parse(o.body)); return { ok: true, status: 200, json: async () => ({}) }; }
+  if (String(url).includes('/audiences')) return { ok: true, json: async () => ({ data: String(url).endsWith('/audiences') ? [{ id: 'a1' }] : [{ email: 'resendout@x.com', unsubscribed: true }] }) };
+  return { ok: false, status: 404 };
+};
+await db.exec(`CREATE TABLE providers (id text PRIMARY KEY, email text, name text);
+CREATE TABLE announcements (id bigserial PRIMARY KEY, title text NOT NULL, body text, ts timestamptz DEFAULT now());`);
+const vals = []; for (let i = 0; i < 150; i++) vals.push(`('p${i}','Pro${i}@Mail.com','Pro ${i}')`);
+await db.exec(`INSERT INTO providers VALUES ${vals.join(',')},('o1','optout@x.com','O'),('o2','resendout@x.com','R'),('e1','',''),('e2','bad-email','B'),('d1',' pro1@mail.com ','Dup');`);
+const { ensureNurtureTables } = await import(pathToFileURL(dir + '/lib/nurture.js'));
+const q = (await import(pathToFileURL(dir + '/lib/db.js'))).sql();
+await ensureNurtureTables(q); await db.exec("INSERT INTO nurture_optout (email) VALUES ('optout@x.com')");
+const { default: handler } = await import(pathToFileURL(dir + '/api/announcements.js'));
+let fail = 0; const ok = (c, m, d) => { console.log((c ? 'PASS ' : 'FAIL ') + m + (c || d === undefined ? '' : ' :: ' + d)); if (!c) fail++; };
+const call = async body => { const r = { code: 200, body: null, status(c) { r.code = c; return r; }, json(b) { r.body = b; return r; }, setHeader() {} };
+  await handler({ method: 'POST', headers: { authorization: 'Monitor k' }, body }, r); return r; };
+const BODY = 'Hi everyone! Here is what is new:\n\n- Refer a friend: a free month each.\n- Second <b>line</b>\n\nThank you!\n\nAshley';
+const dry = await call({ dryRun: true });
+ok(dry.body.wouldEmail === 150 && dry.body.optedOut === 1, 'dry run counts providers, skips opt-outs, blanks, bad and duplicate addresses', JSON.stringify(dry.body));
+ok((await db.query('SELECT count(*)::int n FROM announcements')).rows[0].n === 0 && !batches.length, 'dry run posts and sends nothing');
+failNext = true;
+const r1 = await call({ title: 'New: refer a friend', body: BODY, email: true });
+ok(r1.code === 200 && r1.body.emailed.sent === 50 && r1.body.emailed.failed === 100, 'a Resend failure is counted, the rest still go', JSON.stringify(r1.body.emailed));
+const all = batches.flat();
+ok(batches.length === 1 && batches[0].length === 50 && all.every(m => !Array.isArray(m.to) && /@/.test(m.to)), 'each email is to one provider alone, 100 per batch');
+ok(!all.some(m => /optout@|resendout@/.test(m.to)), 'no email to anyone who unsubscribed (ours or Resend’s)');
+const m0 = all[0];
+ok(/<li[^>]*>Refer a friend: a free month each\.<\/li>/.test(m0.html) && /&lt;b&gt;line&lt;\/b&gt;/.test(m0.html) && /\/api\/unsubscribe\?e=/.test(m0.html) && (m0.html.match(/Ashley/g) || []).length === 1, 'html: list items, escaped text, unsubscribe link, one signature', m0.html.slice(0, 200));
+ok(/Unsubscribe: https:\/\/slickchart\.app\/api\/unsubscribe/.test(m0.text) && m0.subject === 'New: refer a friend', 'text part has the unsubscribe link and the post title as subject');
+ok((globalThis.__mail || []).some(m => /also emailed to 50 providers \(100 could not be sent/.test(m.text)), 'Ashley’s own copy says how many were emailed and how many failed');
+const { emailAnnouncementToProviders } = await import(pathToFileURL(dir + '/lib/announce-email.js'));
+const id = Number((await db.query('SELECT id FROM announcements')).rows[0].id);
+const again = await emailAnnouncementToProviders(q, id, 'New: refer a friend', BODY);
+ok(again.sent === 100 && again.already === 50, 'a retry sends only the ones that failed', JSON.stringify(again));
+const third = await emailAnnouncementToProviders(q, id, 'New: refer a friend', BODY);
+ok(third.sent === 0 && third.already === 150, 'a third run emails nobody twice', JSON.stringify(third));
+ok(new Set(batches.flat().map(m => m.to)).size === 150 && batches.flat().length === 150, 'all 150 providers got exactly one email');
+const r2 = await call({ title: 'Board only', body: 'x' });
+ok(r2.body.emailed === null && batches.flat().length === 150, 'a post without email:true emails nobody');
+ok(r1.body.id === id, 'the post reply carries its id for a retry');
+const r3 = await call({ retryEmail: id });
+ok(r3.body.emailed && r3.body.emailed.sent === 0 && r3.body.emailed.already === 150, 'retryEmail through the endpoint emails nobody twice', JSON.stringify(r3.body));
+const r4 = await call({ retryEmail: 99999 });
+ok(r4.code === 404, 'retryEmail for a post that does not exist is refused');
+console.log(fail ? fail + ' FAILED' : 'ALL PASS'); process.exit(fail ? 1 : 0);

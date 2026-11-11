@@ -1379,7 +1379,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_sources`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
+`announcement_emails`, `announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_sources`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.

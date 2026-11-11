@@ -416,6 +416,25 @@ export async function setupStripeForReferrals(q, links) {
   return out;
 }
 
+// Read-only: is Stripe ready for codes? Changes nothing (the Monitor key may call it).
+export async function checkStripeForReferrals(links) {
+  const out = { ready: false, links: [], webhookHearsPayments: false, error: '' };
+  const list = await stripeApi('GET', '/payment_links', { limit: 100, active: true });
+  if (!list.ok) { out.error = 'Could not read payment links: ' + list.error; return out; }
+  for (const want of links) {
+    const pl = (list.data.data || []).find(x => x.url === want.url);
+    out.links.push({ label: want.label, found: !!pl, acceptsCodes: !!(pl && pl.allow_promotion_codes) });
+  }
+  const wh = await stripeApi('GET', '/webhook_endpoints', { limit: 100 });
+  if (!wh.ok) { out.error = 'Could not read webhooks: ' + wh.error; return out; }
+  const ep = (wh.data.data || []).find(x => /\/api\/stripe-webhook\b/.test(String(x.url || '')) && /slickchart\.app/.test(String(x.url || '')))
+    || (wh.data.data || []).find(x => /\/api\/stripe-webhook\b/.test(String(x.url || '')));
+  const ev = (ep && ep.enabled_events) || [];
+  out.webhookHearsPayments = ev.includes('*') || ev.includes('invoice.paid');
+  out.ready = out.links.length > 0 && out.links.every(l => l.acceptsCodes) && out.webhookHearsPayments;
+  return out;
+}
+
 // Ashley's numbers. Founder-only (api/admin/referrals.js gates it).
 export async function referralMetrics(q) {
   await ensureReferralTables(q);

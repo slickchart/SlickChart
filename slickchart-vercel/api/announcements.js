@@ -1,5 +1,8 @@
 // GET  /api/announcements            → { items, canPost, you, ownerSet }
-// POST /api/announcements {title,body,notify} → owner-only (provider email === OWNER_EMAIL) publish.
+// POST /api/announcements {title,body,notify,email} → owner-only (provider email === OWNER_EMAIL) publish.
+//   email:true also emails it to every provider who has not unsubscribed (lib/announce-email.js, 2026-11-11).
+//   retryEmail:<id> emails an earlier post to whoever it has not reached yet.
+//   dryRun:true posts nothing and sends nothing: it says how many providers the email would reach.
 //   Also pushes it to every provider's phone and browser unless notify === false (2026-10-23).
 // The same POST/GET with `Authorization: Monitor <key>` (her feedback-brief key, api/feedback.js
 //   monitorKeyOk) lets Claude post one she asked for (Ashley, 2026-10-31: "yes please build that").
@@ -10,6 +13,7 @@ import { verifyToken, sessionOk } from '../lib/auth.js';
 import { pushAnnouncementToProviders } from '../lib/announce-push.js';
 import { monitorKeyOk } from './feedback.js';
 import { sendEmail } from '../lib/email.js';
+import { emailAnnouncementToProviders, announcementRecipients } from '../lib/announce-email.js';
 
 const MONITOR_POSTS_PER_DAY = 3;
 function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -53,23 +57,35 @@ export default async function handler(req, res) {
         if (n[0] && n[0].n >= MONITOR_POSTS_PER_DAY) { res.status(429).json({ error: 'Already ' + MONITOR_POSTS_PER_DAY + ' posts from Claude today. Post from the app instead.' }); return; }
       }
       const b = req.body || {};
+      // Re-send an earlier post's email to the providers it has not reached yet (never twice to anyone).
+      if (b.retryEmail != null) {
+        const a = (await q`SELECT id, title, body FROM announcements WHERE id = ${Number(b.retryEmail) || 0}`)[0];
+        if (!a) { res.status(404).json({ error: 'No such post.' }); return; }
+        res.status(200).json({ ok: true, emailed: await emailAnnouncementToProviders(q, Number(a.id), a.title, a.body || '') }); return;
+      }
+      if (b.dryRun === true) {
+        const r = await announcementRecipients(q);
+        res.status(200).json({ ok: true, dryRun: true, wouldEmail: r.emails.length, optedOut: r.optedOut }); return;
+      }
       const title = String(b.title || '').slice(0, 140).trim();
       const body = String(b.body || '').slice(0, 4000).trim();
       if (!title) { res.status(400).json({ error: 'Add a title.' }); return; }
       // A double tap must not post twice or push every provider twice.
       const dup = await q`SELECT id FROM announcements WHERE title = ${title} AND body = ${body} AND ts > now() - interval '10 minutes' LIMIT 1`;
       if (dup.length) { res.status(200).json({ ok: true, duplicate: true }); return; }
-      await q`INSERT INTO announcements (title, body, source) VALUES (${title}, ${body}, ${viaKey ? 'claude' : 'owner'})`;
+      const ins = await q`INSERT INTO announcements (title, body, source) VALUES (${title}, ${body}, ${viaKey ? 'claude' : 'owner'}) RETURNING id`;
+      let emailed = null;
+      if (b.email === true && ins[0]) { try { emailed = await emailAnnouncementToProviders(q, Number(ins[0].id), title, body); } catch (e) { emailed = { error: 'email failed' }; } }
       if (viaKey) {
         try {
           await sendEmail({ to: founderNotifyTo(), subject: 'Claude posted a What\u2019s new update: ' + title,
-            text: 'This went up on the What\u2019s new board just now and was sent to every provider.\n\n' + title + '\n\n' + body + '\n\nIf you did not ask for this, tap Switch off on the daily brief key in Feedback Inbox so nothing else can be posted.',
+            text: 'This went up on the What\u2019s new board just now and was sent to every provider.' + (emailed ? ' It was also emailed to ' + (emailed.sent || 0) + ' providers' + (emailed.failed ? ' (' + emailed.failed + ' could not be sent: ' + emailed.error + ')' : '') + '.' : '') + '\n\n' + title + '\n\n' + body + '\n\nIf you did not ask for this, tap Switch off on the daily brief key in Feedback Inbox so nothing else can be posted.',
             html: '<p>This went up on the What\u2019s new board just now and was sent to every provider.</p><p><b>' + escHtml(title) + '</b></p><p style="white-space:pre-wrap">' + escHtml(body) + '</p><p>If you did not ask for this, tap Switch off on the daily brief key in Feedback Inbox so nothing else can be posted.</p>' });
         } catch (e) {}
       }
       let push = null;
       if (b.notify !== false) { try { push = await pushAnnouncementToProviders(title, body); } catch (e) { push = { error: 'push failed' }; } }
-      res.status(200).json({ ok: true, push });
+      res.status(200).json({ ok: true, id: ins[0] ? Number(ins[0].id) : null, push, emailed });
       return;
     }
     const rows = await q`SELECT id, title, body, extract(epoch from ts) * 1000 AS ts FROM announcements ORDER BY ts DESC LIMIT 50`;

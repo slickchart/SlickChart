@@ -43,7 +43,7 @@ function unsubUrl(email) {
 }
 
 // Shared email chrome — dark header, warm body, signature, and the compliance footer.
-function wrap(bodyHtml, email) {
+export function wrap(bodyHtml, email) {
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:8px;color:#1a1a1a;">
     <div style="background:#0a1719;border-radius:14px;padding:22px 24px;text-align:center;color:#eaf6f4;">
       <img src="https://slickchart.app/assets/slickchart-logo.png" width="42" height="42" alt="" style="display:inline-block;margin:0 0 6px;">
@@ -63,7 +63,7 @@ function wrap(bodyHtml, email) {
 function btn(href, label) {
   return `<div style="text-align:center;margin:24px 0;"><a href="${href}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;display:inline-block;font-size:15px;">${esc(label)}</a></div>`;
 }
-function footerText(email) {
+export function footerText(email) {
   return `\n\n—\nYou're getting this because you signed up at slickchart.app.\nUnsubscribe: ${unsubUrl(email)}${ADDR ? '\n' + ADDR : ''}`;
 }
 
@@ -191,7 +191,7 @@ export async function ensureNurtureTables(q) {
 // unsubscribe link). We treat Resend's `unsubscribed` flag as a source of truth so a
 // single opt-out — from a broadcast OR a nurture email — stops every kind of email.
 // Best-effort: on any API hiccup we fall back to just the local opt-out list.
-async function resendUnsubscribedSet() {
+export async function resendUnsubscribedSet() {
   const set = new Set();
   const key = process.env.RESEND_API_KEY || '';
   if (!key) return set;
