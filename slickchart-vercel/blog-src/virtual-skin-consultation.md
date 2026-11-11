@@ -4,10 +4,9 @@ h1: Virtual skin consultations: how to run photo and product consults that clien
 description: How an esthetician runs a virtual skin consultation: which photos to ask for, what to ask, staying in scope, what to charge, and picks clients can buy.
 date: 2026-11-11
 keywords: virtual skin consultation, virtual esthetician consultation, online skin consultation, esthetician photo consult, virtual skincare consultation, skin analysis consultation
-draft: true
 ---
 
-A virtual skin consultation is the easiest way into [virtual esthetics](/blog/virtual-esthetician), because you already do it. Every "can I send you a pic of my chin?" DM is a consult. The difference is whether it is a scattered thread you answer for free at 10pm, or a consult with a clear shape, a record and a result the client can act on.
+I started offering virtual consults to grow my income without adding more hours of service time. A virtual skin consultation is the easiest way into [virtual esthetics](/blog/virtual-esthetician), because you already do it. Every "can I send you a pic of my chin?" DM is a consult. The difference is whether it is a scattered thread you answer for free at 10pm, or a consult with a clear shape, a record and a result the client can act on.
 
 There are two kinds worth offering, and they suit different moments.
 
@@ -46,7 +45,7 @@ There is no single right answer, and it depends on your market. Common approache
 - **A free product consult and a paid photo consult**, since the photo consult takes more of your time.
 - **A free consult for existing clients** between visits, as part of the relationship.
 
-Whatever you choose, decide it before you share the link, and take payment the same way you take it for everything else.
+In my own business, I either charge for the consult or let the fee count as a credit toward products. Whatever you choose, decide it before you share the link, and take payment the same way you take it for everything else.
 
 ## End with something they can act on
 
