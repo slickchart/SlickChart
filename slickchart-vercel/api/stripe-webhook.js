@@ -5,7 +5,8 @@
 // Setup required in Stripe's dashboard (Developers → Webhooks → Add endpoint):
 //   URL:    https://slickchart.app/api/stripe-webhook
 //   Events: checkout.session.completed, customer.subscription.updated,
-//           customer.subscription.deleted
+//           customer.subscription.deleted, invoice.paid (referral credits; Admin tools, Referrals,
+//           "Set up in Stripe" adds it for her)
 // Renewals arrive as customer.subscription.updated too, so they keep the subscription row fresh but
 // are deliberately SILENT — the founder is pinged once per provider, on their first payment only.
 // Copy the "Signing secret" it gives you into Vercel as STRIPE_WEBHOOK_SECRET.
@@ -20,6 +21,8 @@ import { recordNotify } from '../lib/notify-log.js';
 import { ensureClientTables, claimReminder } from '../lib/clients.js';
 import { recordBuildSale } from '../lib/build-sales.js';
 import { liveSubForEmail } from '../lib/stripe-subs.js';
+import { recordReferralFromCheckout, markReferralCanceled, rewardOnInvoice, getReferralSettings, recordSignupSource, sourceLine } from '../lib/referral.js';
+import { notifySharer } from '../lib/referral-notify.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
 // never missed even before any env is configured; FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
@@ -117,6 +120,20 @@ async function notifyFounderPaid(q, email) {
 
   let name = '';
   try { const p = await q`SELECT name FROM providers WHERE lower(email) = ${em}`; name = (p[0] && p[0].name) || ''; } catch (e) {}
+  // Referred by another provider's code? One line in her email (lib/referral.js). The table may not
+  // exist yet, which simply means no.
+  let refLine = '';
+  try {
+    const r = await q`SELECT r.code, p.name FROM referrals r LEFT JOIN providers p ON lower(p.email) = r.referrer_email
+      WHERE r.friend_email = ${em} AND r.status <> 'blocked' LIMIT 1`;
+    if (r[0]) refLine = 'Referred by ' + (r[0].name || 'a provider') + ' (code ' + r[0].code + ')';
+  } catch (e) {}
+  // Ad link values carried through checkout (signup_sources). Shown only when there is one.
+  try {
+    const sr = await q`SELECT source, campaign, content, ref_code FROM signup_sources WHERE email = ${em} LIMIT 1`;
+    const line = sourceLine(sr[0] && sr[0].source ? Object.assign({}, sr[0], { ref_code: null }) : null);
+    if (line) refLine = refLine ? refLine + '\n' + line : line;
+  } catch (e) {}
 
   // ── Founder email ──────────────────────────────────────────────────────────
   try {
@@ -124,8 +141,8 @@ async function notifyFounderPaid(q, email) {
     if (to) await sendEmail({
       to,
       subject: `💰 New PAID SlickChart provider: ${name || em}`,
-      text: `A provider just started a paid subscription.\n\nName: ${name || '(not given)'}\nEmail: ${em}\n\nThat's real revenue — congratulations! 🎉`,
-      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;"><div style="font-size:22px;margin-bottom:6px;">💰 New PAID provider</div><div style="font-size:14px;color:#333;line-height:1.9;"><b>Name:</b> ${escHtml(name || '(not given)')}<br><b>Email:</b> ${escHtml(em)}</div><div style="font-size:13px;color:#2a7;margin-top:10px;">That's real revenue — congratulations! 🎉</div></div>`
+      text: `A provider just started a paid subscription.\n\nName: ${name || '(not given)'}\nEmail: ${em}${refLine ? '\n' + refLine : ''}\n\nThat's real revenue — congratulations! 🎉`,
+      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;"><div style="font-size:22px;margin-bottom:6px;">💰 New PAID provider</div><div style="font-size:14px;color:#333;line-height:1.9;"><b>Name:</b> ${escHtml(name || '(not given)')}<br><b>Email:</b> ${escHtml(em)}${refLine ? '<br>' + escHtml(refLine).replace(/\n/g, '<br>') : ''}</div><div style="font-size:13px;color:#2a7;margin-top:10px;">That's real revenue — congratulations! 🎉</div></div>`
     });
   } catch (e) { console.error('[stripe-webhook] founder paid-notify email failed:', e && e.message || e); }
 
@@ -208,6 +225,10 @@ export default async function handler(req, res) {
           marketingOptIn: promo === 'opt_in' ? true : (promo === 'opt_out' ? false : undefined)
         });
       } else if (email) {
+        // A referral code used at checkout (lib/referral.js). Recorded BEFORE the upsert below, so a
+        // returning customer can still be told apart from a new one. Never throws.
+        const ref = await recordReferralFromCheckout(q, session);
+        await recordSignupSource(q, session, ref);
         await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, updated_at)
           VALUES (${email}, ${customerId}, ${subscriptionId}, 'active', now())
           ON CONFLICT (email) DO UPDATE SET
@@ -218,7 +239,15 @@ export default async function handler(req, res) {
         // subscription-activated branch below, so whichever event Stripe delivers first wins and the
         // push can't be lost to event ordering. Never blocks the webhook's 200.
         await notifyFounderPaid(q, email);
+        if (ref && ref.status === 'trial') {
+          let rs = null; try { rs = await getReferralSettings(q); } catch (e) {}
+          await notifySharer(ref.referrer_email, 'joined', { friend: ref.friend_first_name, rewardOnPayment: !rs || !!rs.ref_reward_on_payment });
+        }
       }
+    } else if (event.type === 'invoice.paid') {
+      // A referred friend's first payment credits the provider who shared the code, exactly once.
+      const r = await rewardOnInvoice(q, event.data.object);
+      if (r && r.rewarded) await notifySharer(r.row.referrer_email, 'rewarded', { friend: r.row.friend_first_name, cents: r.cents });
     } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
       const sub = event.data.object;
       const customerId = sub.customer;
@@ -280,6 +309,8 @@ export default async function handler(req, res) {
       // If THIS event is the one that made the provider active, ping the founder — deduped once-per-
       // provider, so it fires exactly once whether the checkout event or this one lands first.
       if (effStatus === 'active' && subEmail) await notifyFounderPaid(q, subEmail);
+      // A referred friend who cancels before ever paying: nobody waits on her credit.
+      if (effStatus === 'canceled') await markReferralCanceled(q, customerId);
     }
     res.status(200).json({ received: true });
   } catch (e) {

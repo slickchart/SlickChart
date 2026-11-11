@@ -1275,6 +1275,44 @@
   document.querySelectorAll('a[data-cta]').forEach(function(a){ a.setAttribute('href', STRIPE_LINK); });
   document.querySelectorAll('a[data-cta-year]').forEach(function(a){ a.setAttribute('href', STRIPE_LINK_YEAR); });
 
+  /* Referral codes (2026-11-11, lib/referral.js). slickchart.app/r/JENNIE17 (or ?ref=JENNIE17) fills
+     the friend's code into Stripe checkout, so she never has to type it. Remembered on this device for
+     60 days in case she comes back later. The key is deliberately NOT sc_*: those sync to an account. */
+  (function(){
+    var RX=/^[A-Za-z]{2,10}[0-9]{2,3}$/, code='', fromPath=false;
+    var m=location.pathname.match(/^\/r\/([^\/?#]+)\/?$/);
+    if(m&&RX.test(decodeURIComponent(m[1]))){ code=decodeURIComponent(m[1]).toUpperCase(); fromPath=true; }
+    if(!code){ try{ var qv=new URLSearchParams(location.search).get('ref'); if(qv&&RX.test(qv)) code=qv.toUpperCase(); }catch(e){} }
+    try{
+      if(code) localStorage.setItem('slickref', JSON.stringify({c:code,t:Date.now()}));
+      else { var sv=JSON.parse(localStorage.getItem('slickref')||'null'); if(sv&&sv.c&&RX.test(sv.c)&&Date.now()-sv.t<60*864e5) code=sv.c; }
+    }catch(e){}
+    /* Ad sources: utm_source / utm_campaign / utm_content from an ad link ride to Stripe as
+       client_reference_id = utm__{source}__{campaign}__{content} (lib/referral.js parseClientRef reads
+       it on checkout and stores it in signup_sources). Kept 60 days on this device, the newest ad wins. */
+    var src='';
+    try{
+      var sp=new URLSearchParams(location.search), clean=function(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,50); };
+      var us=clean(sp.get('utm_source')), uc=clean(sp.get('utm_campaign')), ut=clean(sp.get('utm_content'));
+      if(us||uc||ut){ src='utm__'+us+'__'+uc+'__'+ut; localStorage.setItem('slicksrc', JSON.stringify({s:src,t:Date.now()})); }
+      else { var ss=JSON.parse(localStorage.getItem('slicksrc')||'null'); if(ss&&/^utm__[a-z0-9_-]{0,170}$/.test(ss.s||'')&&Date.now()-ss.t<60*864e5) src=ss.s; }
+    }catch(e){}
+    if(!code&&!src) return;
+    if(fromPath){ try{ history.replaceState(null,'','/'+location.search+location.hash); }catch(e){} }
+    var withCode=function(u){ var x=u;
+      if(code) x+=(x.indexOf('?')<0?'?':'&')+'prefilled_promo_code='+encodeURIComponent(code);
+      if(src) x+=(x.indexOf('?')<0?'?':'&')+'client_reference_id='+encodeURIComponent(src);
+      return x; };
+    document.querySelectorAll('a[data-cta]').forEach(function(a){ a.setAttribute('href', withCode(STRIPE_LINK)); });
+    document.querySelectorAll('a[data-cta-year]').forEach(function(a){ a.setAttribute('href', withCode(STRIPE_LINK_YEAR)); });
+    if(!code) return;
+    var bar=document.createElement('div'); bar.id='refbar'; bar.setAttribute('role','status');
+    bar.style.cssText='position:relative;z-index:3;background:#0b1d1b;border-bottom:1px solid rgba(43,199,172,.4);color:#eaf6f4;text-align:center;padding:11px 16px;font-size:15px;line-height:1.45;';
+    bar.innerHTML='A friend shared SlickChart with you. Their code <b style="color:#2bc7ac;letter-spacing:.04em;"></b> is already added at checkout, so you get their friend reward.';
+    bar.querySelector('b').textContent=code;
+    document.body.insertBefore(bar, document.body.firstChild);
+  })();
+
   /* footer checklist capture -> /api/waitlist (the SlickChart list, separate from /free) */
   (function(){
     var f=document.getElementById('footsub'); if(!f)return;
