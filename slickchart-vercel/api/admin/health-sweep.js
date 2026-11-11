@@ -101,6 +101,17 @@ export function explainNoteDrafts(oldV, nowV, tomb, goneClients) {
 // A "prev-launch-cut-off" is logged at the START of a launch about the launch before it. That earlier
 // launch only died mid-launch if it never logged its boot timings ("boot-ms ... done"); if it did, the
 // app had fully opened and was closed later while in use. Reporting both as "mid-launch" was a false alarm.
+// Why a device's storage failed, in words, from its own report (builds from 2026-11-11 on).
+export function storageWhy(p) {
+  const bits = [];
+  const w = String((p && p.idbWhy) || '').slice(0, 140);
+  if (w) bits.push('the phone said: ' + w);
+  else if (p && p.idbWhy === '') bits.push('no error given');
+  if (p && p.idbOff) bits.push('switched off for this session after 3 failed opens');
+  if (p && p.diskFreeMB != null && p.diskQuotaMB) bits.push(p.diskFreeMB + ' MB free of ' + p.diskQuotaMB + ' MB' + (Number(p.diskFreeMB) < 50 ? ' (nearly full)' : ''));
+  return bits.length ? ' (' + bits.join('; ') + ')' : '';
+}
+
 export function cutOffKinds(events) {
   const ev = (Array.isArray(events) ? events : []).filter(e => e && e.e);
   let midLaunch = 0, whileOpen = 0, opened = null; // null = nothing seen yet in the window
@@ -262,7 +273,7 @@ export async function runSweep(q) {
       // 1 or 2 is a save still in its few-second delay when the report was taken (first live run).
       if ((p.unsent || 0) >= 5) bad.push(p.unsent + ' changes not yet saved to the account');
       if ((p.memOnly || 0) > 0) bad.push(p.memOnly + ' items held only in memory');
-      if (p.idbWorks === false) bad.push('device storage not working');
+      if (p.idbWorks === false) bad.push('device storage not working' + storageWhy(p));
       if (p.reloadFails) bad.push('screens failing to reload: ' + String(p.reloadFails).slice(0, 80));
       if ((p.evPollFails || 0) >= 3) bad.push('client submissions are not reaching it: the last ' + p.evPollFails + ' checks for new forms and check-ins failed (status ' + (p.evPollStatus || '?') + ')');
       if ((p.storageKB || 0) > 4300) bad.push('device storage nearly full (' + p.storageKB + ' KB of about 5000)');

@@ -354,7 +354,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-07b';
+const APP_BUILD='2026-11-11a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -6180,13 +6180,18 @@ async function _sendDeviceReport(){
     const hc=js('sc_client_homecare')||{};const cl=js('sc_clients');const br=js('sc_brand_colors')||{};
     let idbWorks=false;
     try{if(typeof _idb!=='undefined'&&_idb&&_idb.set){const k='devrep_'+Date.now();const w=await _idb.set(k,'1');const g=await _idb.get(k);idbWorks=(w!==false&&g==='1');try{await _idb.del(k);}catch(e){}}}catch(e){}
+    // Why it failed, and how full the phone's storage is (so a failure can be read, never asked about).
+    let idbWhy='',idbOff=false,diskFreeMB=null,diskQuotaMB=null;
+    try{if(typeof _idb!=='undefined'&&_idb&&_idb.info){const i=_idb.info();idbWhy=String(i.lastErr||'');idbOff=!!i.off;}}catch(e){}
+    try{if(navigator.storage&&navigator.storage.estimate){const est=await Promise.race([navigator.storage.estimate(),new Promise(function(r){setTimeout(function(){r(null);},2000);})]);
+      if(est&&est.quota){diskQuotaMB=Math.round(est.quota/1048576);diskFreeMB=Math.round(Math.max(0,est.quota-(est.usage||0))/1048576);}}}catch(e){}
     let lsBytes=0;try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);lsBytes+=(k.length+String(localStorage.getItem(k)||'').length)*2;}}catch(e){}
     const native=(typeof _isNativeApp==='function'&&_isNativeApp());
     const standalone=!!((window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone);
     const ua=navigator.userAgent||'';
     const report={build:APP_BUILD,kind:native?'installed app':(standalone?'home-screen app':'browser'),
       platform:/iPhone/.test(ua)?'iPhone':/iPad/.test(ua)?'iPad':/Android/.test(ua)?'Android':/Windows/.test(ua)?'Windows':/Mac/.test(ua)?'Mac':'other',
-      native:!!native,standalone:standalone,idbWorks:idbWorks,clientsGone:(function(){try{return (JSON.parse(localStorage.getItem('scl_clients_gone')||'[]')||[]).slice(-12).map(function(x){return x.id+'|'+x.why+'|'+x.at;}).join(';');}catch(e){return '';}})(),
+      native:!!native,standalone:standalone,idbWorks:idbWorks,idbWhy:idbWhy,idbOff:idbOff,diskFreeMB:diskFreeMB,diskQuotaMB:diskQuotaMB,clientsGone:(function(){try{return (JSON.parse(localStorage.getItem('scl_clients_gone')||'[]')||[]).slice(-12).map(function(x){return x.id+'|'+x.why+'|'+x.at;}).join(';');}catch(e){return '';}})(),
       summaryClients:Object.keys(ss).length,summaryEntries:ent,
       summariesOpen:(typeof sessionSummaries!=='undefined'&&sessionSummaries)?Object.keys(sessionSummaries).length:0,
       homecareClients:Object.keys(hc).length,
@@ -7454,7 +7459,9 @@ function loadNoteFmt(){try{const v=localStorage.getItem('sc_note_fmt');if(v&&not
 // undefined/false), so callers treat IndexedDB as best-effort and fall back to localStorage when
 // it's unavailable (private mode / very old browsers).
 const _idb=(function(){
-  let _p=null,_bad=false,_openFails=0;
+  let _p=null,_bad=false,_openFails=0,_lastErr='';
+  // Why storage last failed, for the device report (an error NAME and message from the browser, never data).
+  function _why(w,e){try{_lastErr=(w+(e&&(e.name||e.message)?': '+String(e.name||'')+(e.message?' '+String(e.message):''):'')).slice(0,140);}catch(x){}}
   // iOS closes a backgrounded app's IndexedDB connection and never tells the page in a way the old
   // code listened for. The cached connection then threw on every transaction, every op resolved to
   // undefined/false, and the app quietly ran on whatever was in memory — then on the next cold start
@@ -7465,7 +7472,7 @@ const _idb=(function(){
     if(_p)return _p;
     _p=new Promise(function(res,rej){
       try{
-        if(typeof indexedDB==='undefined'||!indexedDB){_bad=true;return rej();}
+        if(typeof indexedDB==='undefined'||!indexedDB){_bad=true;_why('no IndexedDB in this browser');return rej();}
         const rq=indexedDB.open('slickchart',1);
         rq.onupgradeneeded=function(){try{if(!rq.result.objectStoreNames.contains('kv'))rq.result.createObjectStore('kv');}catch(e){}};
         rq.onsuccess=function(){const d=rq.result;_openFails=0;
@@ -7475,9 +7482,9 @@ const _idb=(function(){
         // process behind a backgrounded app (WebKit bugs 197050, 235579, 273827). That is passing, not
         // permanent, so one failed open no longer switches IndexedDB off for the whole session (which
         // pushed every big value into the 5MB box). Three in a row still does.
-        rq.onerror=function(){_p=null;if(++_openFails>=3)_bad=true;rej();};
-        rq.onblocked=function(){_p=null;rej();};
-      }catch(e){_bad=true;rej();}
+        rq.onerror=function(){_p=null;_why('open failed',rq.error);if(++_openFails>=3)_bad=true;rej();};
+        rq.onblocked=function(){_p=null;_why('open blocked');rej();};
+      }catch(e){_bad=true;_why('open threw',e);rej();}
     });
     return _p;
   }
@@ -7486,10 +7493,10 @@ const _idb=(function(){
   function _once(mode,body){
     return _db().then(function(d){return new Promise(function(res,rej){
       let doneT=false;const fin=function(f,v){if(doneT)return;doneT=true;clearTimeout(tm);f(v);};
-      const tm=setTimeout(function(){fin(rej);},5000);
-      try{const t=d.transaction('kv',mode);t.onabort=function(){fin(rej);};t.onerror=function(){fin(rej);};
+      const tm=setTimeout(function(){_why('timed out');fin(rej);},5000);
+      try{const t=d.transaction('kv',mode);t.onabort=function(){_why('aborted',t.error);fin(rej);};t.onerror=function(){_why('failed',t.error);fin(rej);};
         body(t.objectStore('kv'),function(v){fin(res,v);},function(){fin(rej);},t);
-      }catch(e){fin(rej);}
+      }catch(e){_why('threw',e);fin(rej);}
     });});
   }
   function _op(mode,body,fallback){
@@ -7501,6 +7508,7 @@ const _idb=(function(){
   }
   return {
     available:function(){return !_bad && typeof indexedDB!=='undefined' && !!indexedDB;},
+    info:function(){return {lastErr:_lastErr,off:_bad,openFails:_openFails};},
     get:function(k){return _op('readonly',function(st,ok,bad){const rq=st.get(k);rq.onsuccess=function(){ok(rq.result);};rq.onerror=bad;},undefined);},
     set:function(k,v){return _op('readwrite',function(st,ok,bad,t){st.put(v,k);t.oncomplete=function(){ok(true);};},false);},
     // Enumerate stored keys. Needed to find lesson files whose course record is gone, which is the
@@ -34009,7 +34017,7 @@ function _recoverDeviceLines(j){
     L.push('  '+(r.platform||'device')+' · '+(r.kind||'?')+' · build '+(r.build||'?')+' · '+ago(d.at)+(r.email?(' · '+r.email):''));
     const short=(r.summaryEntries||0)<acctEntries;
     L.push('    summaries: '+(r.summaryEntries||0)+' on this device ('+(r.summaryClients||0)+' clients), '+acctEntries+' on the account ('+acctClients+' clients)'+(short?'  <<< THIS DEVICE IS SHOWING LESS THAN THE ACCOUNT':''));
-    L.push('    logo: '+(r.logo?'yes':'no')+' · clients open: '+(r.clientsOpen||0)+' · homecare: '+(r.homecareClients||0)+' clients · phone storage (IndexedDB): '+(r.idbWorks?'works':'NOT WORKING'));
+    L.push('    logo: '+(r.logo?'yes':'no')+' · clients open: '+(r.clientsOpen||0)+' · homecare: '+(r.homecareClients||0)+' clients · phone storage (IndexedDB): '+(r.idbWorks?'works':'NOT WORKING'+(r.idbWhy?' ('+r.idbWhy+')':''))+(r.diskFreeMB!=null?' · space the app may use: '+r.diskFreeMB+' MB free of '+r.diskQuotaMB+' MB':''));
     if(r.unsent)L.push('    changes waiting to reach the account: '+r.unsent+' (sent automatically next time it opens with signal)');
     if(r.memOnly)L.push('    >>> phone storage FULL: '+r.memOnly+' saved items could not be kept on this device (they reload from the account each launch)');
     if(r.reloadFails)L.push('    failed to reload: '+r.reloadFails);

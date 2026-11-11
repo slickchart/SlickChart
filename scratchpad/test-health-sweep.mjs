@@ -48,7 +48,8 @@ INSERT INTO square_connections (provider_id,merchant_id,expires_at) VALUES ('goo
 INSERT INTO notify_log (kind,subject,skipped,devices,sent,at) VALUES ('paid-signup','someone@new.com','',2,2,now()-interval '3 hours'),('provider-signup','someone@new.com','already announced by the paid-provider ping',0,0,now()-interval '3 hours'),('feedback','trouble@x.com','no push transport configured',0,0,now()-interval '3 hours');
 INSERT INTO feedback (provider_id,message,ts) VALUES ('bad','it broke',now()-interval '5 hours');
 INSERT INTO device_reports VALUES ('good','dev-good-1','{"build":"${CUR}","platform":"iPhone","kind":"installed app","unsent":2,"idbWorks":true}',now()),
-  ('bad','dev-bad-1','{"build":"2026-10-10a","platform":"Android","kind":"browser","unsent":7,"idbWorks":false,"reloadFails":"loadForms"}',now());
+  ('bad','dev-bad-1','{"build":"2026-10-10a","platform":"Android","kind":"browser","unsent":7,"idbWorks":false,"reloadFails":"loadForms"}',now()),
+  ('bad','dev-bad-2','{"build":"${CUR}","platform":"iPhone","kind":"installed app","idbWorks":false,"idbWhy":"open failed: UnknownError Connection to Indexed Database server lost. Refresh the page to try again","idbOff":true,"diskFreeMB":12,"diskQuotaMB":900}',now());
 INSERT INTO subscriptions (email,stripe_subscription_id,status,updated_at) VALUES ('healthy@ok.com','sub_1','active',now()-interval '20 days'),('trouble@x.com','sub_2','past_due',now()),('ghost@paid.com','sub_3','active',now()-interval '5 hours');
 CREATE TABLE nurture_sends (email text NOT NULL, seq text NOT NULL, step int NOT NULL, sent_at timestamptz DEFAULT now(), UNIQUE(email, seq, step));
 CREATE TABLE nurture_optout (email text PRIMARY KEY, ts timestamptz DEFAULT now());
@@ -94,7 +95,7 @@ await db.query("INSERT INTO providers (id,email,created_at) VALUES ('dupe','dupe
     for (const id of ['sq_D' + i, 'cD' + i]) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', [id, 'dupe', 't' + id, 'Same Person' + i, 'same' + i + '@c.com', t]);
     list['sq_D' + i] = { name: 'x' }; if (seen) list['cD' + i] = { name: 'x' }; }
   await db.query("INSERT INTO kv VALUES ('dupe','sc_clients',$1)", [JSON.stringify(list)]);
-  await db.query(`INSERT INTO device_reports VALUES ('dupe','dev-dupe','{"build":"2026-11-03a","dupesMerged":0,"dupesLeft":4,"dupesWhy":"notes 3, both links used 1"}',now())`); }
+  await db.query(`INSERT INTO device_reports VALUES ('dupe','dev-dupe','{"build":"${CUR}","dupesMerged":0,"dupesLeft":4,"dupesWhy":"notes 3, both links used 1"}',now())`); }
 // shared emails: 'other' has 30 old ones (family members), 'bad' gets 6 made today (same person twice)
 for (let i = 0; i < 30; i++) for (const n of ['Mum', 'Kid']) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', ['o' + i + n, 'other', 'to' + i + n, n + ' Fam' + i, 'fam' + i + '@home.com', now - 40 * 24 * H]);
 for (let i = 0; i < 6; i++) for (const k of ['a', 'b']) await db.query('INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ($1,$2,$3,$4,$5,$6)', ['b' + i + k, 'bad', 'tb' + i + k, 'Twice Person' + i, 'twice' + i + '@c.com', k === 'b' ? now - H : now - 20 * 24 * H]);
@@ -132,7 +133,11 @@ ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/
 ok(by['settings-empty'].items.length === 1 && /sc_availability/.test(by['settings-empty'].items[0]), 'hours saved as null are flagged; hours never set ({}) are not');
 ok(by['founder-alerts'].level === 'alert' && by['founder-alerts'].items.some(i => /feedback alert/.test(i)) && !by['founder-alerts'].items.some(i => /paid-signup|provider-signup/.test(i)), 'the skipped feedback alert is flagged; a good one and a deliberate de-dup are not', JSON.stringify(by['founder-alerts'].items));
 ok(by['events-size'].level === 'warn' && by['events-size'].items.length === 1 && /tro…@x.com: newest 10 events weigh 5.0 MB \(over the 4.5 MB limit/.test(by['events-size'].items[0]), 'an account whose submissions are too big for one download is flagged; the small one is not', JSON.stringify(by['events-size'].items));
-ok(/7 changes not yet saved/.test(by['device-health'].items.join()) && /storage not working/.test(by['device-health'].items.join()) && by['device-health'].items.length === 1, 'the failing device is flagged; 2 unsent (save in its delay) is not');
+ok(/7 changes not yet saved/.test(by['device-health'].items.join()) && /storage not working/.test(by['device-health'].items.join()) && by['device-health'].items.length === 2, 'the failing devices are flagged; 2 unsent (save in its delay) is not', JSON.stringify(by['device-health'].items));
+{ const it = by['device-health'].items.find(i => /…ad-2/.test(i)) || '';
+  ok(/the phone said: open failed: UnknownError Connection to Indexed Database server lost/.test(it) && /switched off for this session/.test(it) && /12 MB free of 900 MB \(nearly full\)/.test(it), 'a storage failure says why, and how much space is free', it);
+  const old = by['device-health'].items.find(i => /…ad-1/.test(i)) || '';
+  ok(/device storage not working(;|$)/.test(old), 'an older build with no reason still reads plainly', old); }
 ok(by['scheduled-jobs'].level === 'alert' && by['scheduled-jobs'].items.some(i => /cron-checkins: no run recorded/.test(i)) && !by['scheduled-jobs'].items.some(i => /cron-reminders/.test(i)), 'a job with no run is flagged once recording has started', JSON.stringify(by['scheduled-jobs'].items));
 ok(by['scheduled-jobs'].items.some(i => /cron-events: started 1x in the last day and never finished/.test(i)) && !by['scheduled-jobs'].items.some(i => /cron-events: no run recorded/.test(i)), 'a run that started and never finished is named as such', JSON.stringify(by['scheduled-jobs'].items));
 { const it = by['scheduled-jobs'].items.find(i => /cron-events: started/.test(i)) || '';
@@ -144,7 +149,7 @@ const _al = by['app-logs'].items;
 ok(_al.some(i => /^tro…/.test(i) && /signed out by the app 1x/.test(i)) && !_al.some(i => /^hea…/.test(i)), 'a sign-out in the launch log is flagged; one mid-launch close is not', JSON.stringify(_al));
 ok(!_al.some(i => /^swi…/.test(i)), 'closes AFTER the app finished opening (3x) are not called mid-launch', JSON.stringify(_al));
 ok(_al.some(i => /^stu…/.test(i) && /mid-launch 2x/.test(i)), 'launches that never finished opening are still flagged mid-launch', JSON.stringify(_al));
-ok(by['stale-builds'].items.length === 1 && /2026-10-10a/.test(by['stale-builds'].items[0]), 'the device on an old build is flagged');
+ok(by['stale-builds'].items.length === 1 && /2026-10-10a/.test(by['stale-builds'].items[0]), 'the device on an old build is flagged', JSON.stringify(by['stale-builds'].items));
 ok(by['phone-push'].items.length === 1 && /send failed: UNREGISTERED/.test(by['phone-push'].items[0]), 'a refused phone push is flagged, a link is not');
 ok(/\(last [A-Z][a-z]{2} \d\d \d\d:\d\d UTC\)$/.test(by['phone-push'].items[0] || ''), 'a phone push failure says when it last happened', by['phone-push'].items[0]);
 ok(by['new-setup'].items.length === 1 && /fre…@new.com/.test(by['new-setup'].items[0]), 'the new provider who never finished setup is flagged');

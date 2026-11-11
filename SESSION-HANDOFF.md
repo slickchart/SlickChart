@@ -9075,3 +9075,16 @@ Note: `scratchpad/sweep-crossdevice.mjs` named in CLAUDE.md §3 is not in the re
 **Not done, worth doing next:** the client page (`api/client-page.js`) is still sent `no-store`, 551 KB
 on every client open; the iOS app re-checks the page with the server on every open (no service worker in
 WKWebView), which only a native-shell change can avoid.
+
+## 2026-11-11 Build 2026-11-11a: the device report says WHY phone storage failed
+
+Ashley asked "why isnt the phone letting the app use its storage" about woo…'s iPhones (health sweep:
+"device storage not working", 1 item held only in memory, on 2 of 3 installed-app iPhones). The
+report only carried `idbWorks:false`, so nobody could say. `_idb` now keeps the browser's own error
+(`info().lastErr`, e.g. "open failed: UnknownError Connection to Indexed Database server lost") and
+whether it switched itself off after 3 failed opens; `_sendDeviceReport` adds `idbWhy`, `idbOff`,
+`diskFreeMB`, `diskQuotaMB` (navigator.storage.estimate, 2 s cap). The health sweep
+(`storageWhy()`) and the founder Recover clients screen print them. Their work is NOT at risk: a
+memory-only item reloads from the account each launch, and no unsent changes were reported.
+Tests: scratchpad/test-device-report-storage-why.mjs 8/8 Chromium and WebKit; test-health-sweep ALL
+PASS; device-report, safari-storage-hook, offload-stale pass in both engines.
