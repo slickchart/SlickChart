@@ -15,7 +15,7 @@ import { dbEnabled, sql } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
 import { ensureClientTables, upsertClient, logEvent, logEventOnce, genToken } from '../lib/clients.js';
 import { getBookingConfig, getServices, getHours, openSlots, toMins, isoDay, DAY_KEYS,
-         pickService, serviceMins, serviceDeposit, depositLinkFor } from '../lib/booking.js';
+         pickService, serviceMins, serviceDeposit, depositLinkFor, squareBookInstant } from '../lib/booking.js';
 import { sendEmail, trustedOrigin, bookingGuestEmailHtml, bookingGuestEmailText,
          bookingProviderEmailHtml, bookingProviderEmailText } from '../lib/email.js';
 import { getKVValue } from '../lib/db.js';
@@ -146,9 +146,22 @@ export default async function handler(req, res) {
     // A fixed key for this person + slot, so a retry, a double tap or a second tab records ONE request
     // and sends one set of emails.
     const bkKey = 'bk' + crypto.createHash('sha256').update([prov.id, norm(email), date, time, treatment].join('|')).digest('hex').slice(0, 24);
+    // Booked instantly: put it in HER Square now, so the slot is taken there too and it reaches the
+    // Google Calendar Square feeds. Keyed on this person + slot, so a retry or double tap gets the same
+    // Square booking back rather than a second one. If Square will not take it, the booking still
+    // stands here and her app finishes it from her side (squareBookingId tells it whether to).
+    let squareBookingId = '';
+    if (confirmed) {
+      try {
+        const sq = await squareBookInstant(prov.id, { date, time, serviceName: treatment, name, email, phone, key: bkKey });
+        if (sq && sq.ok && sq.id) squareBookingId = sq.id;
+        else if (sq && sq.why && sq.why !== 'no square') console.error('[book-request] not added to Square:', sq.why);
+      } catch (e) { console.error('[book-request] Square booking failed:', e && e.message); }
+    }
     const logged = await logEventOnce(prov.id, clientId, 'booking', {
       treatment, date, dateLabel: lbl, time, dur: mins,
-      note, via: 'booking-link', autoConfirmed: confirmed
+      note, via: 'booking-link', autoConfirmed: confirmed,
+      squareBookingId: squareBookingId || undefined
     }, bkKey);
     const firstTime = !!(logged && logged.inserted);
 

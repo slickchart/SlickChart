@@ -612,7 +612,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-11c';
+const APP_BUILD='2026-11-11d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3864,6 +3864,10 @@ function _mergeBookings(serverStr,localStr){
       else if(newD&&curD&&(Number(b.decidedAt)||0)>(Number(cur.decidedAt)||0))win=b;
       const merged=Object.assign({},win);
       merged.seen=!!(cur.seen||b.seen);                              // cleared anywhere = cleared
+      // Sent out to Square/Google anywhere = sent (an instant booking from her link, _instantBookingsOut).
+      // Without this a stale device would clear the mark and the next poll would offer it again.
+      if(cur.outSent||b.outSent)merged.outSent=true;
+      if(!merged.squareBookingId&&(cur.squareBookingId||b.squareBookingId))merged.squareBookingId=cur.squareBookingId||b.squareBookingId;
       out[idx[b.id]]=merged;
     };
     lv.forEach(take);sv.forEach(take);
@@ -33753,7 +33757,7 @@ async function syncClientEvents(){
         // Booked INSTANTLY by her booking link: the person was already told "Booked", so it is a
         // confirmed visit on her calendar, not a request waiting on her (it used to sit as pending).
         const _instant=!!(payload.autoConfirmed===true);
-        if(_instant){b.status='confirmed';b.decidedAt=Date.now();}
+        if(_instant){b.status='confirmed';b.decidedAt=Date.now();b.instant=true;if(payload.squareBookingId)b.squareBookingId=String(payload.squareBookingId);}
         // The REQUEST LANDS FIRST, and the flag that gets it pushed to the account is set before
         // anything cosmetic runs. The notification formats a date and touches the feed; if any of
         // that throws, the provider must still end up with the request. Getting this order wrong is
@@ -33963,6 +33967,10 @@ async function syncClientEvents(){
     // anything missing. Idempotent — if the chart already has it, this is a no-op — so it costs nothing
     // when there's nothing to heal, and it recovers stranded submissions on whichever device polls next.
     try{ if(_reconcileEventAttachments(j.events)){ touchedClients=true; touchedForms=true; touchedCheckins=true; } }catch(e){}
+    // Instant bookings from her link have to reach Square / Google, including ones that came in
+    // before this was wired (they sat only on her SlickChart calendar). Runs after the bookings above
+    // are stored; never awaited, so a slow Square cannot hold up the rest of this pass.
+    try{_instantBookingsOut(j.events);}catch(e){}
     if(touchedNotif)updateBadge();
     if(touchedMsgs)try{saveMessages();}catch(e){}
     if(touchedCheckins)try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}
@@ -35772,7 +35780,7 @@ function _reqToLocalAppt(b){
     if(typeof manualAppts==='undefined'||!Array.isArray(manualAppts))return false;
     const same=function(a){return a&&String(a.client||'')===String(b.client||'')&&a.date===b.date&&String(a.time||'')===String(b.time||'');};
     if(manualAppts.some(same))return true;
-    manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),clientId:b.clientId||undefined,
+    manualAppts.unshift({id:(b&&b.id?('ma_req_'+String(b.id).replace(/[^A-Za-z0-9_-]/g,'').slice(-40)):('ma_'+Math.random().toString(36).slice(2,10))),clientId:b.clientId||undefined,
       client:b.client,tx:b.treatment,date:b.date,dateLabel:fmtBookingDate(b),time:b.time,
       ic:'var(--accent-strong)',_ts:Date.now()});
     _saveManualAppts();                       // also schedules the Google push
@@ -35864,6 +35872,61 @@ async function _reqInSquare(b,startAt){
       return !nm||String(a.client||'').trim().toLowerCase()===nm;
     });
   }catch(e){return false;}
+}
+// ── An INSTANT booking from her link has to leave the app too (2026-11-11) ──────────────────────
+// confirmBooking() sends a request she confirms out through _reqSyncOut. A booking her link took
+// INSTANTLY never went through confirmBooking, so it only ever called addConfirmedAppt(): the
+// person was told "Booked", it showed on her SlickChart calendar, and it reached neither her Square
+// nor her Google. The server now books it in her Square as it is made (payload.squareBookingId);
+// this finishes the job from her side for everything else: no Square (it goes to Google through
+// manualAppts), Square refused, or an instant booking that came in before this existed.
+//
+// Safe to run on every poll and on every device: each booking is done once (b.outSent, synced in
+// sc_bookings), Square is asked first whether it already has it, the Square call is keyed on the
+// booking id so two devices get one booking, and the Google fallback de-dupes by client + time.
+// Never during boot: until the account is read, manualAppts holds this device's copy, not hers.
+var _instantOutBusy=Object.create(null),_instantOutDone=Object.create(null);   // once per booking per session, whatever the merge does
+function _instantBookingsOut(events){
+  if(typeof Cloud!=='undefined'&&Cloud&&(Cloud._booting||(Cloud.token&&!Cloud._pulledOnce)))return;   // the next poll does it
+  const inst=Object.create(null);
+  (Array.isArray(events)?events:[]).forEach(function(ev){
+    if(ev&&ev.kind==='booking'&&ev.payload&&ev.payload.autoConfirmed===true)inst[ev.id]=ev.payload;
+  });
+  let all=null;try{all=SlickBridge.getBookings()||[];}catch(e){return;}
+  const today=new Date();today.setHours(0,0,0,0);
+  all.forEach(function(b){
+    if(!b||!b.id||b.outSent||b.status!=='confirmed'||_instantOutBusy[b.id]||_instantOutDone[b.id])return;
+    const p=inst[b.id];
+    if(!p&&!b.instant)return;                      // a request she confirmed: confirmBooking sent it
+    if(p&&p.squareBookingId&&!b.squareBookingId)b.squareBookingId=String(p.squareBookingId);
+    let at=null;try{at=b.date?new Date(b.date+'T12:00:00'):null;}catch(e){}
+    if(!at||isNaN(at)||at<today)return;            // past or undated: nothing to put on a calendar now
+    _instantOutBusy[b.id]=1;
+    _instantBookingOut(b).then(function(){_instantOutDone[b.id]=1;},function(){}).then(function(){delete _instantOutBusy[b.id];});
+  });
+}
+async function _instantBookingOut(b){
+  const done=function(){
+    try{const all=SlickBridge.getBookings()||[];const x=all.find(function(y){return y&&y.id===b.id;});
+      if(x){x.outSent=true;if(b.squareBookingId)x.squareBookingId=b.squareBookingId;SlickBridge.setBookings(all);}}catch(e){}
+  };
+  if(b.squareBookingId){try{if(typeof _loadSquareAppts==='function')_loadSquareAppts(true);}catch(e){}done();return;}
+  const startAt=_reqStartISO(b);
+  if(!startAt){done();return;}
+  if(typeof _apptsLive==='function'&&_apptsLive()){
+    // Already in Square (the server's call landed but its answer was lost, or she added it by hand).
+    if(await _reqInSquare(b,startAt)){done();return;}
+    // Something else already sits in her Square at that exact minute (she may have added this one by
+    // hand under another name). Booking over it would double-book her, so ask her instead.
+    try{
+      const t=new Date(startAt).getTime();
+      if(typeof squareAppts!=='undefined'&&Array.isArray(squareAppts)&&squareAppts.some(function(a){return a&&a.at&&!isNaN(a.at)&&Math.abs(a.at.getTime()-t)<=60000;})){
+        _reqSquareMissed(b,'Something is already in your Square at that time');done();return;
+      }
+    }catch(e){}
+  }
+  await _reqSyncOut(b);
+  done();
 }
 function confirmBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;

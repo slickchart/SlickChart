@@ -10,7 +10,7 @@
 // from the chosen date + time before calling.
 //
 // Requires the token to have "Appointments (write)" + "Customers (write/read)".
-import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId, squareIdemKey } from '../../lib/square.js';
 import { sendEmail } from '../../lib/email.js';
 import { logSquareCreate } from '../../lib/db.js';
 
@@ -83,7 +83,7 @@ export default async function handler(req, res) {
         const parts = name.split(/\s+/).filter(Boolean);
         // Keyed off the booking's own key, so a retry finds the customer the first try made instead of
         // creating a second one (and then failing the booking with "idempotency key reused").
-        const ck = String(body.idempotencyKey || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 43);
+        const ck = squareIdemKey(body.idempotencyKey, 43);
         const created = await sf('/v2/customers', {
           method: 'POST',
           body: {
@@ -109,7 +109,7 @@ export default async function handler(req, res) {
 
     // Prefer the client's stable key so a retried booking (lost response, tap-after-error) resolves
     // to the SAME appointment instead of creating a duplicate. Fall back to a generated one.
-    const clientKey = String(body.idempotencyKey || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 45);
+    const clientKey = squareIdemKey(body.idempotencyKey, 45);
     const bookKey = clientKey || ('sc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
     const result = await sf('/v2/bookings', {
       method: 'POST',

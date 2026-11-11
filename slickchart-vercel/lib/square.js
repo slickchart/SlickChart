@@ -471,6 +471,18 @@ export async function listBookableServices(token) {
 // her app published; her Square may call the same thing "Signature Facial \u2014 60 min". Exact first,
 // then either side containing the other, then nothing — never a wrong guess, because booking the
 // wrong service books the wrong duration.
+// Square idempotency keys are capped at 45 characters here. Cutting a longer key to 45 used to make
+// DIFFERENT bookings share a key: a booking-link request id is "ev_idem_<provider>_<client>_<hash>",
+// so its first 45 characters are the same for every request that client ever makes, and the second
+// one confirmed came back from Square as the first (or "key reused"). A short key is kept exactly as
+// it was, so a retry of something already sent still matches; a long one is hashed, never cut.
+export function squareIdemKey(raw, max = 45) {
+  const safe = String(raw || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe) return '';
+  if (safe.length <= max) return safe;
+  return 'h' + crypto.createHash('sha256').update(safe).digest('hex').slice(0, max - 1);
+}
+
 export function matchSquareService(services, name) {
   const want = String(name || '').trim().toLowerCase();
   if (!want) return null;

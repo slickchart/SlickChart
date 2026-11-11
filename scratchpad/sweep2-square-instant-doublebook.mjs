@@ -18,7 +18,7 @@ fs.writeFileSync(path.join(root, 'lib', 'db.js'), `
 export const KV = {};
 export function dbEnabled(){ return true; }
 export async function getKVValue(o,k){ return KV[o+'|'+k] ?? null; }
-export async function ensureProvidersTable(){} export async function ensureSquareCreateLog(){}
+export async function ensureProvidersTable(){} export async function ensureSquareCreateLog(){} export async function logSquareCreate(){}
 export function sql(){ return () => Promise.resolve([]); }
 `);
 fs.writeFileSync(path.join(root, 'lib', 'auth.js'), 'export function verifyToken(){return null;}\nexport async function sessionFromReq(){return null;}\nexport async function isSessionValid(){return true;}\nexport async function sessionOk(){return true;}\n');
