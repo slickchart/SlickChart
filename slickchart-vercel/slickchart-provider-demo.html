@@ -612,7 +612,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-11d';
+const APP_BUILD='2026-11-11e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -35790,8 +35790,16 @@ function _reqToLocalAppt(b){
 }
 // Never fail silently. The whole bug was an appointment that looked confirmed and went nowhere, so
 // when Square will not take it, say so and offer the sheet that can finish the job, pre-filled.
-function _reqSquareMissed(b,why){
+function _reqSquareMissed(b,why,quiet){
   try{
+    // From a background poll (an instant booking) a pop-up would land in the middle of whatever she
+    // is typing. Put it in her notifications instead, with a toast; the card there opens Requests.
+    if(quiet){
+      try{pushBookingNotif({icon:'ti-calendar-x',col:'var(--p-red-bg)',ic:'var(--p-red)',title:'Not added to Square',
+        body:(b.client||'A client')+' \u00b7 '+(b.treatment||'Appointment')+' \u00b7 '+fmtBookingDate(b)+' '+(b.time||'')+'. '+(why||'Square would not take it')+'. It is on your SlickChart calendar; add it in Square too.'});}catch(e){}
+      try{if(typeof proToast==='function')proToast('A booking was not added to Square');}catch(e){}
+      return;
+    }
     let email='';try{if(b.clientId&&CL[b.clientId])email=CL[b.clientId].email||'';}catch(e){}
     const msg=(why||'Square would not take it')+'. It is saved on your SlickChart calendar. Open Book in Square to add it there too?';
     if(typeof confirmModal==='function'){
@@ -35801,7 +35809,8 @@ function _reqSquareMissed(b,why){
     }else if(typeof proToast==='function')proToast('Confirmed, but not added to Square');
   }catch(e){}
 }
-async function _reqSyncOut(b){
+async function _reqSyncOut(b,o){
+  const quiet=!!(o&&o.quiet);
   const startAt=_reqStartISO(b);
   // No parseable date/time means nothing can be booked anywhere. Leave it as the in-app record it
   // already is rather than inventing a time for it.
@@ -35821,7 +35830,7 @@ async function _reqSyncOut(b){
   const teamMemberId=(svc&&svc.teamMemberIds&&svc.teamMemberIds[0])||(tms[0]&&tms[0].id)||'';
   if(!svc||!teamMemberId){
     _reqToLocalAppt(b);
-    _reqSquareMissed(b,svc?'No bookable team member in your Square':'No Square service matches "'+(b.treatment||'')+'"');
+    _reqSquareMissed(b,svc?'No bookable team member in your Square':'No Square service matches "'+(b.treatment||'')+'"',quiet);
     return;
   }
   let email='';try{if(b.clientId&&CL[b.clientId])email=CL[b.clientId].email||'';}catch(e){}
@@ -35852,7 +35861,7 @@ async function _reqSyncOut(b){
       return;
     }
     _reqToLocalAppt(b);
-    _reqSquareMissed(b,(e&&e.message)||'Square would not take it');
+    _reqSquareMissed(b,(e&&e.message)||'Square would not take it',quiet);
   }
 }
 // Did the booking actually land, whatever the response said? Re-reads Square rather than guessing
@@ -35902,31 +35911,49 @@ function _instantBookingsOut(events){
     let at=null;try{at=b.date?new Date(b.date+'T12:00:00'):null;}catch(e){}
     if(!at||isNaN(at)||at<today)return;            // past or undated: nothing to put on a calendar now
     _instantOutBusy[b.id]=1;
-    _instantBookingOut(b).then(function(){_instantOutDone[b.id]=1;},function(){}).then(function(){delete _instantOutBusy[b.id];});
+    // ONE AT A TIME. Each Square booking reloads her Square appointments, and while that reload runs
+    // _apptsLive() is false, so a second booking started alongside went to Google only.
+    _instantOutChain=_instantOutChain.then(function(){return _instantBookingOut(b);})
+      .then(function(sent){if(sent)_instantOutDone[b.id]=1;},function(){})
+      .then(function(){delete _instantOutBusy[b.id];});
   });
+}
+var _instantOutChain=Promise.resolve();
+// Wait (bounded) for her Square appointments to finish loading, so "is Square live" is a real answer.
+async function _sqWaitSettled(){
+  try{if(typeof _sqApptsState!=='undefined'&&_sqApptsState==='idle'&&typeof _loadSquareAppts==='function')_loadSquareAppts();}catch(e){}
+  for(let i=0;i<40;i++){
+    if(typeof _sqApptsState==='undefined'||(_sqApptsState!=='loading'&&_sqApptsState!=='idle'))return;
+    await new Promise(function(r){setTimeout(r,500);});
+  }
 }
 async function _instantBookingOut(b){
   const done=function(){
     try{const all=SlickBridge.getBookings()||[];const x=all.find(function(y){return y&&y.id===b.id;});
       if(x){x.outSent=true;if(b.squareBookingId)x.squareBookingId=b.squareBookingId;SlickBridge.setBookings(all);}}catch(e){}
   };
-  if(b.squareBookingId){try{if(typeof _loadSquareAppts==='function')_loadSquareAppts(true);}catch(e){}done();return;}
+  if(b.squareBookingId){try{if(typeof _loadSquareAppts==='function')_loadSquareAppts(true);}catch(e){}done();return true;}
   const startAt=_reqStartISO(b);
-  if(!startAt){done();return;}
+  if(!startAt){done();return true;}
+  await _sqWaitSettled();
+  // Square is connected but did not answer just now: try again on a later poll rather than send it
+  // to Google only (Square would then never have it, and her Square could sell the slot).
+  if(typeof _sqApptsState!=='undefined'&&(_sqApptsState==='loading'||(_sqApptsState==='error'&&typeof _sqApptsErr!=='undefined'&&_sqApptsErr!=='nosquare')))return false;
   if(typeof _apptsLive==='function'&&_apptsLive()){
     // Already in Square (the server's call landed but its answer was lost, or she added it by hand).
-    if(await _reqInSquare(b,startAt)){done();return;}
+    if(await _reqInSquare(b,startAt)){done();return true;}
     // Something else already sits in her Square at that exact minute (she may have added this one by
     // hand under another name). Booking over it would double-book her, so ask her instead.
     try{
       const t=new Date(startAt).getTime();
       if(typeof squareAppts!=='undefined'&&Array.isArray(squareAppts)&&squareAppts.some(function(a){return a&&a.at&&!isNaN(a.at)&&Math.abs(a.at.getTime()-t)<=60000;})){
-        _reqSquareMissed(b,'Something is already in your Square at that time');done();return;
+        _reqSquareMissed(b,'Something is already in your Square at that time',true);done();return true;
       }
     }catch(e){}
   }
-  await _reqSyncOut(b);
+  await _reqSyncOut(b,{quiet:true});
   done();
+  return true;
 }
 function confirmBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;

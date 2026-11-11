@@ -758,6 +758,7 @@ saved anywhere", not "does this always call that".
 | `_sqLoadSlots` | `/api/square/availability` | direct |
 | `_sqRenderConnState` | `/api/square/connect` | via `_sqConnect` |
 | `_sqRenderConnState` | `/api/square/connection` | via `_sqConnState` |
+| `_sqWaitSettled` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_sqp_all` | `/api/square/delete-customers` | via `_sqp_execute` |
 | `_sqp_confirm` | `/api/clients` | via `_serverDeleteClients` |
 | `_sqp_confirm` | `/api/square/appointments` | via `_syncSquareClientsNow` |

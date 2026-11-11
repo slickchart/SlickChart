@@ -9146,7 +9146,7 @@ health sweep, so a missed webhook cannot hide one. The sweep's top-level `trials
 masked email + Stripe feedback), counts and the conversion rate. Test: `scratchpad/test-health-sweep.mjs`
 (PGLITE=<dir with @electric-sql/pglite>).
 
-## Instant bookings from her link now reach Square and Google (2026-11-11, build 2026-11-11d)
+## Instant bookings from her link now reach Square and Google (2026-11-11, build 2026-11-11e)
 
 Found while researching the AI receptionist (code reading), then proven: an INSTANT booking from
 `/book/<slug>` told the person "Booked" and showed on her SlickChart calendar, but never reached her
@@ -9165,6 +9165,13 @@ Square, so Square could sell it again.
   otherwise `_reqSyncOut` (Square, or Google via `manualAppts` with id `ma_req_<booking id>` so two
   devices merge to one). Also backfills older instant bookings still in the future. `outSent` and
   `squareBookingId` are sticky in `_mergeBookings`.
+- **One at a time (11e):** each Square booking reloads her appointments and `_apptsLive()` is false
+  while that runs, so a second booking sent alongside went to Google only. They now go through one
+  queue (`_instantOutChain`) and wait for Square to settle (`_sqWaitSettled`, bounded 20 s). Square
+  connected but erroring = try again next poll, never Google-only. A miss is a "Not added to Square"
+  item in her notifications plus a toast (`_reqSquareMissed(b,why,quiet)`), never a pop-up from a
+  background poll. (Careful: `_sqSettled` already exists as a sync helper; a second declaration
+  silently loses to the later one.)
 - **Side fix:** Square idempotency keys longer than 45 chars were CUT, so every booking-link request
   from the same client shared one key (`req-ev_idem_<provider>_<client>...`): the second one she
   confirmed came back as the first. `squareIdemKey()` (lib/square.js) hashes long keys; short keys are

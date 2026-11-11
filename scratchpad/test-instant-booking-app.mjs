@@ -33,8 +33,16 @@ async function run(label, { events, live, squareHas, localBookings, polls = 2 })
       if (path === '/api/square/book') return { ok: true, booking: { id: 'BKAPP' } };
       return {};
     };
-    window._apptsLive = function () { return !!cfg.live; };
-    window._loadSquareAppts = async function () { squareAppts = cfg.squareHas ? [{ at: _apptWhen(cfg.day, '10:00 AM'), client: 'Someone Else', tx: 'Wax', dur: 30 }] : []; };
+    // Like the real loader: 'loading' while Square answers (that window is what sent a second booking
+    // to Google only), then 'ok'; with no Square connected, an error that says so.
+    window._loadSquareAppts = async function () {
+      if (_sqApptsState === 'loading') return;
+      if (!cfg.live) { _sqApptsState = 'error'; _sqApptsErr = 'nosquare'; squareAppts = null; return; }
+      _sqApptsState = 'loading'; await new Promise(r => setTimeout(r, 400));
+      squareAppts = cfg.squareHas ? [{ at: _apptWhen(cfg.day, '10:00 AM'), client: 'Someone Else', tx: 'Wax', dur: 30 }] : [];
+      _sqApptsState = 'ok';
+    };
+    _sqApptsState = 'idle';
     window.confirmModal = function (o) { modals.push((o && o.title) || ''); };
     window._gcalPushSoon = function () {};
   }, { live, squareHas, day: DAY });
@@ -42,8 +50,9 @@ async function run(label, { events, live, squareHas, localBookings, polls = 2 })
   const out = await p.evaluate(async (cfg) => {
     const calls = window.__calls, modals = window.__modals;
     for (let i = 0; i < cfg.polls; i++) { try { syncClientEvents._last = null; } catch (e) {} await syncClientEvents(); await new Promise(r => setTimeout(r, 900)); }
+    try { await _instantOutChain; } catch (e) {} await new Promise(r => setTimeout(r, 300));
     const bks = SlickBridge.getBookings();
-    return { books: calls.filter(c => c.path === '/api/square/book').map(c => c.body), modals, bks: bks.map(b => ({ id: b.id, status: b.status, outSent: !!b.outSent, sq: b.squareBookingId || '' })),
+    return { notes: notifFeed.filter(n => n.title === 'Not added to Square').length, books: calls.filter(c => c.path === '/api/square/book').map(c => c.body), modals, bks: bks.map(b => ({ id: b.id, status: b.status, outSent: !!b.outSent, sq: b.squareBookingId || '' })),
       manual: manualAppts.filter(a => a.client === 'Ann One').map(a => a.id + '|' + a.date + '|' + a.time), confirmed: confirmedAppts.filter(a => a.client === 'Ann One').length };
   }, { live, squareHas, polls, day: DAY });
   out.errs = errs; await ctx.close(); return out;
@@ -69,8 +78,12 @@ r = await run('a plain request', { events: [ev('evF', { autoConfirmed: false })]
 check('a request she has not confirmed is not sent anywhere', r.books.length === 0 && r.bks[0] && r.bks[0].status === 'pending', JSON.stringify(r));
 
 r = await run('something already at that time', { events: [ev('evG')], live: true, squareHas: true });
-check('something already in Square at that time: no double-book, she is asked', r.books.length === 0 && r.modals.includes('Not added to Square'), JSON.stringify(r));
-check('no page errors', !r.errs.length, r.errs.join(' | '));
+check('something already in Square at that time: no double-book, she is told', r.books.length === 0 && r.notes === 1, JSON.stringify(r));
+check('...in her notifications, never a pop-up over her work', r.modals.length === 0, JSON.stringify(r.modals));
+const errsG = r.errs;
+r = await run('three at once', { events: [ev('evH1', {}, DAY), ev('evH2', {}, DAY), ev('evH3', {}, DAY)].map((e, i) => { e.payload.time = ['10:00 AM', '1:00 PM', '3:00 PM'][i]; return e; }), live: true });
+check('several at once: EVERY one reaches Square (not just the first)', r.books.length === 3 && r.manual.length === 0 && r.bks.every(b => b.outSent), JSON.stringify({ books: r.books.map(b => b.idempotencyKey), manual: r.manual }));
+check('no page errors', !r.errs.length && !errsG.length, r.errs.concat(errsG).join(' | '));
 
 await br.close();
 let fail = 0; for (const x of R) { console.log((x.pass ? 'PASS ' : 'FAIL ') + x.n + (x.pass ? '' : '  ' + x.d)); if (!x.pass) fail++; }
