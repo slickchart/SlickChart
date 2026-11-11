@@ -612,7 +612,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-11a';
+const APP_BUILD='2026-11-11b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -9456,14 +9456,14 @@ function nav(screen,data){
   }
   try{if(typeof _flushSettingsEdits==='function')_flushSettingsEdits();}catch(e){}
   try{if(typeof _savePersistenceSweep==='function')_savePersistenceSweep();}catch(e){}
-  const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Photo consults',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export Data','reports':'Reports','booking-link':'Booking link','reminders':'Reminders'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Photo consults',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export Data','reports':'Reports','booking-link':'Booking link','refer':'Refer a friend','reminders':'Reminders'};
   document.getElementById('tt').innerHTML='Slick<span class="brandc">Chart</span>';
   document.title='SlickChart' + (titles[screen] ? ', '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
   const routes={
     home:renderHome,clients:renderClients,forms:renderForms,messages:renderMessages,
     pro:renderMore,more:renderMore,walkthrough:renderWalkthrough,account:renderAccount,branding:renderBranding,
-    'biz-info':renderBizInfo,'business-branding':renderBusinessBranding,'booking-link':renderBookingLink,'security-billing':renderAccountBilling,'delete-account':renderDeleteAccount,'team-access':renderTeamAccess,'notifications':renderNotifications,'notifications-feed':renderNotifFeed,'integrations':renderIntegrations,'square-sync':renderSquareSync,'square-guide':renderSquareGuide,
+    'biz-info':renderBizInfo,'business-branding':renderBusinessBranding,'booking-link':renderBookingLink,'refer':renderRefer,'security-billing':renderAccountBilling,'delete-account':renderDeleteAccount,'team-access':renderTeamAccess,'notifications':renderNotifications,'notifications-feed':renderNotifFeed,'integrations':renderIntegrations,'square-sync':renderSquareSync,'square-guide':renderSquareGuide,
     shop:renderShop,partners:renderPartners,learn:renderLearn,virtual:renderVirtual,'vc-inbox':renderVcInbox,'routine-builder':renderRoutineBuilder,
     protocols:renderProtocols,automations:()=>{renderMessages();setTimeout(()=>showMsgTab('autos'),0);},
     vault:renderVault,inventory:renderInventory,vendors:renderVendors,
@@ -10114,6 +10114,7 @@ function renderHome(){
       ];
     })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${v==null?l+': loading':l+': '+v+', '+s}" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:14px;color:var(--p-mut);margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v==null?'<span class="sk sk-num"></span>':v}</div><div style="font-size:14px;color:var(--p-mut);">${s==null?'<span class="sk sk-sub"></span>':s}</div></button>`).join('')}
   </div>
+  <div id="ref-home-slot">${(function(){try{return _refHomeCardHTML();}catch(e){return '';}})()}</div>
   ${(aiEnabled&&!_dayRecapDismissedToday()&&_dayRecapHasContent())?`<div id="day-recap-card" style="margin:0 16px 10px;">${_dayRecapCardHTML()}</div>`:''}
   ${(function(){
     // One unified "Needs your attention" heading over ALL attention items. Drive BOTH the heading and the
@@ -18378,6 +18379,122 @@ function _bookOpenPreview(){
   const u=_bookFull();if(!u){_setConsultSlug();return;}
   try{window.open(u,'_blank','noopener');}catch(e){if(typeof proToast==='function')proToast('Open '+u);}
 }
+// ── Refer a friend: "give a month, get a month" (2026-11-11, lib/referral.js, api/referral.js) ─────
+// Her own code (JENNIE17) and link, made by the server the first time she looks. Nothing here is a
+// synced sc_* key: the code and the results live on the server, so every device shows the same thing.
+// The Home card's "Not now" is per device (slickrefhome), and the code stays under Settings.
+let _refInfo=null,_refLoading=null,_refTried=false,_refTok='';
+// Another account signed in on this page: forget the previous account's code, never show it.
+function _refOwnerCheck(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(tok!==_refTok){_refTok=tok;_refInfo=null;_refTried=false;}
+}
+function _refLoad(){
+  _refOwnerCheck();
+  if(_refLoading)return _refLoading;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){_refTried=true;return Promise.resolve(null);}
+  _refTried=true;
+  _refLoading=fetch('/api/referral',{headers:{'Authorization':'Bearer '+tok}})
+    .then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(j=>{
+      _refLoading=null;
+      if(tok!==_refTok)return null;
+      if(j&&j.ok)_refInfo=j;else if(j&&j.enabled===false)_refInfo={enabled:false};
+      try{const sl=document.getElementById('ref-home-slot');if(sl)sl.innerHTML=_refHomeCardHTML(true);}catch(e){}
+      try{if(_navCur&&_navCur.screen==='refer')renderRefer();}catch(e){}
+      return _refInfo;
+    });
+  return _refLoading;
+}
+function _refFriendText(i){
+  const p=(i&&i.friendReward&&i.friendReward.pct)||100,m=(i&&i.friendReward&&i.friendReward.months)||1;
+  const span=m===1?'first month':'first '+m+' months';
+  return p>=100?('their '+span+' free'):(p+'% off their '+span);
+}
+function _refSharerText(i){
+  const m=(i&&i.sharerMonths)||0;
+  if(!m)return '';
+  return (m===1?'a free month':m+' free months')+' '+(i.rewardOnPayment?'once they are paying':'when their free trial ends');
+}
+function _refHomeCardHTML(fromLoad){
+  try{
+    if(localStorage.getItem('slickrefhome')==='hidden')return '';
+    _refOwnerCheck();
+    if(!_refInfo){if(!fromLoad&&!_refTried)setTimeout(function(){try{_refLoad();}catch(e){}},2500);return '';}
+    if(!_refInfo.enabled||!_refInfo.showOnHome||!_refInfo.code)return '';
+    const sh=_refSharerText(_refInfo);
+    return `<div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:14px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><i class="ti ti-gift" aria-hidden="true" style="font-size:20px;color:var(--accent-strong);"></i><div style="font-size:17px;font-weight:600;color:var(--p-ink);">Give a month, get a month</div></div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:10px;">Share your code <b style="color:var(--p-ink);letter-spacing:.03em;">${_fileEsc(_refInfo.code)}</b>. A friend gets ${_fileEsc(_refFriendText(_refInfo))}${sh?', and you get '+_fileEsc(sh):''}.</div>
+      <div style="display:flex;gap:8px;"><button class="btnp" style="flex:1;border-radius:10px;justify-content:center;" onclick="_refShare()"><i class="ti ti-share" aria-hidden="true"></i> Share my code</button><button class="btng" style="border-radius:10px;padding:10px 14px;" onclick="_refHideHome()">Not now</button></div>
+    </div>`;
+  }catch(e){return '';}
+}
+function _refHideHome(){
+  try{localStorage.setItem('slickrefhome','hidden');}catch(e){}
+  try{const sl=document.getElementById('ref-home-slot');if(sl)sl.innerHTML='';}catch(e){}
+  try{if(typeof proToast==='function')proToast('Your code is always under Settings, Refer a friend');}catch(e){}
+}
+function _refCount(how){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok)return;
+  try{fetch('/api/referral',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({how:how})}).catch(function(){});}catch(e){}
+}
+async function _refShare(){
+  if(!_refInfo||!_refInfo.code){try{await _refLoad();}catch(e){}}
+  if(!_refInfo||!_refInfo.code){try{proToast('Couldn’t load your code. Try again.');}catch(e){}return;}
+  const text=_refInfo.message||('Use my SlickChart code '+_refInfo.code+': '+_refInfo.link);
+  if(navigator.share){
+    try{await navigator.share({text:text});_refCount('share');return;}
+    catch(e){if(e&&e.name==='AbortError')return;}
+  }
+  _copyToClipboard(text,'Copied. Paste it in a text or DM');_refCount('copy');
+}
+function _refCopy(what){
+  if(!_refInfo||!_refInfo.code)return;
+  if(what==='link'){_copyToClipboard(_refInfo.link,'Link copied');_refCount('link');}
+  else{_copyToClipboard(_refInfo.code,'Code copied');_refCount('copycode');}
+}
+function renderRefer(){
+  setNav('more');
+  document.getElementById('tt').textContent='Refer a friend';
+  _refOwnerCheck();
+  const i=_refInfo;
+  if(!i){
+    S.innerHTML='<div style="padding:24px 16px;font-size:16px;color:var(--p-mut);">'+(_refTried&&!_refLoading?'Couldn’t load your code. Check your connection and try again.<div style="margin-top:12px;"><button class="btng" style="border-radius:10px;padding:10px 14px;" onclick="_refTried=false;_refInfo=null;renderRefer();">Try again</button></div>':'Loading your code…')+'</div>';
+    if(!_refLoading&&!_refTried)_refLoad();
+    return;
+  }
+  if(!i.enabled){S.innerHTML='<div style="padding:24px 16px;font-size:16px;color:var(--p-mut);line-height:1.6;">Referrals are paused right now. Check back soon.</div>';return;}
+  const sh=_refSharerText(i);
+  const friends=(i.friends||[]).map(function(f){
+    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:11px 14px;border-top:1px solid var(--p-line2);"><div style="font-size:16px;color:var(--p-ink);">'+_fileEsc(f.firstName||'A friend')+'</div><div style="font-size:15px;color:var(--p-mut);text-align:right;">'+_fileEsc(f.label||'')+'</div></div>';
+  }).join('');
+  const earned=i.earnedCents?('$'+(i.earnedCents/100).toFixed(i.earnedCents%100?2:0)):'$0';
+  S.innerHTML=`
+  <div style="padding:16px 16px 0;">
+    <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Give a month, get a month</div>
+    <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">Know someone who would love SlickChart? When they join with your code, they get ${_fileEsc(_refFriendText(i))} after their free trial${sh?', and you get '+_fileEsc(sh)+'. It comes off your bill by itself':''}.</div>
+    <div style="background:var(--surf2);border:1px solid var(--accent);border-radius:12px;padding:16px;text-align:center;margin-bottom:12px;">
+      <div style="font-size:15px;color:var(--p-mut);margin-bottom:4px;">Your code</div>
+      <div id="ref-code" style="font-size:30px;font-weight:700;letter-spacing:.06em;color:var(--p-ink);margin-bottom:12px;">${_fileEsc(i.code)}</div>
+      <button class="btnp" style="width:100%;border-radius:10px;justify-content:center;margin-bottom:8px;" onclick="_refShare()"><i class="ti ti-share" aria-hidden="true"></i> Share my code</button>
+      <div style="display:flex;gap:8px;"><button class="btng" style="flex:1;border-radius:10px;padding:10px;" onclick="_refCopy('copycode')"><i class="ti ti-copy" aria-hidden="true"></i> Copy code</button><button class="btng" style="flex:1;border-radius:10px;padding:10px;" onclick="_refCopy('link')"><i class="ti ti-copy" aria-hidden="true"></i> Copy link</button></div>
+      <div style="font-size:14px;color:var(--p-mut);margin-top:10px;word-break:break-all;">${_fileEsc(i.link||'')}</div>
+    </div>
+    <div style="font-size:15px;color:var(--p-mut);line-height:1.6;margin-bottom:16px;">Your friend can tap your link, or type your code at checkout. ${i.maxPerYear?'You can earn up to '+i.maxPerYear+' free months a year.':''}</div>
+    ${i.hasBilling===false?'<div style="font-size:15px;color:var(--p-amber);line-height:1.5;margin-bottom:14px;">Your free months go on your SlickChart bill, and this account has no bill yet. Email support@slickchart.app and we’ll sort it out.</div>':''}
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      ${[['Joined',i.joined||0],['Paying',i.paying||0],['You’ve earned',earned]].map(function(x){return '<div style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:600;color:var(--p-ink);">'+_fileEsc(String(x[1]))+'</div><div style="font-size:14px;color:var(--p-mut);">'+x[0]+'</div></div>';}).join('')}
+    </div>
+    <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:24px;">
+      <div style="padding:11px 14px;font-size:16px;font-weight:600;color:var(--p-ink);">Friends who joined</div>
+      ${friends||'<div style="padding:0 14px 12px;font-size:15px;color:var(--p-mut);">No one yet. Your first friend shows up here.</div>'}
+    </div>
+  </div>`;
+}
+
 function renderBookingLink(){
   setNav('more');
   document.getElementById('tt').textContent='Booking link';
@@ -27712,6 +27829,7 @@ function renderAccount(){
       ['ti-stethoscope','var(--p-surf2)','var(--p-green)','My Profession','Note formats, forms & terminology','profession-settings'],
       ['ti-building','var(--p-blue-bg)','var(--p-blue)','Business & Branding','Info, logo, colors & client-facing look','business-branding'],
       ['ti-calendar-plus','var(--p-green-bg)','var(--p-green)','Booking link','A link for your website & Instagram bio so anyone can book you','booking-link'],
+      ['ti-gift','var(--accent-tint)','var(--accent)','Refer a friend','Give a month, get a month','refer'],
       ['ti-users-group','var(--p-surf2)','var(--p-green)','Team Access','Let an employee use this account too','team-access'],
       ['ti-sparkles','var(--p-purple-bg)','var(--p-purple)','AI Features','Brief, voice notes & photo consults','ai-settings'],
       ['ti-bell','var(--p-surf2)','var(--p-green)','Notification preferences','Turn check-in, form &amp; reminder alerts on/off','notifications'],
@@ -27737,6 +27855,8 @@ function renderAccount(){
     <div onclick="_founderTestPush(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-bell-ringing" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Test my push notifications</div><div style="font-size:16px;color:var(--p-mut);">Send a test push to confirm new-signup alerts reach your phone</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderTestPush(this,6)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-bolt" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Test with a delay &mdash; then close the app</div><div style="font-size:16px;color:var(--p-mut);">Sends 6s after you tap, so you can close the app and see a real lock-screen banner</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderReferrals()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-gift" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Referrals</div><div style="font-size:16px;color:var(--p-mut);">Who shared, who joined, credits given, progress to 588, and the settings</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderOrphans()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-mail-forward" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Paid but no account</div><div style="font-size:16px;color:var(--p-mut);">Who paid and never made their account, and when the setup email goes out</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
@@ -33958,6 +34078,71 @@ async function _pollFounderSignups(force){
 // The hourly job (api/cron-orphan-checkout.js) emails anyone who paid and has no account, then tells
 // her if they still have none. Both waits are HER settings (§1f), edited here. Shows each person and
 // exactly what was sent and when, so nobody has to guess whether they were told.
+// ── Founder tool: Referrals (2026-11-11, api/admin/referrals.js) ─────────────────────────────────
+// Every number for "give a month, get a month", her settings (§1f), one tap to set Stripe up, and one
+// tap to re-try any credit Stripe refused. Reports what each tap did, in words.
+async function _founderReferrals(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const money=c=>'$'+((Number(c)||0)/100).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
+  const when=v=>{try{return v?new Date(v).toLocaleDateString([], {month:'short',day:'numeric'}):'';}catch(e){return '';}};
+  const old=document.getElementById('ref-admin-modal');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='ref-admin-modal';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');box.setAttribute('role','dialog');box.setAttribute('aria-modal','true');box.setAttribute('aria-label','Referrals');
+  box.style.cssText='background:var(--surf2);border:1px solid var(--p-line);border-radius:16px;padding:18px;max-width:380px;width:100%;max-height:calc(100vh - 32px);overflow-y:auto;-webkit-overflow-scrolling:touch;';
+  box.innerHTML='<div style="font-size:16px;color:var(--p-mut);">Loading…</div>';
+  ov.appendChild(box);(document.querySelector('.shell')||document.body).appendChild(ov);
+  const fail=t=>{box.innerHTML='<div style="font-size:16px;color:var(--p-ink);margin-bottom:12px;">'+esc(t)+'</div><button class="btng" id="refa-close" style="width:100%;border-radius:12px;padding:11px;">Close</button>';box.querySelector('#refa-close').onclick=()=>ov.remove();};
+  let j=null;
+  try{const r=await fetch('/api/admin/referrals',{headers:{'Authorization':'Bearer '+tok}});j=await r.json().catch(()=>null);if(!r.ok||!j||!j.ok){fail((j&&j.error)||'Couldn’t load. Try again.');return;}}
+  catch(e){fail('Couldn’t load. Try again.');return;}
+  const m=j.metrics||{},st=j.settings||{},lb=j.labels||{},pr=m.progress||{};
+  const tile=(v,l)=>'<div style="flex:1;min-width:30%;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:10px;padding:8px;text-align:center;"><div style="font-size:19px;font-weight:600;color:var(--p-ink);">'+esc(v)+'</div><div style="font-size:13px;color:var(--p-mut);line-height:1.3;">'+l+'</div></div>';
+  const ret=x=>x&&x.of?(x.paying+' of '+x.of):'not yet';
+  const pct=pr.goalProviders?Math.min(100,Math.round(100*(pr.paidTotal||0)/pr.goalProviders)):0;
+  const field=function(k){const d=lb[k]||{};return '<label style="display:block;margin-bottom:10px;"><div style="font-size:15px;color:var(--p-mut);margin-bottom:4px;line-height:1.4;">'+esc(d.label||k)+'</div>'
+    +'<input id="refa-'+k+'" type="number" inputmode="numeric" min="'+(d.min||0)+'" max="'+(d.max||100)+'" value="'+esc(st[k])+'" style="width:100px;padding:9px;border-radius:10px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-ink);font-size:16px;font-family:inherit;"> <span style="font-size:15px;color:var(--p-mut);">'+esc(d.unit||'')+'</span></label>';};
+  const keys=Object.keys(lb);
+  box.innerHTML='<div style="font-size:17px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Referrals</div>'
+    +'<div style="font-size:15px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">Give a month, get a month. Codes, rewards and alerts all run by themselves.</div>'
+    +'<div style="font-size:15px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Progress to '+esc(pr.goalProviders||588)+' providers</div>'
+    +'<div style="height:10px;border-radius:6px;background:var(--surf1);border:1px solid var(--p-line-ctl);overflow:hidden;margin-bottom:6px;"><div style="height:100%;width:'+pct+'%;background:var(--accent);"></div></div>'
+    +'<div style="font-size:15px;color:var(--p-mut);margin-bottom:12px;">'+esc(pr.paidTotal||0)+' paying (incl. trials), about '+money(pr.mrrCents||0)+' a month. '+esc(pr.fromReferral||0)+' came by referral.</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">'
+      +tile(m.sharers||0,'providers shared')+tile(m.signups||0,'friends joined')+tile(m.paying||0,'friends paying')
+      +tile(m.onTrial||0,'on free trial')+tile(money(m.rewardCents||0),'credits given')+tile(m.sharers30||0,'shared in 30 days')
+    +'</div>'
+    +'<div style="font-size:15px;color:var(--p-mut);line-height:1.6;margin-bottom:12px;">'+esc(m.codes||0)+' providers have a code. Joined in the last 30 days: '+esc(m.signups30||0)+'. Cancelled before paying: '+esc(m.canceled||0)+'. Not counted (own code or returning): '+esc(m.blocked||0)+'.<br>Referred friends still paying after 90 days: '+esc(ret(m.retention&&m.retention.day90))+'; after 180 days: '+esc(ret(m.retention&&m.retention.day180))+'.</div>'
+    +(m.failed?'<div style="font-size:15px;color:var(--p-amber);line-height:1.5;margin-bottom:8px;">'+esc(m.failed)+' credit'+(m.failed===1?'':'s')+' Stripe refused.</div><button class="btng" id="refa-retry" style="width:100%;border-radius:12px;padding:10px;margin-bottom:12px;">Try those credits again</button>':'')
+    +'<button class="btng" id="refa-setup" style="width:100%;border-radius:12px;padding:10px;margin-bottom:6px;">Set up in Stripe</button>'
+    +'<div id="refa-setup-msg" style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:14px;">Lets both sign-up links accept codes and lets SlickChart hear payments. Safe to tap again.</div>'
+    +((m.top||[]).length?'<div style="font-size:15px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Top sharers</div>'+(m.top||[]).map(function(x){return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:15px;color:var(--p-ink);padding:4px 0;"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;">'+esc(x.name||x.email)+'</span><span style="color:var(--p-mut);white-space:nowrap;">'+esc(x.joined)+' joined, '+esc(x.paying)+' paying</span></div>';}).join('')+'<div style="height:10px;"></div>':'')
+    +((m.recent||[]).length?'<div style="font-size:15px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Latest</div>'+(m.recent||[]).map(function(x){return '<div style="font-size:15px;color:var(--p-mut);padding:3px 0;line-height:1.4;">'+esc(when(x.at))+': '+esc(x.friend)+' via '+esc(x.referrer||x.code)+'. '+esc(x.label)+(x.note?' ('+esc(x.note)+')':'')+'</div>';}).join('')+'<div style="height:10px;"></div>':'<div style="font-size:15px;color:var(--p-mut);margin-bottom:14px;">No referrals yet.</div>')
+    +'<div style="font-size:15px;font-weight:600;color:var(--p-ink);margin:4px 0 8px;">Your settings</div>'
+    +keys.map(field).join('')
+    +'<label style="display:block;margin-bottom:10px;"><div style="font-size:15px;color:var(--p-mut);margin-bottom:4px;">Share message ({code} and {link} are filled in)</div><textarea id="refa-message" rows="4" style="width:100%;box-sizing:border-box;padding:9px;border-radius:10px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-ink);font-size:16px;font-family:inherit;">'+esc(st.message||'')+'</textarea></label>'
+    +'<div id="refa-msg" style="font-size:15px;color:var(--p-mut);min-height:20px;margin-bottom:8px;"></div>'
+    +'<div style="display:flex;gap:8px;"><button class="btng" id="refa-close" style="flex:1;border-radius:12px;padding:11px;">Close</button><button id="refa-save" style="flex:1;border:none;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--accent);color:var(--accent-ink);">Save</button></div>';
+  box.querySelector('#refa-close').onclick=()=>ov.remove();
+  const post=async body=>{const r=await fetch('/api/admin/referrals',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)});const k=await r.json().catch(()=>null);if(!r.ok||!k||!k.ok)throw new Error((k&&k.error)||'Couldn’t do that. Try again.');return k;};
+  box.querySelector('#refa-setup').onclick=async function(){
+    const msg=box.querySelector('#refa-setup-msg');msg.textContent='Setting up…';
+    try{const k=await post({action:'setup'});const s=k.setup||{};msg.innerHTML=[s.coupon].concat(s.links||[]).concat([s.webhook]).filter(Boolean).map(esc).join('<br>');}
+    catch(e){msg.textContent=e.message;}
+  };
+  const rt=box.querySelector('#refa-retry');
+  if(rt)rt.onclick=async function(){rt.textContent='Trying…';try{const k=await post({action:'retry'});rt.textContent=(k.retried||[]).map(x=>x.friend+': '+x.status).join(', ')||'Nothing to retry';}catch(e){rt.textContent=e.message;}};
+  box.querySelector('#refa-save').onclick=async function(){
+    const msg=box.querySelector('#refa-msg');const body={};
+    keys.forEach(function(k){const el=box.querySelector('#refa-'+k);if(el&&el.value!=='')body[k]=Number(el.value);});
+    const tm=box.querySelector('#refa-message');if(tm&&tm.value.trim())body.message=tm.value;
+    msg.textContent='Saving…';
+    try{const k=await post(body);const ns=k.settings||{};keys.forEach(function(x){const el=box.querySelector('#refa-'+x);if(el&&ns[x]!=null)el.value=ns[x];});msg.textContent='Saved. New codes use these settings from now on.';}
+    catch(e){msg.textContent=e.message;}
+  };
+}
 async function _founderOrphans(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
