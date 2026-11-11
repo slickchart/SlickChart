@@ -117,7 +117,7 @@ async function providerPage(opts) {
   const metrics = { codes: 9, sharers: 6, sharers30: 4, shares: 11, signups: 5, signups30: 3, onTrial: 2, paying: 3, canceled: 1, blocked: 1, failed: 1, rewardCents: 3400,
     retention: { day90: { paying: 0, of: 0 }, day180: { paying: 0, of: 0 } },
     top: [{ name: 'Jennie Milla', email: 'j@x.com', joined: 3, paying: 2 }], recent: [{ friend: 'Maddie', referrer: 'Jennie Milla', code: 'JENNIE17', status: 'rewarded', label: 'Paying, your free month is on', note: '', at: new Date().toISOString() }],
-    progress: { paidTotal: 64, mrrCents: 68800, fromReferral: 3, goalProviders: 588, goalMrrCents: 1000000 } };
+    progress: { paidTotal: 64, mrrCents: 68800, onTrialNow: 5, mrrUnknown: 2, fromReferral: 3, goalProviders: 588, goalMrrCents: 1000000 } };
   const { p, ctx, errs } = await providerPage({ admin: async r => {
     if (r.request().method() === 'POST') { const body = JSON.parse(r.request().postData() || '{}'); posted.push(body);
       if (body.action === 'setup') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, setup: { coupon: 'Friend’s reward is ready in Stripe.', links: ['$17 monthly link: now accepts codes', '$170 yearly link: already accepts codes'], webhook: 'Webhook now hears payments' } }) });
@@ -128,7 +128,7 @@ async function providerPage(opts) {
   const row = await p.$('text=Who shared, who joined'); check('Admin tools lists Referrals', !!row);
   if (row) await row.click(); await p.waitForTimeout(800);
   const txt = await p.evaluate(() => (document.getElementById('ref-admin-modal') || {}).innerText || '');
-  check('shows progress to 588 with MRR and referral count', /Progress to 588/.test(txt) && /64 paying/.test(txt) && /\$688/.test(txt) && /3 came by referral/.test(txt), txt.slice(0, 400));
+  check('shows progress to 588 with MRR and referral count', /Progress to 588/.test(txt) && /64 paying, 5 more on a free trial/.test(txt) && /\$688/.test(txt) && /2 with no price on record/.test(txt) && /3 came by referral/.test(txt), txt.slice(0, 400));
   check('shows sharers, joined, paying, credits', /6\s*providers shared/.test(txt) && /5\s*friends joined/.test(txt) && /3\s*friends paying/.test(txt) && /\$34/.test(txt));
   check('shows top sharers and the latest referral', /Jennie Milla/.test(txt) && /Maddie via Jennie Milla/.test(txt));
   await p.click('#refa-setup'); await p.waitForTimeout(500);

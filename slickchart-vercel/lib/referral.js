@@ -472,10 +472,31 @@ export async function referralMetrics(q) {
       .map(x => ({ friend: x.friend_first_name || 'A friend', referrer: x.referrer_name || '', code: x.code, status: x.status, label: statusLabel(x.status), note: x.note || '', at: x.signed_up_at }));
   } catch (e) {}
   // Progress to her goal: every live subscription, its monthly value, and how many came by referral.
-  let paidTotal = 0, mrrCents = 0, fromReferral = 0, fromAds = 0, adSources = [];
+  let paidTotal = 0, mrrCents = 0, fromReferral = 0, fromAds = 0, adSources = [], onTrialNow = 0, mrrUnknown = 0;
   try {
-    const subs = await q`SELECT lower(email) AS email, plan_amount, plan_interval FROM subscriptions WHERE status = 'active'`;
+    let subs = await q`SELECT lower(email) AS email, plan_amount, plan_interval, stripe_subscription_id FROM subscriptions WHERE status = 'active'`;
+    // Older rows were saved before the price was recorded, so they read as $0 and MRR came out low.
+    // Fill a missing price from Stripe (only ever fills a blank, a few per read).
+    const blank = subs.filter(x => x.plan_amount == null && x.stripe_subscription_id).slice(0, 40);
+    for (const x of blank) {
+      const r = await stripeApi('GET', '/subscriptions/' + x.stripe_subscription_id);
+      const it = r.ok && r.data && r.data.items && r.data.items.data && r.data.items.data[0];
+      const price = it && it.price;
+      if (price && price.unit_amount != null) {
+        // Monthly value after any lasting discount is not attempted here: list price, as Stripe bills it.
+        const amt = Number(price.unit_amount) * Number(it.quantity || 1), iv = (price.recurring && price.recurring.interval) || null;
+        try { await q`UPDATE subscriptions SET plan_amount = ${amt}, plan_interval = COALESCE(plan_interval, ${iv}) WHERE lower(email) = ${x.email} AND plan_amount IS NULL`; } catch (e) {}
+        x.plan_amount = amt; x.plan_interval = x.plan_interval || iv;
+      }
+    }
+    // 'active' here includes a free trial (the webhook maps trialing to active so she can use the app).
+    // A provider still on her trial is not paying yet, so she is counted apart, not in paid or MRR.
+    let trialing = new Set();
+    try { (await q`SELECT DISTINCT email FROM trial_outcomes WHERE outcome IN ('trialing', 'cancel_scheduled') AND email IS NOT NULL`).forEach(r => trialing.add(String(r.email).toLowerCase())); } catch (e) {}
+    onTrialNow = subs.filter(x => trialing.has(x.email)).length;
+    subs = subs.filter(x => !trialing.has(x.email));
     paidTotal = subs.length;
+    mrrUnknown = subs.filter(x => x.plan_amount == null).length;
     for (const x of subs) { const a = Number(x.plan_amount || 0); mrrCents += x.plan_interval === 'year' ? Math.round(a / 12) : a; }
     fromReferral = await one(q`SELECT count(*)::int AS n FROM referrals r JOIN subscriptions s ON lower(s.email) = r.friend_email WHERE s.status = 'active' AND r.status <> 'blocked'`);
     fromAds = await one(q`SELECT count(*)::int AS n FROM signup_sources x JOIN subscriptions s ON lower(s.email) = x.email
@@ -487,7 +508,7 @@ export async function referralMetrics(q) {
   return {
     codes, sharers, sharers30, shares, signups, signups30, onTrial, paying, canceled, blocked, failed, rewardCents,
     retention: { day90: { paying: stillPaying90, of: eligible90 }, day180: { paying: stillPaying180, of: eligible180 } },
-    top, recent, progress: { paidTotal, mrrCents, fromReferral, fromAds, other: Math.max(0, paidTotal - fromReferral - fromAds), adSources, goalProviders: 588, goalMrrCents: 1000000 }
+    top, recent, progress: { paidTotal, mrrCents, onTrialNow, mrrUnknown, fromReferral, fromAds, other: Math.max(0, paidTotal - fromReferral - fromAds), adSources, goalProviders: 588, goalMrrCents: 1000000 }
   };
 }
 
