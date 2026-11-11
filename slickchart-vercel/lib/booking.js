@@ -18,8 +18,8 @@
 // even whether a given email is already on file — a public form that answered that question would
 // be an enumeration oracle for her client list. Free/busy is reduced to start+end times before it
 // leaves this module; the appointments it was computed from never go over the wire.
-import { sql, getKVValue } from './db.js';
-import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey, zonedMinutes } from './square.js';
+import { sql, getKVValue, logSquareCreate } from './db.js';
+import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey, zonedMinutes, squareIdemKey } from './square.js';
 import { getGoogleConnection, googleBusyMinutes } from './google-cal.js';
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -406,6 +406,101 @@ export async function squareOpenSlots(providerId, dateISO, serviceName) {
     return out;
   } catch (e) {
     return null;                                            // fall back to the computed grid
+  }
+}
+
+// An INSTANT booking from her link goes into HER Square the moment it is made (2026-11-11).
+// It used to land only on her SlickChart calendar: the person was told "Booked", but the slot stayed
+// open in Square (so Square could sell it again) and never reached the Google Calendar that Square
+// feeds, until she happened to notice. Doing it here, on the server, means it does not wait for her
+// to open the app.
+//
+// The token is HER OWN connection, looked up by the provider id that her booking link resolved to on
+// the server (CLAUDE.md 0.2). Nothing in the request body picks the account. Never throws: anything
+// it cannot do comes back as { ok:false, why }, and the app then finishes the job from her side
+// (_instantBookingsOut), with the same idempotency key, so Square still only ever holds one booking.
+export async function squareBookInstant(providerId, { date, time, serviceName, name, email, phone, key }) {
+  const day = isoDay(date);
+  if (!providerId || !day || !time) return { ok: false, why: 'no time' };
+  let conn = null;
+  try { conn = await getConnection(providerId); } catch (e) { return { ok: false, why: 'no square' }; }
+  if (!conn || !conn.token) return { ok: false, why: 'no square' };
+  const tok = conn.token;
+  const k = squareIdemKey(key, 45);
+  try {
+    const services = await listBookableServices(tok);
+    const svc = matchSquareService(services, serviceName);
+    if (!svc || !svc.variationId) return { ok: false, why: 'no matching Square service' };
+    const locationId = await resolveLocationId(tok, conn.locationId);
+    if (!locationId) return { ok: false, why: 'no Square location' };
+    const tz = await resolveLocationTz(tok, locationId);
+    const { start: dayStart, end: dayEnd } = zonedDayRange(day, tz);
+    const now = new Date();
+    const from = dayStart > now ? dayStart : now;
+    if (from >= dayEnd) return { ok: false, why: 'day is over' };
+
+    // Ask Square for THIS slot, the same search her booking page used. Its answer carries the team
+    // member and duration Square itself would use, so the booking matches her own Square rules.
+    const d = await squareFetch('/v2/bookings/availability/search', { method: 'POST', body: { query: { filter: {
+      start_at_range: { start_at: from.toISOString(), end_at: dayEnd.toISOString() },
+      location_id: locationId,
+      segment_filters: [{ service_variation_id: svc.variationId }]
+    } } } }, tok);
+    const fmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz || 'UTC' });
+    const want = String(time).replace(/ /g, ' ').trim().toUpperCase();
+    const slot = (d && d.availabilities || []).find(a => a && a.start_at && zonedDateKey(a.start_at, tz) === day &&
+      fmt.format(new Date(a.start_at)).replace(/ /g, ' ').trim().toUpperCase() === want);
+    if (!slot) return { ok: false, why: 'that time is not open in Square' };
+    const seg0 = (Array.isArray(slot.appointment_segments) && slot.appointment_segments[0]) || {};
+    const teamMemberId = seg0.team_member_id || (svc.teamMemberIds && svc.teamMemberIds[0]) || '';
+    if (!teamMemberId) return { ok: false, why: 'no bookable team member in Square' };
+
+    // Her existing Square customer by email, then phone, so a regular never gets a second customer.
+    let customerId = '';
+    const em = String(email || '').trim();
+    if (em) {
+      try {
+        const f = await squareFetch('/v2/customers/search', { method: 'POST', body: { limit: 1, query: { filter: { email_address: { exact: em } } } } }, tok);
+        if (f.customers && f.customers[0]) customerId = f.customers[0].id;
+      } catch (e) {}
+    }
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!customerId && digits.length >= 7) {
+      try {
+        const e164 = String(phone).trim().startsWith('+') ? ('+' + digits) : ('+1' + digits.slice(-10));
+        const f = await squareFetch('/v2/customers/search', { method: 'POST', body: { limit: 1, query: { filter: { phone_number: { exact: e164 } } } } }, tok);
+        if (f.customers && f.customers[0]) customerId = f.customers[0].id;
+      } catch (e) {}
+    }
+    if (!customerId) {
+      const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+      const created = await squareFetch('/v2/customers', { method: 'POST', body: {
+        idempotency_key: k ? (squareIdemKey(key, 43) + '-c') : undefined,
+        given_name: parts[0] || 'Client',
+        family_name: parts.length > 1 ? parts.slice(1).join(' ') : undefined,
+        email_address: em || undefined
+      } }, tok);
+      customerId = created.customer && created.customer.id;
+      try { await logSquareCreate(providerId, conn.merchantId, 'book-link', false); } catch (e) {}
+    }
+    if (!customerId) return { ok: false, why: 'could not find or create the Square customer' };
+
+    const segment = {
+      team_member_id: teamMemberId,
+      service_variation_id: svc.variationId,
+      duration_minutes: Math.max(parseInt(seg0.duration_minutes, 10) || svc.durationMinutes || 60, 1)
+    };
+    const ver = seg0.service_variation_version != null ? seg0.service_variation_version : svc.variationVersion;
+    if (ver != null) segment.service_variation_version = ver;
+    const r = await squareFetch('/v2/bookings', { method: 'POST', body: {
+      idempotency_key: k || ('sc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)),
+      booking: { location_id: locationId, customer_id: customerId, start_at: slot.start_at, appointment_segments: [segment] }
+    } }, tok);
+    const b = (r && r.booking) || {};
+    if (!b.id) return { ok: false, why: 'Square did not return a booking' };
+    return { ok: true, id: b.id, startAt: b.start_at || slot.start_at };
+  } catch (e) {
+    return { ok: false, why: String((e && e.message) || 'Square would not take it').slice(0, 160) };
   }
 }
 

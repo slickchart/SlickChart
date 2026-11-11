@@ -355,6 +355,13 @@ saved anywhere", not "does this always call that".
 | `_initDeepLinks` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_initDeepLinks` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_inkScanField` | `/api/ai` | via `_aiComplete` |
+| `_instantBookingOut` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_instantBookingOut` | `/api/square/availability` | via `_sqLoadSlots` |
+| `_instantBookingOut` | `/api/square/book` | via `_reqSyncOut` |
+| `_instantBookingOut` | `/api/square/booking-options` | via `_reqSyncOut` |
+| `_instantBookingsOut` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_instantBookingsOut` | `/api/square/book` | via `_reqSyncOut` |
+| `_instantBookingsOut` | `/api/square/booking-options` | via `_reqSyncOut` |
 | `_inviteResetDefault` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_inviteResetDefault` | `/api/logout` | via `_doLogout` |
 | `_inviteResetDefault` | `/api/native-push` | via `_doLogout` |
@@ -613,7 +620,11 @@ saved anywhere", not "does this always call that".
 | `_renderStorageBody` | `/api/guide-file` | via `_evictableFileCache` |
 | `_reorderCardHTML` | `/api/ai` | via `_aiComplete` |
 | `_reorderCardHTML` | `/api/square/inventory` | via `_syncInventoryFromSquare` |
+| `_reqInSquare` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_reqInSquare` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_reqInSquare` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_reqInSquare` | `/api/square/book` | via `_reqSyncOut` |
+| `_reqInSquare` | `/api/square/booking-options` | via `_reqSyncOut` |
 | `_reqSquareMissed` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_reqSquareMissed` | `/api/square/availability` | via `_sqLoadSlots` |
 | `_reqSquareMissed` | `/api/square/book` | via `_sqDoBook` |
@@ -747,6 +758,7 @@ saved anywhere", not "does this always call that".
 | `_sqLoadSlots` | `/api/square/availability` | direct |
 | `_sqRenderConnState` | `/api/square/connect` | via `_sqConnect` |
 | `_sqRenderConnState` | `/api/square/connection` | via `_sqConnState` |
+| `_sqWaitSettled` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_sqp_all` | `/api/square/delete-customers` | via `_sqp_execute` |
 | `_sqp_confirm` | `/api/clients` | via `_serverDeleteClients` |
 | `_sqp_confirm` | `/api/square/appointments` | via `_syncSquareClientsNow` |

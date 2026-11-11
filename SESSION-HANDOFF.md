@@ -9145,3 +9145,38 @@ health sweep, so a missed webhook cannot hide one. The sweep's top-level `trials
 `trial-outcomes`, level ok, never in `problems`) has last24h / last30d / endingSoon lines (first name +
 masked email + Stripe feedback), counts and the conversion rate. Test: `scratchpad/test-health-sweep.mjs`
 (PGLITE=<dir with @electric-sql/pglite>).
+
+## Instant bookings from her link now reach Square and Google (2026-11-11, build 2026-11-11e)
+
+Found while researching the AI receptionist (code reading), then proven: an INSTANT booking from
+`/book/<slug>` told the person "Booked" and showed on her SlickChart calendar, but never reached her
+Square or her Google. `syncClientEvents` only called `addConfirmedAppt()`; the out-path
+(`_reqSyncOut`, SESSION-HANDOFF 2as) was wired to `confirmBooking()` alone. The slot stayed open in
+Square, so Square could sell it again.
+
+- **Server:** `api/book-request.js` now calls `squareBookInstant()` (lib/booking.js) for a confirmed
+  instant booking: her OWN connection (`getConnection(prov.id)`, provider from the slug on the
+  server), Square's own availability answer for that exact slot (team member + duration), customer by
+  email then phone else created, booking keyed on `bkKey` so a retry is one booking. Never fatal; the
+  event carries `squareBookingId` when it landed.
+- **App:** `_instantBookingsOut(j.events)` runs after each events pass (not during boot). For every
+  confirmed instant booking not yet `outSent`: Square id present = done; else asks Square if it is
+  already there (`_reqInSquare`), refuses to book over anything at that minute (asks her instead),
+  otherwise `_reqSyncOut` (Square, or Google via `manualAppts` with id `ma_req_<booking id>` so two
+  devices merge to one). Also backfills older instant bookings still in the future. `outSent` and
+  `squareBookingId` are sticky in `_mergeBookings`.
+- **One at a time (11e):** each Square booking reloads her appointments and `_apptsLive()` is false
+  while that runs, so a second booking sent alongside went to Google only. They now go through one
+  queue (`_instantOutChain`) and wait for Square to settle (`_sqWaitSettled`, bounded 20 s). Square
+  connected but erroring = try again next poll, never Google-only. A miss is a "Not added to Square"
+  item in her notifications plus a toast (`_reqSquareMissed(b,why,quiet)`), never a pop-up from a
+  background poll. (Careful: `_sqSettled` already exists as a sync helper; a second declaration
+  silently loses to the later one.)
+- **Side fix:** Square idempotency keys longer than 45 chars were CUT, so every booking-link request
+  from the same client shared one key (`req-ev_idem_<provider>_<client>...`): the second one she
+  confirmed came back as the first. `squareIdemKey()` (lib/square.js) hashes long keys; short keys are
+  unchanged so in-flight retries still match.
+- Tests: `scratchpad/test-instant-booking-square.mjs` (server, `CONTROL=1` must fail) and
+  `scratchpad/test-instant-booking-app.mjs` (app, 9 checks, Chromium and WebKit; old code fails 5).
+- Not testable on the preview: a real Square booking needs the live origin for OAuth, but the preview
+  uses the real database and her real Square token, so a test booking on the preview IS real.
