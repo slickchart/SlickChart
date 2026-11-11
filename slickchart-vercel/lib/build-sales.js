@@ -66,8 +66,11 @@ export async function recordBuildSale(sale) {
   // true / false / null — null means this buyer was never shown the box (see the column comment).
   const optIn = (sale && typeof sale.marketingOptIn === 'boolean') ? sale.marketingOptIn : null;
   // What she sees in the alert: the product's own name, so a sale is recognisable at a glance.
-  // Callers pass the Stripe session's metadata.roadmap ('beauty' for the /build page since 2026-10).
-  const product = String((sale && sale.roadmap) || '') === 'beauty' ? 'Beauty Biz App Build Roadmap' : 'Build Your Own App';
+  // Callers pass the Stripe session's metadata.roadmap ('beauty' from /build since 2026-10, 'any'
+  // from /build-any-business since 2026-11, untagged for the earliest sales).
+  const tag = String((sale && sale.roadmap) || '');
+  const product = tag === 'beauty' ? 'Beauty Biz App Build Roadmap'
+    : tag === 'any' ? 'Master Build Roadmap (any business)' : 'Build Your Own App';
 
   let q;
   try {
@@ -174,11 +177,15 @@ export async function recordBuildSale(sale) {
 // and paid for the original roadmap, so it keeps getting BUILD_ARTIFACT_URL — someone re-requesting
 // their links from /build/access must never be handed a different product than the one they bought.
 // BUILD_BEAUTY_ARTIFACT_URL overrides the built-in link without a deploy.
+// Since 2026-11 /build-any-business sells that original Master Build Roadmap again, tagged
+// metadata[roadmap]=any. 'any' and untagged are the SAME product, so both get BUILD_ARTIFACT_URL,
+// falling back to the built-in master link so a buyer is never left with no link at all.
 export const BEAUTY_ROADMAP_URL = 'https://claude.ai/artifact/MLh3Sf9qvGLr1a92DHDtR8';
+export const MASTER_ROADMAP_URL = 'https://claude.ai/artifact/4yVoePR4TTiS2kZQJL8nBV';
 export function roadmapUrlFor(session) {
   const tag = String((session && session.metadata && session.metadata.roadmap) || '');
   if (tag === 'beauty') return String(process.env.BUILD_BEAUTY_ARTIFACT_URL || BEAUTY_ROADMAP_URL).trim();
-  return String(process.env.BUILD_ARTIFACT_URL || '').trim();
+  return String(process.env.BUILD_ARTIFACT_URL || MASTER_ROADMAP_URL).trim();
 }
 
 // ── The buyer's own access email ─────────────────────────────────────────────────────────────────

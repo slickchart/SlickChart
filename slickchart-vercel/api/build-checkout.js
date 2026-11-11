@@ -1,4 +1,9 @@
-// POST /api/build-checkout  { }  -> { url }
+// POST /api/build-checkout  { roadmap?: 'beauty' | 'any' }  -> { url }
+//
+// `roadmap` says which product the buyer is paying for: /build sells the Beauty Biz App Build Roadmap
+// (the default, so an old copy of that page that still posts {} keeps working) and
+// /build-any-business sells the Master Build Roadmap. It is matched against a fixed list, never
+// passed through, and it only picks which of the two $97 roadmaps the paid session unlocks.
 //
 // Starts a Stripe Checkout Session for the Build Your Own App system. The price lives in Stripe (env
 // BUILD_PRICE_ID), so changing what it costs is a Stripe dashboard change, never a deploy.
@@ -28,13 +33,17 @@ export default async function handler(req, res) {
     return;
   }
   const origin = trustedOrigin();
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch (_) { body = {}; } }
+  const roadmap = (body && body.roadmap === 'any') ? 'any' : 'beauty';
+  const backTo = roadmap === 'any' ? '/build-any-business' : '/build';
   const build = (withPromotions) => {
   const form = new URLSearchParams();
   form.set('mode', 'payment');
   form.set('line_items[0][price]', price);
   form.set('line_items[0][quantity]', '1');
   form.set('success_url', origin + '/build/unlocked?session_id={CHECKOUT_SESSION_ID}');
-  form.set('cancel_url', origin + '/build');
+  form.set('cancel_url', origin + backTo);
   // Stripe collects the email; we need it to send the buyer their link so they can come back later.
   form.set('customer_creation', 'always');
   // Tags this sale so the Stripe webhook can tell it apart from a SlickChart subscription checkout —
@@ -43,8 +52,9 @@ export default async function handler(req, res) {
   // session as a roadmap sale, so the guard holds even for a session created before this line shipped.)
   form.set('metadata[product]', 'build');
   form.set('payment_intent_data[metadata][product]', 'build');
-  // Which roadmap this sale unlocks (lib/build-sales.js roadmapUrlFor). Untagged = the original.
-  form.set('metadata[roadmap]', 'beauty');
+  // Which roadmap this sale unlocks (lib/build-sales.js roadmapUrlFor). Untagged = the original
+  // (a sale from before 2026-10), which is the same product as 'any'.
+  form.set('metadata[roadmap]', roadmap);
   // Stripe shows a marketing opt-in tickbox on the checkout page and reports the answer back as
   // session.consent.promotions. That is how the buyer list gets built with real, recorded consent
   // rather than by assuming a purchase is permission to market to someone later.

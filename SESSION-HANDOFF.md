@@ -9110,3 +9110,26 @@ Give a month, get a month, fully automatic. Every number is a founder setting (`
 - **Ashley's one step after it ships:** Admin tools -> Referrals -> Set up in Stripe.
 - Test: `scratchpad/test-referral-ui.mjs` (Chromium + WebKit, `ENGINE=webkit`).
 - Known: a 'rewarding' row left by a crash mid-credit is not retried automatically (rare; visible in admin).
+
+## 2026-11-11 — /build-any-business: the Master Build Roadmap is sold again, beside the beauty page
+Ashley chose (decision card, 2026-11-10 evening): keep `/build` beauty-first, because the ad plan and
+provider referrals are all aimed at beauty pros, and add a quiet second door for every other business.
+- `build-any-business.html` (served at `/build-any-business` by `cleanUrls`, no rewrite): the same
+  page design and story, rewritten for any business. No trade picker, no VSL (it walks through the
+  beauty roadmap), weeks and examples taken from the Master Build Roadmap itself (D-U-N-S example,
+  four tracks, two finish lines). Links back to `/build` for beauty businesses. Not in the sitemap,
+  same as `/build`.
+- `/build`: one dashed band (`.otherbiz`) after every buy button: "Not a beauty business?" -> the new
+  page. `/free` footer links both roadmaps. `mkt-pixel.js` guard now includes `/build-any-business`.
+- Checkout: `POST /api/build-checkout {roadmap:'any'}` tags `metadata[roadmap]=any` and cancels back
+  to `/build-any-business`. Anything else (including `{}` from an old open copy of /build) stays
+  `beauty`. `roadmapUrlFor`: 'any' and untagged are the same product -> `BUILD_ARTIFACT_URL`, falling
+  back to the built-in `MASTER_ROADMAP_URL` (claude.ai/artifact/4yVoePR4TTiS2kZQJL8nBV). The sale
+  alert names it "Master Build Roadmap (any business)".
+- The Master Build Roadmap artifact itself (her Claude account, v15): already had no "email just for
+  this app" / "70 minutes" / "by tonight" lines by 2026-11-05. This pass removed its 31 em dashes,
+  changed the subtitle from "a live app in both stores" to "a live app you own, and the app stores if
+  you want them", and "Ten minutes, not an afternoon" to "A short read, not a project."
+- Verified: handler + link unit cases (scratchpad thread), both pages driven in Chromium at phone and
+  computer width (buy button posts the right body, no overflow, no errors), founder-push suite incl.
+  the ui-* tests, check-generated, tenant isolation.

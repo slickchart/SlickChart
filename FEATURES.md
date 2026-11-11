@@ -1285,7 +1285,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/book-request` | POST | **public** | PUBLIC (no auth): someone books through a provider's public link — slickchart.app/book/<slug>. |
 | `/api/book-slots` | GET | **public** | PUBLIC (no auth): GET /api/book-slots?slug=<slug>&date=YYYY-MM-DD |
 | `/api/build-access` | POST | **public** | POST /api/build-access  { email }  ->  always the same generic success |
-| `/api/build-checkout` | POST | **public** | POST /api/build-checkout  { }  -> { url } |
+| `/api/build-checkout` | POST | **public** | POST /api/build-checkout  { roadmap?: 'beauty' \| 'any' }  -> { url } |
 | `/api/build-id` | — | **public** | PUBLIC, no auth: which build is live right now. The app compares this against the build it is |
 | `/api/build-unlock` | — | **public** | GET /api/build-unlock?session_id=cs_...  -> { ok, videoUrl, artifactUrl, email } |
 | `/api/calendar-url` | — | provider session | GET /api/calendar-url  (Bearer session) → { url } : a private, long-lived ICS feed URL |

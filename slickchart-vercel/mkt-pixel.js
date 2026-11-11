@@ -1,4 +1,4 @@
-/* Meta Pixel for the MARKETING pages only (homepage, /build, /free).
+/* Meta Pixel for the MARKETING pages only (homepage, /build, /build-any-business, /free).
  *
  * Why: so a Facebook/Instagram ad can tell which clicks became a checklist email or a sign-up,
  * and Meta can learn who to show it to. Ashley's ad plan, 2026-11-10.
@@ -23,7 +23,7 @@
   if (!/^\d{10,20}$/.test(PIXEL_ID)) return;
   try { if (navigator.globalPrivacyControl === true) return; } catch (e) {}
   var p = location.pathname || '/';
-  var MARKETING = /^\/(?:index(?:\.html)?|build(?:\.html)?|free(?:\.html)?)?\/?$/;
+  var MARKETING = /^\/(?:index(?:\.html)?|build(?:\.html)?|build-any-business(?:\.html)?|free(?:\.html)?)?\/?$/;
   if (!MARKETING.test(p)) return;
 
   /* Meta's standard base code. */
