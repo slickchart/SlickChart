@@ -9088,3 +9088,25 @@ whether it switched itself off after 3 failed opens; `_sendDeviceReport` adds `i
 memory-only item reloads from the account each launch, and no unsent changes were reported.
 Tests: scratchpad/test-device-report-storage-why.mjs 8/8 Chromium and WebKit; test-health-sweep ALL
 PASS; device-report, safari-storage-hook, offload-stale pass in both engines.
+
+## Referral codes (2026-11-11, build 2026-11-11b)
+
+Give a month, get a month, fully automatic. Every number is a founder setting (`founder_settings`,
+`REFERRAL_SETTINGS` in `lib/referral.js`); Admin tools -> Referrals edits them.
+
+- **Codes:** `getOrCreateCode` makes one Stripe promotion code per provider (first-time-transaction only,
+  on a coupon named by the friend-reward settings). Link `slickchart.app/r/CODE` (`vercel.json` rewrite to
+  `/`); `index.html` fills `prefilled_promo_code` on both checkout buttons and remembers it 60 days
+  (`slickref`, deliberately not `sc_*`).
+- **Webhook:** `checkout.session.completed` -> `recordReferralFromCheckout` (blocks self-referral) +
+  `recordSignupSource`; `invoice.paid` -> `rewardOnInvoice` -> `payReward` (atomic claim, idempotency
+  key, cap per year) credits the sharer's Stripe balance; `notifySharer` emails + pushes her.
+  Canceled subscription -> `markReferralCanceled`.
+- **Ad sources:** landing `utm_source/campaign/content` -> `client_reference_id=utm__s__c__x`
+  (`slicksrc`, 60 days) -> `signup_sources`. The founder paid email shows Referred by / Source lines.
+- **Metrics:** `GET /api/admin/referrals` (founder, or Monitor key read-only): progress to 588 / $10k MRR,
+  fromReferral / fromAds / adSources, failed credits. `{action:'setup'}` enables promo codes on both
+  links and adds `invoice.paid` to the webhook; `{action:'retry'}` re-tries refused credits.
+- **Ashley's one step after it ships:** Admin tools -> Referrals -> Set up in Stripe.
+- Test: `scratchpad/test-referral-ui.mjs` (Chromium + WebKit, `ENGINE=webkit`).
+- Known: a 'rewarding' row left by a crash mid-credit is not retried automatically (rare; visible in admin).
