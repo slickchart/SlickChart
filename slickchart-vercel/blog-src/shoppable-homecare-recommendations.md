@@ -4,7 +4,6 @@ h1: Shoppable homecare plans: getting paid for the products you already recommen
 description: Make every product you recommend easy to buy: in office, your own shop, brand affiliate links or Amazon, plus the disclosure rules and what goes in a plan.
 date: 2026-11-11
 keywords: esthetician affiliate links, shoppable homecare, esthetician product recommendations, esthetician retail, skincare affiliate program esthetician, amazon associates esthetician, homecare plan
-draft: true
 ---
 
 You recommend products all day. After every facial, in every consult, in every "what should I use for this?" text. Most of those recommendations earn you nothing, and many never get bought at all.
@@ -33,7 +32,7 @@ Clients like to buy differently, and the one way you offer may not be the one th
 - **The brand, through your affiliate link.** Many professional skincare brands run affiliate or pro referral programs. Ask your vendors what they offer. The client buys from the brand, and you earn a commission.
 - **Amazon, under your own tag.** For everyday products, a link with your Amazon Associates tag means the convenience purchase still credits you.
 
-Let the client choose. A client who would never drive back for a cleanser will happily tap a link.
+Let the client choose. A client who would never drive back for a cleanser will happily tap a link. In my own studio, most clients still buy in person, and some buy through my affiliate links. My virtual clients buy only through affiliate links, so I never have to hold inventory for them.
 
 ## Disclose your links
 

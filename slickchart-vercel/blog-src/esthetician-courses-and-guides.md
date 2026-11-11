@@ -4,7 +4,6 @@ h1: Esthetician courses and guides: turning what you explain every week into som
 description: How a solo esthetician turns repeated advice into guides and courses: what to make first, free versus paid, how to price it, and how to deliver it to clients.
 date: 2026-11-11
 keywords: esthetician courses, esthetician digital products, sell skincare guides, skincare course for clients, esthetician ebook, esthetician passive income, digital products for estheticians
-draft: true
 ---
 
 Count how many times this week you explained the same thing. How to start a retinol. What not to do after a peel. Why their SPF matters even in winter. Each of those explanations is a small lesson, and you deliver it live, for free, one client at a time.
@@ -32,6 +31,8 @@ Good first courses:
 - **The problem you are known for.** If half your book comes to you for acne, pigmentation or sensitivity, that is your course.
 - **A seasonal reset**, which gives regulars a reason to come back to you between visits.
 - **An event plan** with a clear date, like a wedding, where clients already want a timeline.
+
+The course my own clients love most is my 6-week vitality reset.
 
 ## What goes inside
 

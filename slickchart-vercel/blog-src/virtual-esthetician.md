@@ -4,12 +4,13 @@ h1: Virtual esthetics: how a solo esthetician earns outside the treatment room
 description: Virtual consults, guides and courses, and shoppable homecare plans. Three ways a solo esthetician can be paid for expertise without adding hours in the chair.
 date: 2026-11-11
 keywords: virtual esthetics, virtual esthetician, virtual skin consultation, esthetician side income, esthetician digital products, earn outside the treatment room, online esthetician
-draft: true
 ---
 
 Every solo esthetician hits the same ceiling. There are only so many facials one pair of hands can do in a week, and once the book is full, the only lever left is price. I walked through that arithmetic in [the math behind a six-figure esthetician](/blog/six-figure-esthetician-math). The short version: the room has a limit.
 
 Virtual esthetics is the part of the work that does not need the room. Not a second business, and not a reel strategy. It is the advice you already give away every week, in DMs, in texts, at the front desk, turned into something a client can book, read or buy.
+
+That is why I started doing virtual consults myself. I wanted to grow my income without adding more service hours, and to stop only trading my time for money.
 
 There are three ways to do it, and most estheticians already do the hard part of all three without being paid for it.
 
@@ -28,13 +29,13 @@ Two things to keep straight. First, a virtual consult is cosmetic advice, not a 
 
 You explain the same things over and over. How to use a retinol without wrecking your barrier. What to do the week after a peel. How to build a morning routine that takes three minutes. Each explanation is a small lesson.
 
-Write it once, well, and it becomes a guide you send in a tap instead of a speech you give ten times a week. Group a few into a series and it becomes a course: a 30-day acne routine, a pre-wedding skin plan, a barrier repair reset. Free guides build trust. Paid courses are a product. Both keep working when you are not. More on what to make first in [selling skincare guides and courses](/blog/esthetician-courses-and-guides).
+Write it once, well, and it becomes a guide you send in a tap instead of a speech you give ten times a week. Group a few into a series and it becomes a course: a 30-day acne routine, a pre-wedding skin plan, a barrier repair reset. Free guides build trust. Paid courses are a product. Both keep working when you are not. My clients' favorite is my 6-week vitality reset course. More on what to make first in [selling skincare guides and courses](/blog/esthetician-courses-and-guides).
 
 ## 3. Shoppable homecare plans
 
 Most product recommendations die on the drive home. The client nods, means to buy the cleanser, forgets the name, and buys whatever is on the shelf at the drugstore.
 
-A shoppable plan fixes that. Every product you recommend, from a facial, a consult or a guide, lands in the client's hands with a way to buy it right there: from your shelf at their next visit, from your online shop, from the brand through your affiliate link, or from Amazon under your own tag. They pick the way that suits them, and the sale is yours instead of a stranger's. I cover the setup, and the disclosure rules that come with affiliate links, in [shoppable homecare plans](/blog/shoppable-homecare-recommendations).
+A shoppable plan fixes that. Every product you recommend, from a facial, a consult or a guide, lands in the client's hands with a way to buy it right there: from your shelf at their next visit, from your online shop, from the brand through your affiliate link, or from Amazon under your own tag. They pick the way that suits them, and the sale is yours instead of a stranger's. My own virtual clients buy only through my affiliate links, which means I never hold inventory for them. I cover the setup, and the disclosure rules that come with affiliate links, in [shoppable homecare plans](/blog/shoppable-homecare-recommendations).
 
 ## How the three connect
 
