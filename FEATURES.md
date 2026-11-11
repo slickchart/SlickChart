@@ -292,6 +292,7 @@ saved anywhere", not "does this always call that".
 | `_founderClientRecover` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_founderKvHealth` | `/api/admin/kv-health` | direct |
 | `_founderOrphans` | `/api/admin/orphans` | direct |
+| `_founderReferrals` | `/api/admin/referrals` | direct |
 | `_founderStaleSubs` | `/api/admin/stale-subs` | direct |
 | `_founderTestPush` | `/api/admin/test-push` | direct |
 | `_fvpChooseSend` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -393,11 +394,7 @@ saved anywhere", not "does this always call that".
 | `_loadIntegSquareStatus` | `/api/square/connection` | via `_sqConnState` |
 | `_loadPersistenceSweep` | `/api/transcribe` | via `_probeWhisper` |
 | `_loadSessions` | `/api/sessions` | direct |
-| `_loadSquareAppts` | `/api/clients` | via `_serverMergeClients` |
-| `_loadSquareAppts` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_loadSquareAppts` | `/api/square/appointments` | direct |
-| `_loadSquareAppts` | `/api/square/booking-options` | via `openSquareBook` |
-| `_loadSquareAppts` | `/api/square/connect` | via `_sqConnect` |
 | `_loadSquareHistory` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_loadSquareHistory` | `/api/square/appointments` | direct |
 | `_loadSquareHistory` | `/api/square/booking-options` | via `openSquareBook` |
@@ -539,6 +536,7 @@ saved anywhere", not "does this always call that".
 | `_putFileWithRetry` | `/api/guide-file` | via `_putFileBody` |
 | `_reRenderAttn` | `/api/clients` | via `syncClientEvents` |
 | `_reRenderAttn` | `/api/provider-form` | via `_flushInPersonForms` |
+| `_reRenderAttn` | `/api/referral` | via `_refLoad` |
 | `_reRenderAttn` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_reRenderAttn` | `/api/square/connect` | via `_sqConnect` |
 | `_recSearch` | `/api/admin/client-recover` | via `_recoverConsolidateAll` |
@@ -590,6 +588,11 @@ saved anywhere", not "does this always call that".
 | `_recoverUnDelete` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverUnindexedServerPhotos` | `/api/guide-file` | direct |
 | `_redrawCurrentScreen` | `/api/clients` | via `syncClientEvents` |
+| `_refCopy` | `/api/referral` | via `_refCount` |
+| `_refCount` | `/api/referral` | direct |
+| `_refHomeCardHTML` | `/api/referral` | via `_refLoad` |
+| `_refLoad` | `/api/referral` | direct |
+| `_refShare` | `/api/referral` | via `_refLoad` |
 | `_reloadAfterHydrate` | `/api/announcements` | via `_checkNews` |
 | `_reloadAfterHydrate` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_reloadAfterHydrate` | `/api/square/connection` | via `_sqConnState` |
@@ -1055,6 +1058,7 @@ saved anywhere", not "does this always call that".
 | `renderGuidePreview` | `/api/guide-file` | via `_getGuideFile` |
 | `renderHelpArticle` | `/api/clients` | via `syncClientEvents` |
 | `renderHome` | `/api/clients` | via `syncClientEvents` |
+| `renderHome` | `/api/referral` | via `_refLoad` |
 | `renderHome` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `renderHome` | `/api/square/connect` | via `_sqConnect` |
 | `renderIntegrations` | `/api/clients` | via `syncClientEvents` |
@@ -1101,6 +1105,7 @@ saved anywhere", not "does this always call that".
 | `renderProviderFillIntake` | `/api/provider-form` | via `_flushInPersonForms` |
 | `renderRebook` | `/api/clients` | via `syncClientEvents` |
 | `renderRebook` | `/api/provider-message` | via `_sendProviderMessageToClient` |
+| `renderRefer` | `/api/referral` | via `_refLoad` |
 | `renderReminders` | `/api/clients` | via `syncClientEvents` |
 | `renderReminders` | `/api/provider-push` | via `_pushDisable` |
 | `renderRoom` | `/api/clients` | via `syncClientEvents` |
@@ -1260,6 +1265,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/admin/provider-lookup` | GET, POST | founder, provider session | FOUNDER-ONLY. Helps the founder support a provider who "can't log in". |
 | `/api/admin/push-state` | POST | founder | GET /api/admin/push-state  Authorization: Monitor <key>   — the founder's OWN notification setup. |
 | `/api/admin/recover-import` | GET, POST | founder, provider session | FOUNDER-ONLY. Pull a provider's work out of a Neon point-in-time |
+| `/api/admin/referrals` | GET, POST | founder, provider session | FOUNDER-ONLY. The referral program's numbers and settings. |
 | `/api/admin/signups` | GET | founder, provider session | GET /api/admin/signups?since=<ms>  — FOUNDER-ONLY. |
 | `/api/admin/square-create-log` | — | founder, provider session | GET /api/admin/square-create-log — FOUNDER-ONLY, READ-ONLY. |
 | `/api/admin/square-foreign` | — | founder, provider session | GET /api/admin/square-foreign — FOUNDER-ONLY, READ-ONLY. |
@@ -1328,6 +1334,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/provider-message` | POST | provider session | Provider-authed: send a message to one specific real client. Stored as a |
 | `/api/provider-push` | GET, POST, DELETE | provider session | POST   /api/provider-push  { subscription }  → store this device's web-push subscription |
 | `/api/push-subscribe` | POST, DELETE | client link token | Token-authed (the client's link token): store or remove this device's web-push |
+| `/api/referral` | GET, POST | **public** | GET  /api/referral          — the signed-in provider's own referral code, link, share message and |
 | `/api/request-reset` | POST | **public** | POST /api/request-reset  { email }  — emails a password-reset link. |
 | `/api/reset` | POST | **public** | POST /api/reset  { token, password }  — sets a new password from a reset link. |
 | `/api/sessions` | GET, POST | provider session | GET  /api/sessions          — provider-authed: list this provider's real sessions |
@@ -1372,7 +1379,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
+`announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_sources`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.
