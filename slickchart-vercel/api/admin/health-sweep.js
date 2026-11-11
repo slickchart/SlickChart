@@ -12,13 +12,15 @@
 // fails is reported as "could not run" and never hides the others.
 //
 // Response: { at, build, checks: [{ id, title, level: 'ok'|'warn'|'alert', count, items: [text] }],
-//             problems: [text] }   — problems lists every warn/alert line, worst first.
+//             problems: [text], trials: {...} }   — problems lists every warn/alert line, worst first;
+//             trials is who left after a free trial (lib/trial-outcomes.js), never a problem.
 import { dbEnabled, sql, ensureProvidersTable } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
 import { monitorKeyOk } from '../feedback.js';
 import { maskEmail } from '../../lib/app-launch-log.js';
 import { APP_BUILD } from '../../lib/app-build.js';
 import { ensureCronRunsTable } from '../../lib/cron-runs.js';
+import { syncTrialsFromStripe, trialReport } from '../../lib/trial-outcomes.js';
 
 async function founderSession(req, q) {
   const secret = process.env.SESSION_SECRET || '';
@@ -493,11 +495,28 @@ export async function runSweep(q) {
     return { items };
   });
 
+  // 16. Who left after a free trial (2026-11-11, Ashley: "track when a provider cancels after their trial
+  // ends and put that into my daily ops monitoring"). Re-read from Stripe first so a missed webhook can't
+  // hide one. A business signal, not a fault: level 'ok' so it never lands in `problems`; the brief
+  // prints it from the top-level `trials` field. First name + masked email only.
+  let trials = null;
+  await check('trial-outcomes', 'Providers who left after a free trial (last 24 hours)', async () => {
+    const sync = await syncTrialsFromStripe(q, 60);
+    const t = await trialReport(q, 30);
+    const line = r => (r.firstName ? r.firstName + ' ' : '') + '(' + maskEmail(r.email) + '): ' + r.label
+      + (r.plan ? ', ' + r.plan : '') + (r.feedback || r.comment ? '. Said: ' + [r.feedback, r.comment].filter(Boolean).join(', ').slice(0, 200) : '');
+    trials = { summary: t.summary, counts: t.counts, trialsEnded: t.trialsEnded, conversionPct: t.conversionPct,
+      last24h: t.last24h.map(line), last30d: t.recentLeft.map(line).slice(0, 25),
+      endingSoon: t.endingSoon.map(r => (r.firstName ? r.firstName + ' ' : '') + '(' + maskEmail(r.email) + ') trial ends ' + String(r.trialEnd).slice(0, 10)),
+      stripeSync: sync.error ? 'could not re-read Stripe: ' + sync.error : 'checked ' + sync.read + ' recent subscriptions in Stripe' };
+    return { level: 'ok', items: trials.last24h, note: t.summary + (sync.error ? ' (Stripe re-read failed: ' + sync.error + ')' : '') };
+  });
+
   const rank = { alert: 0, warn: 1, ok: 2 };
   checks.sort((a, b) => rank[a.level] - rank[b.level]);
   const problems = [];
   checks.filter(c => c.level !== 'ok').forEach(c => c.items.forEach(i => problems.push((c.level === 'alert' ? 'ALERT ' : '') + c.title + ': ' + i)));
-  return { at: new Date().toISOString(), build: APP_BUILD, checks, problems };
+  return { at: new Date().toISOString(), build: APP_BUILD, checks, problems, trials };
 }
 
 export default async function handler(req, res) {

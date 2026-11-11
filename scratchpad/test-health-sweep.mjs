@@ -14,6 +14,9 @@ for (const d of ['api/admin', 'lib']) fs.mkdirSync(path.join(dir, d), { recursiv
 fs.copyFileSync(path.join(SRC, 'api/admin/health-sweep.js'), path.join(dir, 'api/admin/health-sweep.js'));
 for (const f of ['cron-runs.js', 'app-build.js', 'app-launch-log.js', 'auth.js']) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
+// Trial outcomes (2026-11-11): the real lib, with Stripe answered by globalThis.__stripe.
+fs.copyFileSync(path.join(SRC, 'lib/trial-outcomes.js'), path.join(dir, 'lib/trial-outcomes.js'));
+fs.writeFileSync(path.join(dir, 'lib/referral.js'), 'export async function stripeApi(m, p, params){ return globalThis.__stripe(m, p, params); }');
 fs.writeFileSync(path.join(dir, 'api/feedback.js'), 'export async function monitorKeyOk(){return globalThis.__keyOk;}');
 fs.writeFileSync(path.join(dir, 'lib/db.js'), `
 export function dbEnabled(){return true;} export async function ensureProvidersTable(){}
@@ -107,6 +110,47 @@ let fail = 0; const ok = (c, m, d) => { console.log((c ? 'PASS ' : 'FAIL ') + m 
   await db.query("INSERT INTO kv VALUES ('other','sc_forms',$1),('other','sc_hidden_forms',$2)", [nowF, JSON.stringify({ f_del: now })]);
   await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('other','sc_forms',$1,$2,5,'shrink',now()-interval '1 hour')", [oldF, oldF.length]); }
 const { default: handler, runSweep } = await import(pathToFileURL(path.join(dir, 'api/admin/health-sweep.js')));
+// ── Trials: each way a free trial can end, fed through the same calls the Stripe webhook makes.
+const T = await import(pathToFileURL(path.join(dir, 'lib/trial-outcomes.js')));
+const tq = (await import(pathToFileURL(path.join(dir, 'lib/db.js')))).sql();
+{ const S = Math.floor(now / 1000), D = 86400;
+  await db.query("INSERT INTO providers (id,email,name,created_at) VALUES ('tq','quit@trial.com','Quinn Quitter',now()),('tu','unpaid@trial.com','Uma Unpaid',now()),('tp','paid@trial.com','Pia Payer',now()),('tl','left@trial.com','Lena Left',now()),('ts','soon@trial.com','Sam Soon',now()),('tz','sync@trial.com','Zoe Stripeonly',now())");
+  const price = { items: { data: [{ price: { unit_amount: 1700, recurring: { interval: 'month' } } }] } };
+  const sub = (id, o) => Object.assign({ id, customer: 'cus_' + id, trial_start: S - 10 * D, trial_end: S + 4 * D, status: 'trialing' }, price, o);
+  const R = T.recordTrialFromSubscription;
+  // Quinn: trial, presses cancel (scheduled), trial ends canceled by her choice, said why.
+  await R(tq, sub('s_q'), 'quit@trial.com');
+  globalThis.__tq1 = (await tq`SELECT outcome FROM trial_outcomes WHERE sub_id = 's_q'`)[0].outcome;
+  await R(tq, sub('s_q', { cancel_at_period_end: true }), 'quit@trial.com');
+  globalThis.__tq2 = (await tq`SELECT outcome FROM trial_outcomes WHERE sub_id = 's_q'`)[0].outcome;
+  await R(tq, sub('s_q', { status: 'canceled', trial_end: S - 60, canceled_at: S - 2 * D, ended_at: S - 60, cancellation_details: { reason: 'cancellation_requested', feedback: 'too_expensive', comment: 'Not right now' } }), 'quit@trial.com');
+  // Uma: trial ended, the first bill never went through.
+  await R(tq, sub('s_u', { status: 'past_due', trial_end: S - 2 * D }), 'unpaid@trial.com');
+  globalThis.__tu1 = (await tq`SELECT outcome FROM trial_outcomes WHERE sub_id = 's_u'`)[0].outcome;
+  await R(tq, sub('s_u', { status: 'canceled', trial_end: S - 2 * D, canceled_at: S - 60, cancellation_details: { reason: 'payment_failed' } }), 'unpaid@trial.com');
+  // Pia: trial ended, paid. Lena: paid, then canceled.
+  await R(tq, sub('s_p', { status: 'active', trial_end: S - 3 * D }), 'paid@trial.com');
+  await T.recordTrialPayment(tq, { subscription: 's_p', amount_paid: 1700 });
+  await T.recordTrialPayment(tq, { subscription: 's_p', amount_paid: 0 });
+  // Lena's first bill lands BEFORE the subscription event that opens her row.
+  await T.recordTrialPayment(tq, { subscription: 's_l', customer: 'cus_s_l', amount_paid: 1700 });
+  await R(tq, sub('s_l', { status: 'active', trial_end: S - 20 * D }), 'left@trial.com');
+  await R(tq, sub('s_l', { status: 'canceled', trial_end: S - 20 * D, canceled_at: S - 3600, cancellation_details: { reason: 'cancellation_requested' } }), 'left@trial.com');
+  // Sam: trial ends in 2 days. An old one that left 40 days ago is not "recent".
+  await R(tq, sub('s_s', { trial_end: S + 2 * D }), 'soon@trial.com');
+  await R(tq, sub('s_old', { status: 'canceled', trial_end: S - 45 * D, canceled_at: S - 46 * D }), 'quit@trial.com');
+  await db.query("UPDATE trial_outcomes SET outcome_at = now() - interval '40 days' WHERE sub_id = 's_old'");
+  // A subscription not a single webhook told us about: only Stripe knows. The sweep's re-read finds it.
+  globalThis.__stripeCalls = [];
+  globalThis.__stripe = async (m, p, params) => { globalThis.__stripeCalls.push(p);
+    if (p === '/subscriptions') return { ok: true, data: { has_more: false, data: [
+      sub('s_z', { status: 'canceled', trial_end: S - 3600, canceled_at: S - 5 * 3600, customer: { id: 'cus_z', email: 'sync@trial.com' }, cancellation_details: { reason: 'cancellation_requested' } }),
+      sub('s_p', { status: 'active', trial_end: S - 3 * D, customer: { id: 'cus_p', email: 'paid@trial.com' } }),
+      Object.assign(sub('s_none'), { trial_end: null, status: 'active', customer: { id: 'cus_n', email: 'notrial@x.com' } }) ] } };
+    if (p === '/invoices') return { ok: true, data: { data: params.subscription === 's_p' ? [{ amount_paid: 1700 }] : [] } };
+    return { ok: false, error: 'unexpected ' + p }; };
+}
+
 const { withCronRun } = await import(pathToFileURL(path.join(dir, 'lib/cron-runs.js')));
 // a recorded cron run (one OK, one failing) and a refused one
 const fakeRes = () => { const r = { code: 200, body: null, status(c) { r.code = c; return r; }, json(b) { r.body = b; return r; }, setHeader() {} }; return r; };
@@ -126,7 +170,7 @@ ok(denied.code === 403, 'no key, no founder session: refused');
 globalThis.__keyOk = true;
 const res = fakeRes(); await handler({ method: 'GET', headers: { authorization: 'Monitor x' } }, res);
 const j = res.body; const by = Object.fromEntries(j.checks.map(c => [c.id, c]));
-ok(res.code === 200 && j.checks.length === 16, 'all 16 checks reported', res.code + ' ' + (j.checks || []).length);
+ok(res.code === 200 && j.checks.length === 17, 'all 17 checks reported', res.code + ' ' + (j.checks || []).length);
 ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every check ran against real SQL', JSON.stringify(j.checks.filter(c => (c.items[0] || '').startsWith('could not run')).map(c => c.id + ': ' + c.items[0])));
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
 ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only|mix…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only|mix…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
@@ -176,4 +220,19 @@ ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-
 ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|fam0@home|twice0@c|Twice Person|locked@out|ghost@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
 ok(j.problems.length > 0 && j.problems[0].startsWith('ALERT'), 'problems list is worst first');
 ok(!JSON.stringify(j).match(/hea…@ok\.com/), 'the healthy account appears nowhere');
+{ ok(__tq1 === 'trialing' && __tq2 === 'cancel_scheduled', 'a trial reads trialing, then cancel-scheduled once she presses cancel', __tq1 + ' ' + __tq2);
+  ok(__tu1 === 'payment_failing', 'a failing first bill after the trial reads as failing', __tu1);
+  const rows = Object.fromEntries((await db.query('SELECT sub_id, outcome, paid_invoices FROM trial_outcomes')).rows.map(r => [r.sub_id, r]));
+  ok(rows.s_q.outcome === 'canceled_in_trial' && rows.s_u.outcome === 'trial_unpaid' && rows.s_p.outcome === 'converted' && rows.s_p.paid_invoices === 1 && rows.s_l.outcome === 'canceled_after_paying' && rows.s_s.outcome === 'trialing', 'each way a trial ends gets its own outcome; a $0 invoice is not a payment', JSON.stringify(rows));
+  ok(rows.s_z && rows.s_z.outcome === 'canceled_in_trial' && !rows.s_none, 'the sweep re-reads Stripe and finds a cancellation no webhook reported; a plan with no trial is skipped', JSON.stringify(rows.s_z));
+  ok(rows.s_p.paid_invoices === 1, 'the re-read does not double-count a payment already recorded', rows.s_p.paid_invoices);
+  const tr = by['trial-outcomes'], t = j.trials || {};
+  ok(tr && tr.level === 'ok' && !j.problems.some(x => /free trial/.test(x)), 'leaving after a trial is reported, never as a fault in problems', JSON.stringify(tr));
+  const l24 = (t.last24h || []).join(' | ');
+  ok(t.last24h.length === 4 && /Quinn \(qui…@trial.com\): Canceled the trial, never paid, \$17\/month\. Said: too expensive, Not right now/.test(l24) && /Uma \(unp…@trial.com\): Trial ended, first bill never went through/.test(l24) && /Lena \(lef…@trial.com\): Paid, then canceled/.test(l24) && /Zoe \(syn…@trial.com\)/.test(l24), 'the last 24 hours names each one who left, with why she said', l24);
+  ok(!/Pia|Sam/.test(l24) && !(t.last30d || []).some(x => /45/.test(x)), 'the one who paid, the one still on trial, and an old one are not in it', l24);
+  ok((t.endingSoon || []).length === 1 && /Sam \(soo…@trial.com\) trial ends/.test(t.endingSoon[0]), 'trials ending in the next 3 days are listed', JSON.stringify(t.endingSoon));
+  ok(t.trialsEnded === 6 && t.conversionPct === 33 && /4 left in the last 24 hours/.test(t.summary) && /2 of 6 ended trials became paying \(33%\)/.test(t.summary), 'the summary gives the conversion rate', t.summary + ' ' + t.trialsEnded);
+  ok(/checked 3 recent subscriptions in Stripe/.test(t.stripeSync || ''), 'the reply says Stripe was re-read', t.stripeSync);
+  ok(!/quit@trial|unpaid@trial|left@trial|sync@trial|Quitter|Stripeonly/.test(JSON.stringify(j)), 'first names and masked emails only'); }
 console.log(fail ? fail + ' FAILED' : 'ALL PASS'); process.exit(fail ? 1 : 0);

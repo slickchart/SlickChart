@@ -23,6 +23,7 @@ import { recordBuildSale } from '../lib/build-sales.js';
 import { liveSubForEmail } from '../lib/stripe-subs.js';
 import { recordReferralFromCheckout, markReferralCanceled, rewardOnInvoice, getReferralSettings, recordSignupSource, sourceLine } from '../lib/referral.js';
 import { notifySharer } from '../lib/referral-notify.js';
+import { recordTrialFromSubscription, recordTrialPayment } from '../lib/trial-outcomes.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
 // never missed even before any env is configured; FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
@@ -246,6 +247,8 @@ export default async function handler(req, res) {
       }
     } else if (event.type === 'invoice.paid') {
       // A referred friend's first payment credits the provider who shared the code, exactly once.
+      // A trial that turned into real money (lib/trial-outcomes.js, the daily brief reads it).
+      await recordTrialPayment(q, event.data.object);
       const r = await rewardOnInvoice(q, event.data.object);
       if (r && r.rewarded) await notifySharer(r.row.referrer_email, 'rewarded', { friend: r.row.friend_first_name, cents: r.cents });
     } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
@@ -311,6 +314,9 @@ export default async function handler(req, res) {
       if (effStatus === 'active' && subEmail) await notifyFounderPaid(q, subEmail);
       // A referred friend who cancels before ever paying: nobody waits on her credit.
       if (effStatus === 'canceled') await markReferralCanceled(q, customerId);
+      // What happened to her free trial: canceled in it, first bill failed, paying, or left after paying.
+      // THIS subscription's own fields, not the live one swapped in above. Never throws.
+      if (sub && sub.trial_end) await recordTrialFromSubscription(q, sub, subEmail || '');
     }
     res.status(200).json({ received: true });
   } catch (e) {

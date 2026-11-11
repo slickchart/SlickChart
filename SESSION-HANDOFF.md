@@ -9133,3 +9133,15 @@ provider referrals are all aimed at beauty pros, and add a quiet second door for
 - Verified: handler + link unit cases (scratchpad thread), both pages driven in Chromium at phone and
   computer width (buy button posts the right body, no overflow, no errors), founder-push suite incl.
   the ui-* tests, check-generated, tenant isolation.
+
+## Who leaves after a free trial (2026-11-11)
+
+Ashley: "track when a provider cancels after their trial ends and put that into my daily ops monitoring".
+`lib/trial-outcomes.js`, table `trial_outcomes` (one row per Stripe subscription with a trial). Outcomes:
+trialing, cancel_scheduled, canceled_in_trial, trial_unpaid, payment_failing, converted,
+canceled_after_paying (Stripe's `cancellation_details.reason` decides chose-vs-card). Fed by the webhook
+(`customer.subscription.updated/deleted` + `invoice.paid`) AND re-read from Stripe by the daily
+health sweep, so a missed webhook cannot hide one. The sweep's top-level `trials` field (and check
+`trial-outcomes`, level ok, never in `problems`) has last24h / last30d / endingSoon lines (first name +
+masked email + Stripe feedback), counts and the conversion rate. Test: `scratchpad/test-health-sweep.mjs`
+(PGLITE=<dir with @electric-sql/pglite>).
