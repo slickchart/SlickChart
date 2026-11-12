@@ -45,20 +45,25 @@ what the listing actually says.
 
 ## The image
 
-Screenshot the **real product**, never a mockup.
+**Ashley's style (her rule, 2026-11-12: "for google my business images make them more like this in
+the future").** Her reference was the cover of reel 22 (): a branded poster, not a bare screenshot.
 
-- **SlickChart:** use `slickchart-provider-demo.html`, **never a real account.** The demo's seeded
-  clients (Maya, Sophie, Priya) are fake; a real account's are a provider's actual clients, and their
-  names, contact details and skin notes must never leave the app in a marketing image. This is not a
-  style preference, it is §0 of `CLAUDE.md`.
-- **Build:** `build.html`, the real page.
-- Hide the demo banner and the app-download banner before shooting. They are scaffolding around the
-  product, not the product. Do not alter the UI itself.
-- 4:3. Serve it from `python3 -m http.server 8899` and drive Chromium headless per `CLAUDE.md` §2.
-  `scratchpad/shot-sc.mjs` from 2026-10-12 is a working example, including the clip maths: a phone
-  width app in a 4:3 landscape frame always trades fill against how much of the screen you show.
-- **Look at the image before sending it.** The 2026-10-12 shot is how the clipped CONCERNS tile was
-  found: a bug that had been live on every phone width, invisible until something rendered it large.
+- Mint gradient background. SlickChart lotus logo with the wordmark ("Slick" dark, "Chart" teal).
+- A dark pill with a teal dot and a short spaced-capitals label naming the feature.
+- A big serif headline (Playfair Display bold): one dark line, then an italic teal line.
+-  under it.
+- The **real product** in a phone frame on the right, from the demo apps (
+  or ), **never a real account** (§0 of : a real account's
+  clients are real people). Hide the demo banners first.
+- 4:3 landscape, 1800x1350 (rendered at 1200x900, scale 1.5), JPEG.
+
+How:  takes the phone screenshots (serve  on port 8898
+first),  fills  per post (edit its  list:
+file name, pill, dark line, italic line, screenshot) and writes the JPEGs. Copy the logo
+() next to the template as . **Look at every image before
+sending it**: check nothing is cut off at the bottom of the phone and the headline wraps cleanly.
+
+Headlines stay short (two to six words a line) and make no income claims.
 
 ## Where they go
 
