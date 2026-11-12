@@ -46,22 +46,24 @@ what the listing actually says.
 ## The image
 
 **Ashley's style (her rule, 2026-11-12: "for google my business images make them more like this in
-the future").** Her reference was the cover of reel 22 (): a branded poster, not a bare screenshot.
+the future").** Her reference was the cover of reel 22
+(`/mnt/project-files/ads-research/reels/22-ad-all-in-one-earn-36-cover.jpg`): a branded poster, not a
+bare screenshot.
 
 - Mint gradient background. SlickChart lotus logo with the wordmark ("Slick" dark, "Chart" teal).
 - A dark pill with a teal dot and a short spaced-capitals label naming the feature.
 - A big serif headline (Playfair Display bold): one dark line, then an italic teal line.
--  under it.
-- The **real product** in a phone frame on the right, from the demo apps (
-  or ), **never a real account** (§0 of : a real account's
-  clients are real people). Hide the demo banners first.
+- `slickchart.app` under it.
+- The **real product** in a phone frame on the right, from the demo apps (`slickchart-provider-demo.html`
+  or `slickchart-client-demo.html`), **never a real account** (section 0 of `CLAUDE.md`: a real
+  account's clients are real people). Hide the demo banners first.
 - 4:3 landscape, 1800x1350 (rendered at 1200x900, scale 1.5), JPEG.
 
-How:  takes the phone screenshots (serve  on port 8898
-first),  fills  per post (edit its  list:
-file name, pill, dark line, italic line, screenshot) and writes the JPEGs. Copy the logo
-() next to the template as . **Look at every image before
-sending it**: check nothing is cut off at the bottom of the phone and the headline wraps cleanly.
+How: `template/phone-shots.mjs` takes the phone screenshots (serve `slickchart-vercel/` on port 8898
+first). `template/render.mjs <dir>` fills `template/poster.html` once per post (edit its `items`
+list: file name, pill, dark line, italic line, screenshot) and writes the JPEGs. Copy the logo
+(`assets/slickchart-logo.png`) next to the template as `logo.png`. **Look at every image before
+sending it**: nothing cut off at the bottom of the phone, and the headline wraps cleanly.
 
 Headlines stay short (two to six words a line) and make no income claims.
 
