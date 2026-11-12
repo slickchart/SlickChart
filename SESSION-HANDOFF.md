@@ -9209,3 +9209,14 @@ appointments. There was no way to: a PDF could only be ATTACHED to a form for do
 - Needs AI features on (Settings > AI features). Not verifiable against the real model from here:
   the model call is mocked in tests. First real use is Jennie's; read her reply.
 - Tests: `test-form-import` (Chromium + WebKit, 23 checks), `test-ai-proxy-doc` (8).
+
+## 2026-11-12 — Build 2026-11-12c: free beta-tester codes are not "paying" in the referral progress
+
+Ashley 2026-11-12: *"some of the signups being counted were given the freebetatester codes so this
+is the real MRR"* (her Stripe dashboard: MRR $452.33; the brief said $552). `referralMetrics` now reads
+Stripe's live subscriptions (`stripeLiveSubs`, one list call per 100 per status, discounts expanded):
+a subscription a code takes to $0 is left out of paidTotal and MRR and counted in `freeNow` /
+`freeCodes` by coupon name; a partial code counts at what is billed; Stripe `trialing` counts as trial.
+`mrrSource` says 'stripe' or 'list price' (fallback when Stripe can't be read). Admin > Referrals
+shows "N free with a code (name: n)". Test: `test-referral-mrr` (9). Check the first live read
+against her $452.33.

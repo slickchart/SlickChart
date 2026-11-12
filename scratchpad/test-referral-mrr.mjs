@@ -32,5 +32,27 @@ ok(p.mrrUnknown === 1, 'a price Stripe could not give is counted as unknown, not
 const row = (await db.query("SELECT plan_amount, plan_interval FROM subscriptions WHERE email='old@x.com'")).rows[0];
 ok(row.plan_amount === 1000 && row.plan_interval === 'month', 'the blank price is saved so the next read needs no Stripe call', JSON.stringify(row));
 const before = calls.length; await referralMetrics(q);
-ok(calls.filter(u => /sub_old/.test(u)).length === 1 && calls.length - before === 1, 'only still-blank prices are asked of Stripe again', calls.slice(before).join(' '));
+ok(calls.filter(u => /sub_old/.test(u)).length === 1 && calls.slice(before).filter(u => /\/subscriptions\/sub_/.test(u)).length === 1, 'only still-blank prices are asked of Stripe again', calls.slice(before).join(' '));
+
+// 2026-11-12 (Ashley): free beta-tester codes are not paying. With Stripe's live list readable, a
+// 100%-off subscription leaves paid and MRR and is counted by its code; a partial code counts at
+// what is really billed; Stripe's own trialing status counts as trial.
+const sub = (id, amt, iv, extra) => Object.assign({ id, status: 'active', items: { data: [{ quantity: 1, price: { unit_amount: amt, recurring: { interval: iv } } }] } }, extra || {});
+const LIST = {
+  active: [sub('sub_a', 1700, 'month'), sub('sub_y', 17000, 'year'),
+    sub('sub_old', 1000, 'month', { discount: { coupon: { id: 'FREEBETATESTER', name: 'freebetatester', percent_off: 100 } } }),
+    sub('sub_gone', 1700, 'month', { discounts: [{ coupon: { id: 'half', name: 'half off', percent_off: 50 } }] })],
+  trialing: [sub('sub_t', 1700, 'month', { status: 'trialing' })], past_due: []
+};
+let listCalls = 0;
+globalThis.fetch = async (url) => { url = String(url); const m = /\/subscriptions\?(.*)$/.exec(url);
+  if (m) { listCalls++; const st = new URLSearchParams(m[1]).get('status'); return { ok: true, json: async () => ({ data: LIST[st] || [], has_more: false }) }; }
+  return { ok: false, status: 404, json: async () => ({ error: { message: 'x' } }) }; };
+await db.exec(`INSERT INTO subscriptions VALUES ('free2@x.com','c7','sub_f2','active',1700,'month',now())`);
+LIST.active.push(sub('sub_f2', 1700, 'month', { discount: { coupon: { id: 'FREEBETATESTER', name: 'freebetatester', percent_off: 100 } } }));
+const p2 = (await referralMetrics(q)).progress;
+ok(p2.freeNow === 2 && p2.freeCodes.length === 1 && p2.freeCodes[0].code === 'freebetatester' && p2.freeCodes[0].n === 2, 'two 100%-off subscriptions are counted apart, by code', JSON.stringify(p2.freeCodes));
+ok(p2.paidTotal === 3 && p2.onTrialNow === 1, 'paid excludes the free ones; trial still apart', JSON.stringify(p2));
+ok(p2.mrrCents === 1700 + 1417 + 850 && p2.mrrSource === 'stripe', 'MRR is what Stripe really bills: $17 + $170/12 + half of $17', p2.mrrCents);
+ok(p2.mrrUnknown === 0 && listCalls === 3, 'one list call per status, nothing unknown', listCalls);
 console.log(fail ? fail + ' FAILED' : 'ALL PASS'); process.exit(fail ? 1 : 0);

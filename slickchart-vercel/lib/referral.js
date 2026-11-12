@@ -472,7 +472,7 @@ export async function referralMetrics(q) {
       .map(x => ({ friend: x.friend_first_name || 'A friend', referrer: x.referrer_name || '', code: x.code, status: x.status, label: statusLabel(x.status), note: x.note || '', at: x.signed_up_at }));
   } catch (e) {}
   // Progress to her goal: every live subscription, its monthly value, and how many came by referral.
-  let paidTotal = 0, mrrCents = 0, fromReferral = 0, fromAds = 0, adSources = [], onTrialNow = 0, mrrUnknown = 0;
+  let live = null; let paidTotal = 0, mrrCents = 0, fromReferral = 0, fromAds = 0, adSources = [], onTrialNow = 0, mrrUnknown = 0, freeNow = 0; const freeByCode = {};
   try {
     let subs = await q`SELECT lower(email) AS email, plan_amount, plan_interval, stripe_subscription_id FROM subscriptions WHERE status = 'active'`;
     // Older rows were saved before the price was recorded, so they read as $0 and MRR came out low.
@@ -495,9 +495,28 @@ export async function referralMetrics(q) {
     try { (await q`SELECT DISTINCT email FROM trial_outcomes WHERE outcome IN ('trialing', 'cancel_scheduled') AND email IS NOT NULL`).forEach(r => trialing.add(String(r.email).toLowerCase())); } catch (e) {}
     onTrialNow = subs.filter(x => trialing.has(x.email)).length;
     subs = subs.filter(x => !trialing.has(x.email));
+    // Ashley 2026-11-12: "some of the signups being counted were given the freebetatester codes".
+    // A 100%-off code means $0 a month: not paying, not in MRR, counted apart by code. A partial
+    // code counts at what she is actually charged. Read live from Stripe (one list call per 100);
+    // if Stripe can't be read, fall back to the list price as before.
+    live = await stripeLiveSubs();
+    if (live) {
+      const keep = [];
+      for (const x of subs) {
+        const l = live.get(x.stripe_subscription_id);
+        if (!l) { keep.push(x); continue; }
+        if (l.status === 'trialing') { onTrialNow++; continue; }
+        if (l.free) { freeNow++; const k = l.code || 'a 100% off code'; freeByCode[k] = (freeByCode[k] || 0) + 1; continue; }
+        x.live_monthly = l.monthlyCents; keep.push(x);
+      }
+      subs = keep;
+    }
     paidTotal = subs.length;
-    mrrUnknown = subs.filter(x => x.plan_amount == null).length;
-    for (const x of subs) { const a = Number(x.plan_amount || 0); mrrCents += x.plan_interval === 'year' ? Math.round(a / 12) : a; }
+    mrrUnknown = subs.filter(x => x.live_monthly == null && x.plan_amount == null).length;
+    for (const x of subs) {
+      if (x.live_monthly != null) { mrrCents += x.live_monthly; continue; }
+      const a = Number(x.plan_amount || 0); mrrCents += x.plan_interval === 'year' ? Math.round(a / 12) : a;
+    }
     fromReferral = await one(q`SELECT count(*)::int AS n FROM referrals r JOIN subscriptions s ON lower(s.email) = r.friend_email WHERE s.status = 'active' AND r.status <> 'blocked'`);
     fromAds = await one(q`SELECT count(*)::int AS n FROM signup_sources x JOIN subscriptions s ON lower(s.email) = x.email
       WHERE s.status = 'active' AND x.ref_code IS NULL AND COALESCE(x.source,'') <> ''`);
@@ -508,8 +527,45 @@ export async function referralMetrics(q) {
   return {
     codes, sharers, sharers30, shares, signups, signups30, onTrial, paying, canceled, blocked, failed, rewardCents,
     retention: { day90: { paying: stillPaying90, of: eligible90 }, day180: { paying: stillPaying180, of: eligible180 } },
-    top, recent, progress: { paidTotal, mrrCents, onTrialNow, mrrUnknown, fromReferral, fromAds, other: Math.max(0, paidTotal - fromReferral - fromAds), adSources, goalProviders: 588, goalMrrCents: 1000000 }
+    top, recent, progress: { paidTotal, mrrCents, onTrialNow, mrrUnknown, freeNow, freeCodes: Object.entries(freeByCode).map(([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n), mrrSource: live ? 'stripe' : 'list price', fromReferral, fromAds, other: Math.max(0, paidTotal - fromReferral - fromAds), adSources, goalProviders: 588, goalMrrCents: 1000000 }
   };
+}
+
+// Every live (active or trialing) subscription in Stripe with what it really bills a month: item
+// prices times quantity, yearly divided by 12, after the discounts attached to it. free = a code takes
+// it to $0. null when Stripe can't be read, so callers fall back rather than report zero.
+export async function stripeLiveSubs() {
+  if (!process.env.STRIPE_SECRET_KEY) return null;
+  const out = new Map();
+  for (const status of ['active', 'trialing', 'past_due']) {
+    let after = '';
+    for (let page = 0; page < 10; page++) {
+      const r = await stripeApi('GET', '/subscriptions', { status, limit: 100, expand: ['data.discounts'], starting_after: after || undefined });
+      if (!r.ok || !r.data || !Array.isArray(r.data.data)) return null;
+      for (const sub of r.data.data) {
+        let gross = 0, interval = 'month', count = 1;
+        for (const it of ((sub.items && sub.items.data) || [])) {
+          const pr = it.price || {}; gross += Number(pr.unit_amount || 0) * Number(it.quantity || 1);
+          if (pr.recurring) { interval = pr.recurring.interval || 'month'; count = Number(pr.recurring.interval_count || 1) || 1; }
+        }
+        const coupons = new Map();
+        if (sub.discount && sub.discount.coupon) coupons.set(sub.discount.coupon.id, { c: sub.discount.coupon, code: sub.discount.promotion_code });
+        for (const d of (Array.isArray(sub.discounts) ? sub.discounts : [])) if (d && typeof d === 'object' && d.coupon) coupons.set(d.coupon.id, { c: d.coupon, code: d.promotion_code });
+        let net = gross, name = '';
+        for (const { c } of coupons.values()) {
+          if (c.percent_off != null) net = net * (1 - Number(c.percent_off) / 100);
+          else if (c.amount_off != null) net = net - Number(c.amount_off);
+          if (!name) name = c.name || c.id || '';
+        }
+        net = Math.max(0, Math.round(net));
+        const perMonth = interval === 'year' ? net / (12 * count) : interval === 'week' ? net * 52 / 12 / count : interval === 'day' ? net * 365 / 12 / count : net / count;
+        out.set(sub.id, { status: sub.status, monthlyCents: Math.round(perMonth), free: gross > 0 && net === 0, code: name });
+      }
+      if (!r.data.has_more || !r.data.data.length) break;
+      after = r.data.data[r.data.data.length - 1].id;
+    }
+  }
+  return out;
 }
 
 // Re-try every reward that Stripe refused (e.g. the sharer's billing was missing that day).
