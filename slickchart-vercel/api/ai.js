@@ -122,10 +122,13 @@ export default async function handler(req, res) {
     // billed too — so cap message count, total serialized size, and image blocks. The app sends a handful
     // of short messages and at most 4 downscaled images; a direct caller can't pack a max-size payload.
     if (messages.length > 50) { res.status(413).json({ error: 'Request too large.' }); return; }
-    let _imgCount = 0;
-    try { for (const m of messages) { const c = m && m.content; if (Array.isArray(c)) for (const blk of c) { if (blk && blk.type === 'image') _imgCount++; } } } catch (e) {}
+    let _imgCount = 0, _docCount = 0;
+    try { for (const m of messages) { const c = m && m.content; if (Array.isArray(c)) for (const blk of c) { if (blk && blk.type === 'image') _imgCount++; if (blk && blk.type === 'document') _docCount++; } } } catch (e) {}
     if (_imgCount > 8) { res.status(413).json({ error: 'Too many images in one request.' }); return; }
-    if (JSON.stringify(messages).length > 2000000) { res.status(413).json({ error: 'Request too large.' }); return; }
+    // One PDF at a time: "Upload your form" in the form builder (2026-11-12). A PDF is bigger than
+    // the downscaled photos, so a request carrying one may be up to 4 MB (Vercel's body cap is 4.5).
+    if (_docCount > 1) { res.status(413).json({ error: 'One file at a time.' }); return; }
+    if (JSON.stringify(messages).length > (_docCount ? 4000000 : 2000000)) { res.status(413).json({ error: 'Request too large.' }); return; }
 
     // Allow-list the model so an anonymous caller can't point this key at an
     // arbitrary/pricier model to run up the bill. The app only ever requests the
@@ -135,7 +138,9 @@ export default async function handler(req, res) {
     const ALLOWED_MODELS = new Set([DEFAULT_MODEL, 'claude-haiku-4-5-20251001']);
     const reqModel = (typeof body.model === 'string' && body.model) ? body.model : DEFAULT_MODEL;
     const model = ALLOWED_MODELS.has(reqModel) ? reqModel : DEFAULT_MODEL;
-    const max_tokens = Math.min(Math.max(parseInt(body.max_tokens, 10) || 1000, 1), 2000);
+    // Typing in a whole uploaded form needs more room than a brief; only a request that carries the
+    // file itself may ask for it, so the everyday features keep the 2000 cap.
+    const max_tokens = Math.min(Math.max(parseInt(body.max_tokens, 10) || 1000, 1), (_docCount || _imgCount) ? 8000 : 2000);
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

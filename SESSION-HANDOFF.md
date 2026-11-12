@@ -9192,3 +9192,20 @@ the reminder email to get set up"* and *"i dont need to know that in my health s
 - `api/admin/health-sweep.js` billing check no longer lists paid-but-no-account. The only such item
   left is when the automatic setup email did NOT go out (after its wait + 2 h), since she wants that sent.
 - Tests: `test-orphan-settings`, `test-orphans-ui` (Chromium + WebKit), `test-health-sweep`.
+
+## 2026-11-12 — Build 2026-11-12b: upload your own PDF (or a photo) and it becomes a form
+
+**Jennie (JEM House of Glam) observed, by email 2026-11-12:** she made a 5-page Laser Hair Removal
+intake & consent PDF and asked how to upload it to SlickChart so clients fill it in digitally before
+appointments. There was no way to: a PDF could only be ATTACHED to a form for download.
+- Form builder (new or edit) now has "Have this form already? Upload" (`_fbImportPick` /
+  `_fbImportFile`). A PDF (<= 2.5 MB) goes to `/api/ai` as a document block, a photo is shrunk to a
+  2000px JPEG first. Haiku 4.5 types it into `NAME|` / `Q|type|req|label|choices` lines
+  (`_fbImportPrompt`), `_fbParseImported` turns them into builder rows. Word for word; practitioner-only
+  boxes left out (collection rule 4); one client signature, last. NOTHING is saved until she taps
+  Save form. Existing questions: confirm Replace, or Cancel adds below (one signature kept).
+- `api/ai.js`: one document block allowed; requests carrying a file may ask for up to 8000 output
+  tokens (text-only stays 2000); document requests may be up to 4 MB.
+- Needs AI features on (Settings > AI features). Not verifiable against the real model from here:
+  the model call is mocked in tests. First real use is Jennie's; read her reply.
+- Tests: `test-form-import` (Chromium + WebKit, 23 checks), `test-ai-proxy-doc` (8).

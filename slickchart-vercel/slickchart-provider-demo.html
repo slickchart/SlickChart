@@ -612,7 +612,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-12a';
+const APP_BUILD='2026-11-12b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -22510,6 +22510,12 @@ function renderFormBuilder(tid){
     <span style="font-size:14px;color:var(--p-mut);flex:1;min-width:120px;">Emoji or an image in front of this form, leave blank to keep the default.</span>
   </div>`;})()}
   <div id="fb-svc-card" style="margin:6px 16px 12px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 13px;">${_fbSvcCardInner()}</div>
+  <div style="margin:2px 16px 10px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
+    <i class="ti ti-file-import" style="font-size:18px;color:var(--accent-strong);flex-shrink:0;"></i>
+    <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Have this form already?</div><div style="font-size:14px;color:var(--p-mut);line-height:1.4;">Upload your PDF or a photo of it. SlickChart types it in for you to check and save.</div></div>
+    <button id="fb-import-btn" type="button" onclick="_fbImportPick()" style="background:var(--surf1);color:var(--p-ink);border:1px solid var(--p-line-ctl);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit;">Upload</button>
+    <input type="file" id="fb-import-file" accept="application/pdf,.pdf,image/*" style="display:none;" onchange="_fbImportFile(this)">
+  </div>
   ${aiEnabled?`<div style="margin:2px 16px 10px;background:var(--accent-a08);border:1px solid var(--accent);border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
     <i class="ti ti-sparkles" style="font-size:18px;color:var(--accent-strong);flex-shrink:0;"></i>
     <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">AI Form Assist</div><div style="font-size:14px;color:var(--p-mut);line-height:1.4;">Suggest contraindications + consent language for this service.</div></div>
@@ -39445,6 +39451,105 @@ function deleteResource(id){
   persistCustomResources();persistForms();rebuildResources();
   if(typeof proToast==='function')proToast(isCustom?'Guide deleted':'Reset to original');
   _fgTab='guides';nav('forms');
+}
+// ── Turn her own PDF (or a photo of a paper form) into a SlickChart form (Jennie, 2026-11-12) ──
+// The file goes to /api/ai as a document/image block; the model transcribes it into a compact line
+// format that _fbParseImported turns into builder rows. Nothing is saved: the rows land in the
+// builder for her to check, and only her own Save stores the form, exactly like typing it in.
+const _FB_IMPORT_MAX=2.5*1024*1024;   // PDF bytes; base64 stays under the AI proxy's 4 MB document cap and Vercel's 4.5 MB body limit
+const _FB_TYPE_CODES={text:'Short text',long:'Long text',yesno:'Yes / No',multi:'Multiple choice',single:'Single select',date:'Date',sign:'Signature',photo:'Photo upload'};
+function _fbImportPick(){
+  if(!aiEnabled){if(typeof proToast==='function')proToast('Turn on AI features in Settings → AI features to upload a form');return;}
+  const f=document.getElementById('fb-import-file');if(f){f.value='';f.click();}
+}
+function _fbImportPrompt(){
+  return 'You are turning a beauty or wellness provider’s own client form into a digital form. Transcribe it faithfully: keep her exact wording for every question, consent line and statement. Do not add, invent, reword or drop anything a CLIENT fills in or agrees to.\n'
+  +'Output ONLY lines in this format, nothing else, no markdown:\n'
+  +'NAME|<the form title>\n'
+  +'Q|<type>|<1 if required else 0>|<label>|<choices separated by ;;, only for multi and single>\n'
+  +'Types: text (short answer, name, phone, email), long (several lines), yesno, multi (tick all that apply), single (pick one), date, sign (a client signature), photo.\n'
+  +'Rules:\n'
+  +'- One Q line per question, in the order they appear. Never put a line break inside a line. Never use the | character inside a label or choice.\n'
+  +'- A YES/NO table becomes one yesno line per row.\n'
+  +'- A list of checkboxes the client ticks becomes ONE multi line, its choices the boxes. An "Other: ____" box stays a choice called Other.\n'
+  +'- A list of statements the client confirms ("I confirm...", "I understand...") becomes ONE multi line, required, labelled with the sentence that introduces the list, choices the statements word for word.\n'
+  +'- A paragraph the client must read (risks, policies, instructions) becomes a required yesno line whose label is "I have read and understand: " followed by the paragraph word for word.\n'
+  +'- A bold consent sentence the client agrees to becomes a required yesno line with that sentence.\n'
+  +'- The client’s signature becomes ONE sign line, last. Client name and date next to the signature become text and date lines.\n'
+  +'- Leave out anything marked for the practitioner, clinic or office only (assessment boxes, practitioner name, practitioner signature, practitioner decision or notes), headers, footers, page numbers, logos and web addresses.\n'
+  +'- Mark required 1 for consent, signature, contraindication and health screening questions and for the client’s name; 0 otherwise unless the form says the field is required.';
+}
+// Parse the model's lines into {name, qs}. Tolerant of stray markdown, blank lines and odd casing.
+function _fbParseImported(text){
+  const out={name:'',qs:[]};let sig=null;
+  String(text||'').replace(/```[a-z]*|```/gi,'').split(/\r?\n/).forEach(function(line){
+    line=line.trim();if(!line)return;
+    const parts=line.split('|').map(function(x){return x.trim();});
+    const tag=(parts[0]||'').toUpperCase();
+    if(tag==='NAME'){if(!out.name)out.name=parts.slice(1).join(' ').trim();return;}
+    if(tag!=='Q'||parts.length<4)return;
+    const type=_FB_TYPE_CODES[(parts[1]||'').toLowerCase()]||'Short text';
+    const label=(parts[3]||'').replace(/\s+/g,' ').trim();if(!label)return;
+    const q={id:'q'+(nextQIdLocal++),label:label.slice(0,1500),type:type,required:parts[2]==='1'};
+    if(type==='Multiple choice'||type==='Single select'){
+      const opts=(parts.slice(4).join('|')||'').split(';;').map(function(x){return x.trim();}).filter(Boolean);
+      if(opts.length<1){q.type='Short text';}else q.options=opts.slice(0,60);
+    }
+    if(type==='Signature'){if(!sig)sig=q;return;}   // one client signature, always last
+    out.qs.push(q);
+  });
+  if(sig)out.qs.push(sig);
+  out.qs=out.qs.slice(0,200);
+  return out;
+}
+function _fbShrinkImage(file){
+  return new Promise(function(res,rej){
+    const url=URL.createObjectURL(file);const img=new Image();
+    img.onload=function(){try{const max=2000;let w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;const k=Math.min(1,max/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k);
+      const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(img,0,0,w,h);
+      const v=c.toDataURL('image/jpeg',0.85);URL.revokeObjectURL(url);res(v.slice(v.indexOf(',')+1));}catch(e){URL.revokeObjectURL(url);rej(e);}};
+    img.onerror=function(){URL.revokeObjectURL(url);rej(new Error('image'));};img.src=url;
+  });
+}
+function _fbFileToB64(file){
+  return new Promise(function(res,rej){const r=new FileReader();r.onload=function(){const v=String(r.result||'');res(v.slice(v.indexOf(',')+1));};r.onerror=function(){rej(r.error);};r.readAsDataURL(file);});
+}
+async function _fbImportFile(input){
+  const file=input&&input.files&&input.files[0];if(!file)return;
+  const isPdf=/pdf$/i.test(file.type||'')||/\.pdf$/i.test(file.name||'');
+  const isImg=/^image\//i.test(file.type||'');
+  if(!isPdf&&!isImg){if(typeof proToast==='function')proToast('Pick a PDF or a photo of your form');return;}
+  if(isPdf&&file.size>_FB_IMPORT_MAX){if(typeof proToast==='function')proToast('That PDF is too big. Try one under 2.5 MB, or a photo of each page');return;}
+  const btn=document.getElementById('fb-import-btn');const old=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.style.opacity='.6';btn.innerHTML='<i class="ti ti-loader-2"></i> Reading…';}
+  if(typeof proToast==='function')proToast('Reading your form. This can take up to a minute');
+  try{
+    // A phone photo can be 5 MB or more: shrink it to a readable JPEG first.
+    const b64=isPdf?await _fbFileToB64(file):await _fbShrinkImage(file);
+    const media=isPdf?'application/pdf':'image/jpeg';
+    const block=isPdf?{type:'document',source:{type:'base64',media_type:media,data:b64}}:{type:'image',source:{type:'base64',media_type:media,data:b64}};
+    // Haiku: a whole form is a few thousand words to type, and the faster model keeps it well inside
+    // the server's time limit. Her own Save is the check on what it typed.
+    const text=await _aiComplete([{role:'user',content:[block,{type:'text',text:_fbImportPrompt()}]}],8000,'claude-haiku-4-5-20251001');
+    const got=_fbParseImported(text);
+    if(!got.qs.length){if(typeof proToast==='function')proToast('I couldn’t find any questions in that file. Try a clearer copy');return;}
+    const list=document.getElementById('qlist');if(!list)return;
+    const have=[...list.querySelectorAll('.qrow')].filter(function(r){const l=r.querySelector('.q-label');return l&&l.value.trim();});
+    const replace=!have.length||confirm('Replace the '+have.length+' question'+(have.length===1?'':'s')+' already on this form? Cancel adds the new ones below.');
+    if(replace)list.innerHTML='';
+    // A form only ever has one signature: keep an existing one last, drop the imported duplicate.
+    const hasSig=!replace&&[...list.querySelectorAll('.q-type')].some(function(t){return t.value==='Signature';});
+    const qs=hasSig?got.qs.filter(function(q){return q.type!=='Signature';}):got.qs;
+    const sigRow=hasSig?[...list.querySelectorAll('.qrow')].find(function(r){const t=r.querySelector('.q-type');return t&&t.value==='Signature';}):null;
+    const frag=document.createElement('div');frag.innerHTML=qs.map(function(q){return _qRowHTML(q);}).join('');
+    [...frag.children].forEach(function(row){if(sigRow)list.insertBefore(row,sigRow);else list.appendChild(row);});
+    const nameEl=document.getElementById('form-name-input');if(nameEl&&!nameEl.value.trim()&&got.name)nameEl.value=got.name.slice(0,120);
+    if(typeof _sizeQLabels==='function')_sizeQLabels();
+    if(typeof proToast==='function')proToast('Added '+qs.length+' question'+(qs.length===1?'':'s')+'. Check them, then tap Save form');
+  }catch(e){
+    const m=String((e&&e.message)||'');
+    if(typeof proToast==='function')proToast(/disabled/.test(m)?'AI isn’t available right now':/413/.test(m)?'That file is too big. Try a smaller PDF':/429/.test(m)?'Too many tries in a row. Wait a minute and try again':'I couldn’t read that file. Try again, or a clearer copy');
+  }finally{if(btn){btn.disabled=false;btn.style.opacity='1';btn.innerHTML=old;}if(input)input.value='';}
 }
 // ── AI ASSIST (uses the in-app model when available; falls back to a built-in library offline) ──
 async function _aiJSON(prompt,fallbackFn){

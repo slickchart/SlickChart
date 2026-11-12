@@ -1,0 +1,33 @@
+// /api/ai: one uploaded PDF may ride along (form import, 2026-11-12) with a larger output cap; the
+// everyday text features keep the 2000 cap; two PDFs, or a document request over 4 MB, are refused.
+import fs from 'fs'; import os from 'os'; import path from 'path'; import { pathToFileURL } from 'url';
+const SRC = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../slickchart-vercel');
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aip-')); fs.mkdirSync(path.join(dir, 'api')); fs.mkdirSync(path.join(dir, 'lib'));
+fs.copyFileSync(path.join(SRC, 'api/ai.js'), path.join(dir, 'api/ai.js'));
+fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
+fs.writeFileSync(path.join(dir, 'lib/auth.js'), 'export function verifyToken(t){return t==="good"?{u:"p1"}:null;} export async function sessionOk(){return true;}');
+fs.writeFileSync(path.join(dir, 'lib/db.js'), 'export function dbEnabled(){return false;} export function sql(){} export async function ensureTable(){}');
+fs.writeFileSync(path.join(dir, 'lib/clients.js'), 'export async function getClientByToken(){return null;}');
+process.env.ANTHROPIC_API_KEY = 'k'; process.env.SESSION_SECRET = 's';
+let sent = null; globalThis.fetch = async (u, o) => { sent = JSON.parse(o.body); return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }; };
+const h = (await import(pathToFileURL(path.join(dir, 'api/ai.js')))).default;
+const call = async body => { const r = { code: 0, b: null, status(c) { this.code = c; return this; }, json(x) { this.b = x; return this; } }; sent = null; await h({ method: 'POST', headers: { authorization: 'Bearer good' }, body, socket: {} }, r); return r; };
+const doc = n => ({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'A'.repeat(n) } });
+const res = []; const ok = (n, v, d) => res.push([n, !!v, d]);
+let r = await call({ messages: [{ role: 'user', content: 'hi' }], max_tokens: 8000 });
+ok('a plain text request is still capped at 2000', r.code === 200 && sent.max_tokens === 2000, sent && sent.max_tokens);
+r = await call({ messages: [{ role: 'user', content: [doc(1000), { type: 'text', text: 'x' }] }], max_tokens: 8000, model: 'claude-haiku-4-5-20251001' });
+ok('one PDF may ask for 8000, on the model it asked for', r.code === 200 && sent.max_tokens === 8000 && sent.model === 'claude-haiku-4-5-20251001', JSON.stringify(sent && { m: sent.max_tokens, model: sent.model }));
+r = await call({ messages: [{ role: 'user', content: [doc(1000), { type: 'text', text: 'x' }] }], max_tokens: 99999 });
+ok('never above 8000', sent && sent.max_tokens === 8000);
+r = await call({ messages: [{ role: 'user', content: [doc(10), doc(10)] }] });
+ok('two PDFs are refused', r.code === 413 && !sent);
+r = await call({ messages: [{ role: 'user', content: [doc(3000000)] }] });
+ok('a 3 MB PDF fits', r.code === 200);
+r = await call({ messages: [{ role: 'user', content: [doc(4100000)] }] });
+ok('over 4 MB is refused', r.code === 413 && !sent);
+r = await call({ messages: [{ role: 'user', content: 'x'.repeat(2100000) }] });
+ok('a text request keeps the 2 MB cap', r.code === 413);
+r = await call({ messages: [{ role: 'user', content: [doc(10)] }], model: 'claude-opus-4-1' });
+ok('the model allow-list still applies', sent && sent.model === 'claude-sonnet-4-6');
+let all = true; for (const [n, v, d] of res) { console.log((v ? 'PASS ' : 'FAIL ') + n + (v ? '' : ' :: ' + (d || ''))); all = all && v; } console.log(all ? 'ALL PASS' : 'FAILURES'); process.exit(all ? 0 : 1);

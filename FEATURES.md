@@ -263,6 +263,7 @@ saved anywhere", not "does this always call that".
 | `_editPhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_evictableFileCache` | `/api/guide-file` | direct |
 | `_exportAllPhotos` | `/api/guide-file` | via `_getGuideFile` |
+| `_fbImportFile` | `/api/ai` | via `_aiComplete` |
 | `_fbMonitorCard` | `/api/feedback` | via `_fbMonitorPost` |
 | `_fbMonitorKey` | `/api/feedback` | via `_fbMonitorPost` |
 | `_fbMonitorOff` | `/api/feedback` | via `_fbMonitorPost` |
@@ -955,6 +956,7 @@ saved anywhere", not "does this always call that".
 | `markAllNotifsRead` | `/api/clients` | via `syncClientEvents` |
 | `markAllNotifsRead` | `/api/provider-form` | via `_flushInPersonForms` |
 | `moveClientProd` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `nav` | `/api/ai` | via `_aiComplete` |
 | `nav` | `/api/clients` | via `syncClientEvents` |
 | `nav` | `/api/provider-form` | via `_flushInPersonForms` |
 | `nav` | `/api/store` | via `_verifyFormSave` |
