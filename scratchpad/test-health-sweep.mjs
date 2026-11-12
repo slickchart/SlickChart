@@ -12,7 +12,7 @@ const db = new PGlite();
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-'));
 for (const d of ['api/admin', 'lib']) fs.mkdirSync(path.join(dir, d), { recursive: true });
 fs.copyFileSync(path.join(SRC, 'api/admin/health-sweep.js'), path.join(dir, 'api/admin/health-sweep.js'));
-for (const f of ['cron-runs.js', 'app-build.js', 'app-launch-log.js', 'auth.js']) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
+for (const f of ['cron-runs.js', 'app-build.js', 'app-launch-log.js', 'auth.js', 'founder-settings.js']) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
 // Trial outcomes (2026-11-11): the real lib, with Stripe answered by globalThis.__stripe.
 fs.copyFileSync(path.join(SRC, 'lib/trial-outcomes.js'), path.join(dir, 'lib/trial-outcomes.js'));
@@ -53,7 +53,7 @@ INSERT INTO feedback (provider_id,message,ts) VALUES ('bad','it broke',now()-int
 INSERT INTO device_reports VALUES ('good','dev-good-1','{"build":"${CUR}","platform":"iPhone","kind":"installed app","unsent":2,"idbWorks":true}',now()),
   ('bad','dev-bad-1','{"build":"2026-10-10a","platform":"Android","kind":"browser","unsent":7,"idbWorks":false,"reloadFails":"loadForms"}',now()),
   ('bad','dev-bad-2','{"build":"${CUR}","platform":"iPhone","kind":"installed app","idbWorks":false,"idbWhy":"open failed: UnknownError Connection to Indexed Database server lost. Refresh the page to try again","idbOff":true,"diskFreeMB":12,"diskQuotaMB":900}',now());
-INSERT INTO subscriptions (email,stripe_subscription_id,status,updated_at) VALUES ('healthy@ok.com','sub_1','active',now()-interval '20 days'),('trouble@x.com','sub_2','past_due',now()),('ghost@paid.com','sub_3','active',now()-interval '5 hours');
+INSERT INTO subscriptions (email,stripe_subscription_id,status,updated_at) VALUES ('healthy@ok.com','sub_1','active',now()-interval '20 days'),('trouble@x.com','sub_2','past_due',now()),('ghost@paid.com','sub_3','active',now()-interval '5 hours'),('unsent@paid.com','sub_4','active',now()-interval '10 hours');
 CREATE TABLE nurture_sends (email text NOT NULL, seq text NOT NULL, step int NOT NULL, sent_at timestamptz DEFAULT now(), UNIQUE(email, seq, step));
 CREATE TABLE nurture_optout (email text PRIMARY KEY, ts timestamptz DEFAULT now());
 INSERT INTO nurture_sends (email,seq,step,sent_at) VALUES ('ghost@paid.com','orphan',0,now()-interval '2 hours');
@@ -187,7 +187,7 @@ ok(by['scheduled-jobs'].items.some(i => /cron-events: started 1x in the last day
 { const it = by['scheduled-jobs'].items.find(i => /cron-events: started/.test(i)) || '';
   ok(/started at \d\d:\d\d UTC/.test(it) && /the 1 that finished took 4s typically, 4s at most/.test(it), 'a run that never finished says when it started and how long the finished runs took', it); }
 ok(by['square-tokens'].level === 'alert' && by['square-tokens'].items.length === 1 && /EXPIRED/.test(by['square-tokens'].items[0]), 'the expired Square sign-in is an ALERT');
-ok(by['billing'].level === 'alert' && by['billing'].items.some(i => /past due/.test(i)) && by['billing'].items.some(i => /gho…@paid.com: paid but has no SlickChart account; setup email sent \w{3} \d\d \d\d:\d\d UTC/.test(i)), 'past-due-but-using and paid-with-no-account are flagged, with when the setup email went', JSON.stringify(by['billing'].items));
+ok(by['billing'].level === 'alert' && by['billing'].items.some(i => /past due/.test(i)) && !by['billing'].items.some(i => /^gho/.test(i)) && by['billing'].items.some(i => /^uns…@paid.com: paid, has no account, and the automatic setup email did not go out/.test(i)), 'past-due-but-using is flagged; paid-with-no-account is NOT listed (Ashley 2026-11-11) unless its setup email never went out', JSON.stringify(by['billing'].items));
 ok(by['sign-in'].items.length === 1 && /5 failed sign-ins/.test(by['sign-in'].items[0]), 'someone stuck at sign-in is flagged');
 const _al = by['app-logs'].items;
 ok(_al.some(i => /^tro…/.test(i) && /signed out by the app 1x/.test(i)) && !_al.some(i => /^hea…/.test(i)), 'a sign-out in the launch log is flagged; one mid-launch close is not', JSON.stringify(_al));
@@ -217,7 +217,7 @@ ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-
   ok(!items.some(i => /sam…@new.com/.test(i)), 'only untouched sample courses gone (a profession change): not listed', JSON.stringify(items));
   const mx = items.find(i => /mix…@x.com: sc_courses/.test(i)) || '';
   ok(/\(0 of the 2 gone were deleted by her\)\. Gone: 1 untouched sample courses, 1 of her own/.test(mx), 'a course of her own going is still listed, with the samples counted apart', mx); }
-ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|fam0@home|twice0@c|Twice Person|locked@out|ghost@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
+ok(!JSON.stringify(j).match(/healthy@ok|trouble@x|Cooper|Secretname|cooper@client|Ann Private|ann@client|fam0@home|twice0@c|Twice Person|locked@out|ghost@paid|unsent@paid|M_SHARED|M_GOOD/), 'no client name, full email or full merchant id in the reply');
 ok(j.problems.length > 0 && j.problems[0].startsWith('ALERT'), 'problems list is worst first');
 ok(!JSON.stringify(j).match(/hea…@ok\.com/), 'the healthy account appears nowhere');
 { ok(__tq1 === 'trialing' && __tq2 === 'cancel_scheduled', 'a trial reads trialing, then cancel-scheduled once she presses cancel', __tq1 + ' ' + __tq2);

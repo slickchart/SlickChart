@@ -51,7 +51,7 @@ r = await call(orphans, 'POST', otherTok, { orphan_email_hours: 1 }); ok(r.code 
 r = await call(orphans, 'GET', ''); ok(r.code === 403, 'no sign-in is refused');
 r = await call(orphans, 'POST', 'Monitor good', { orphan_email_hours: 1 }); ok(r.code === 403, 'the monitor key can read but never write');
 r = await call(orphans, 'GET', founderTok);
-ok(r.code === 200 && r.body.settings.orphan_email_hours === 3 && r.body.settings.orphan_alert_hours === 48, 'defaults are 3 h and 48 h', JSON.stringify(r.body && r.body.settings));
+ok(r.code === 200 && r.body.settings.orphan_email_hours === 3 && r.body.settings.orphan_alert_hours === 48 && r.body.settings.orphan_alert_on === 0, 'defaults are 3 h, 48 h, alert off', JSON.stringify(r.body && r.body.settings));
 const em = (r.body.people || []).map(p => p.email).sort();
 ok(JSON.stringify(em) === JSON.stringify(['bell@stuck.com', 'jill@stuck.com', 'new@stuck.com']), 'lists exactly the paid-with-no-account people (not the roadmap buyer, not the one with an account)', JSON.stringify(em));
 const jill = (r.body.people || []).find(p => p.email === 'jill@stuck.com') || {};
@@ -64,7 +64,13 @@ ok(r.code === 200 && (r.body.people || []).every(p => /…/.test(p.email)) && !J
 // The job with defaults: jill (5h) and bell (60h) get the email, new (1h) does not; bell is escalated.
 globalThis.__mail = []; globalThis.__push = [];
 r = await call(cron, 'GET', 'Bearer cron');
-ok(r.body && r.body.emailed === 2 && r.body.escalated === 1 && r.body.graceHours === 3, 'job: 2 emailed, 1 escalated with defaults', JSON.stringify(r.body));
+ok(r.body && r.body.emailed === 2 && r.body.escalated === 0 && r.body.graceHours === 3 && !globalThis.__push.length && !globalThis.__mail.some(m => m.to === 'boss@sc.com'), 'job: 2 emailed with defaults, and Ashley is NOT alerted (alert off by default, 2026-11-11)', JSON.stringify(r.body));
+r = await call(orphans, 'POST', founderTok, { orphan_alert_on: 1 });
+ok(r.code === 200 && r.body.settings.orphan_alert_on === 1, 'she can switch the alert back on', JSON.stringify(r.body && r.body.settings));
+r = await call(cron, 'GET', 'Bearer cron');
+ok(r.body.emailed === 0 && r.body.escalated === 1 && globalThis.__push.length === 1, 'with it on, the 60 h one is escalated once (no second provider email)', JSON.stringify(r.body));
+r = await call(orphans, 'POST', founderTok, { orphan_alert_on: 0 });
+ok(r.code === 200 && r.body.settings.orphan_alert_on === 0, 'and off again', JSON.stringify(r.body && r.body.settings));
 ok(globalThis.__mail.some(m => m.to === 'jill@stuck.com' && /signup=1&email=jill%40stuck.com/.test(m.text)) && !globalThis.__mail.some(m => m.to === 'new@stuck.com' || m.to === 'road@map.com'), 'right people emailed, with the sign-up link for their own email');
 ok(globalThis.__mail.every(m => !/\bour fault\b|\bwe\b/i.test(m.text || '')), 'the email speaks as "I", not "we"');
 r = await call(cron, 'GET', 'Bearer cron'); ok(r.body.emailed === 0 && r.body.escalated === 0, 'a second run sends nothing again');

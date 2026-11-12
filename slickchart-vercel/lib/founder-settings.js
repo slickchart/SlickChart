@@ -9,6 +9,10 @@ import { sql } from './db.js';
 export const FOUNDER_SETTINGS = {
   orphan_email_hours: { def: 3, min: 1, max: 168, label: 'Hours after paying before the "finish your account" email goes out' },
   orphan_alert_hours: { def: 48, min: 2, max: 720, label: 'Hours after paying before you are told they still have no account' },
+  // 0 = off. Ashley 2026-11-11: "i dont need those notifications but i do want you to still email the
+  // providers the reminder email to get set up". Off stops only the push + email to her; the
+  // provider's own "finish your account" email always goes.
+  orphan_alert_on: { def: 0, min: 0, max: 1, label: 'Tell me when someone still has no account' },
 };
 
 let _ready = false;

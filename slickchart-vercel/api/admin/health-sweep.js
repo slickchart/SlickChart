@@ -14,6 +14,7 @@
 // Response: { at, build, checks: [{ id, title, level: 'ok'|'warn'|'alert', count, items: [text] }],
 //             problems: [text], trials: {...} }   — problems lists every warn/alert line, worst first;
 //             trials is who left after a free trial (lib/trial-outcomes.js), never a problem.
+import { getFounderSettings } from '../../lib/founder-settings.js';
 import { dbEnabled, sql, ensureProvidersTable } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
 import { monitorKeyOk } from '../feedback.js';
@@ -355,10 +356,14 @@ export async function runSweep(q) {
         AND s.updated_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
         AND coalesce(s.stripe_subscription_id, '') <> ''`;
     }
-    orphan.forEach(r => items.push(maskEmail(r.email) + ': paid but has no SlickChart account'
-      + (r.emailed ? '; setup email sent ' + r.emailed + ' UTC' : (r.unsub ? '; unsubscribed, so no setup email' : (('emailed' in r) ? '; setup email NOT sent yet' : '')))
-      + (r.alerted ? '; you were told ' + r.alerted + ' UTC' : '')));
-    return { level: orphan.length ? 'alert' : (items.length ? 'warn' : 'ok'), items };
+    // Ashley 2026-11-11: "i dont need to know that in my health screens". Paid-but-no-account is not
+    // listed any more. The one case still shown is the automatic setup email NOT having gone out
+    // (she wants that email sent), counted after the email's own wait so nobody mid-signup shows.
+    let graceH = 3; try { graceH = (await getFounderSettings(q)).orphan_email_hours; } catch (e) {}
+    const unsent = orphan.filter(r => ('emailed' in r) && !r.emailed && !r.unsub
+      && (!r.updated_at || new Date(r.updated_at).getTime() < Date.now() - (graceH + 2) * 3600 * 1000));
+    unsent.forEach(r => items.push(maskEmail(r.email) + ': paid, has no account, and the automatic setup email did not go out'));
+    return { level: unsent.length ? 'alert' : (items.length ? 'warn' : 'ok'), items };
   });
 
   // 9. Someone who keeps failing to sign in (rows are cleared on a successful sign-in).

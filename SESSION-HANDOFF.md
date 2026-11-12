@@ -9180,3 +9180,15 @@ Square, so Square could sell it again.
   `scratchpad/test-instant-booking-app.mjs` (app, 9 checks, Chromium and WebKit; old code fails 5).
 - Not testable on the preview: a real Square booking needs the live origin for OAuth, but the preview
   uses the real database and her real Square token, so a test booking on the preview IS real.
+
+## 2026-11-12 — Build 2026-11-12a: "paid but no account" no longer alerts Ashley or shows in health
+
+Ashley 2026-11-11: *"i dont need those notifications but i do want you to still email the providers
+the reminder email to get set up"* and *"i dont need to know that in my health screens either"*.
+- `lib/founder-settings.js`: new `orphan_alert_on` (0/1, default 0). `api/cron-orphan-checkout.js`
+  only pushes/emails her (step 1) when it is on. The provider's own "finish your account" email
+  (step 0) is unchanged and always goes.
+- Admin tools -> Paid but no account has a "Tell me when someone still has no account" box (off).
+- `api/admin/health-sweep.js` billing check no longer lists paid-but-no-account. The only such item
+  left is when the automatic setup email did NOT go out (after its wait + 2 h), since she wants that sent.
+- Tests: `test-orphan-settings`, `test-orphans-ui` (Chromium + WebKit), `test-health-sweep`.

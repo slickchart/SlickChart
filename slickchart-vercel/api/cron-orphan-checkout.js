@@ -126,9 +126,10 @@ async function handler(req, res) {
         }
       }
 
-      // 2) Still nothing after two days: hand it to a person.
+      // 2) Still nothing after two days: hand it to a person, only if she has that alert on
+      //    (Admin tools -> Paid but no account; off by default since 2026-11-11, her choice).
       const ageMs = Date.now() - new Date(r.updated_at).getTime();
-      if (ageMs >= ESCALATE_HOURS * 3600 * 1000) {
+      if (set.orphan_alert_on && ageMs >= ESCALATE_HOURS * 3600 * 1000) {
         const claimed = (await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, 'orphan', 1)
           ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`).length > 0;
         if (claimed) {
