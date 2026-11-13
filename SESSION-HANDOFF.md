@@ -7112,33 +7112,6 @@ client carrying a bot's `squareId` is removed and tombstoned; a real roster clie
 **NOT RUN against her real Square.** It deletes from Square with no undo. She drives it.
 
 
-## 2026-11-13 — Ashley's Android fell off the alert list after a signed-out launch (build `2026-11-13a`, PREVIEW)
-
-Found by the daily brief (push-state `problems`), not reported. §0b.
-
-**What her phone OBSERVED (its own launch log, device `3y77iu`, Android, build 2026-11-12a, Pacific):**
-11-12 08:18 linked for alerts (last link in phoneHistory, address …lkPIbE). 10:59:32 `launch` → `screen
-home` → 10:59:33 `hidden` → 10:59:39 `signin-screen welcome` (no `token-dropped`, so the app had no
-pass at launch). 11:13 she signed in, then used the app at 12:40, 13:10, 13:28. Its device report then
-said permission '' and no link; push-state: "Android app used 11/12 2:58 PM is NOT on the alert list".
-The 22:11Z paid sign-up still reached 2 devices (sent 2).
-
-**What the code proves:** `_initNativeProvider` awaited `checkPermissions()` once per page and, if that
-call never answered (the app went to the back a second after launch), nothing ever asked again: the
-6-hour and come-back re-registers are set up only AFTER the permission answer. So that page never
-linked, whatever she did.
-
-- `_nativePushPermRetry`: on every return to the front (`appStateChange` active and
-  `visibilitychange`), if setup has not finished, ask for permission again (never re-asks after
-  'denied'); the setup itself is now `_nativePushSetup`, run once however it is reached. The founder
-  test button uses it too.
-- `token-dropped` in the launch log now starts "server said expired|revoked" from the 401 body, so the
-  next server sign-out (don… 11-12 06:53, mis… 11-12 19:04, both 12a) says which it was (§4d).
-- **Still unknown:** why her phone had no pass at 10:59 with no `token-dropped` logged. Not guessed.
-- Test: `scratchpad/founder-push/ui-native-perm-hang.mjs` (8 checks), Chromium (file) and WebKit
-  (`ENGINE=webkit`, served on :8899). Fails 7/8 on the old build. `ui-native-coldlaunch`, `-fresh`,
-  `-link`, `-relink`, `ui-test-push` still pass.
-
 ## 2026-10-14c — Session Record products: match the client, autofill from homecare, custom products
 
 Ashley: "the recommended for you lost the products. this should A - match the clients record and B -
@@ -9248,3 +9221,30 @@ a subscription a code takes to $0 is left out of paidTotal and MRR and counted i
 `mrrSource` says 'stripe' or 'list price' (fallback when Stripe can't be read). Admin > Referrals
 shows "N free with a code (name: n)". Test: `test-referral-mrr` (9). Check the first live read
 against her $452.33.
+
+## 2026-11-13 — Ashley's Android fell off the alert list after a signed-out launch (build `2026-11-13a`, PREVIEW)
+
+Found by the daily brief (push-state `problems`), not reported. §0b.
+
+**What her phone OBSERVED (its own launch log, device `3y77iu`, Android, build 2026-11-12a, Pacific):**
+11-12 08:18 linked for alerts (last link in phoneHistory, address …lkPIbE). 10:59:32 `launch` → `screen
+home` → 10:59:33 `hidden` → 10:59:39 `signin-screen welcome` (no `token-dropped`, so the app had no
+pass at launch). 11:13 she signed in, then used the app at 12:40, 13:10, 13:28. Its device report then
+said permission '' and no link; push-state: "Android app used 11/12 2:58 PM is NOT on the alert list".
+The 22:11Z paid sign-up still reached 2 devices (sent 2).
+
+**What the code proves:** `_initNativeProvider` awaited `checkPermissions()` once per page and, if that
+call never answered (the app went to the back a second after launch), nothing ever asked again: the
+6-hour and come-back re-registers are set up only AFTER the permission answer. So that page never
+linked, whatever she did.
+
+- `_nativePushPermRetry`: on every return to the front (`appStateChange` active and
+  `visibilitychange`), if setup has not finished, ask for permission again (never re-asks after
+  'denied'); the setup itself is now `_nativePushSetup`, run once however it is reached. The founder
+  test button uses it too.
+- `token-dropped` in the launch log now starts "server said expired|revoked" from the 401 body, so the
+  next server sign-out (don… 11-12 06:53, mis… 11-12 19:04, both 12a) says which it was (§4d).
+- **Still unknown:** why her phone had no pass at 10:59 with no `token-dropped` logged. Not guessed.
+- Test: `scratchpad/founder-push/ui-native-perm-hang.mjs` (8 checks), Chromium (file) and WebKit
+  (`ENGINE=webkit`, served on :8899). Fails 7/8 on the old build. `ui-native-coldlaunch`, `-fresh`,
+  `-link`, `-relink`, `ui-test-push` still pass.
