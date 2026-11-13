@@ -108,7 +108,7 @@ export default async function handler(req, res) {
         // Record into the provider's synced kv under a key the app reads (but never writes), so pulling
         // it can't clobber the app's own data. ensureTable is a no-op if the table already exists.
         await q`INSERT INTO kv (owner, k, v) VALUES (${providerId}, 'sc_square_activity', ${activity})
-          ON CONFLICT (owner, k) DO UPDATE SET v = EXCLUDED.v`;
+          ON CONFLICT (owner, k) DO UPDATE SET v = EXCLUDED.v, updated_at = now()`;   // the app's changed-only read keys on updated_at
       }
     }
   } catch (e) { console.error('[square webhook] record failed:', e && e.message); }
