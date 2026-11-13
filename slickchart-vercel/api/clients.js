@@ -35,11 +35,23 @@ function slimPayload(p) {
   }
   return o;
 }
-export function slimEvents(events) {
+// `before` (ms, optional): events created before it go slimmed whatever the budget. Only a build that
+// sends ?since= gets this (2026-11-13d): it already filed everything older on an earlier poll, and it
+// fetches whole, with ?full=, any older event it has NOT seen or a form not on its client's chart, so
+// nothing is ever filed without its photos. An event with nothing heavy in it is sent as it is.
+export function slimEvents(events, before) {
   const recentCut = Date.now() - 3 * 86400000;
+  const cut = Number(before) > 0 ? Number(before) : 0;
   let total = 0;
   const out = (events || []).map(e => {
     let n = 0; try { n = JSON.stringify(e.payload || {}).length; } catch (x) {}
+    if (cut && Number(e.created_at) < cut) {
+      const sp = slimPayload(e.payload);
+      let m = n; try { m = JSON.stringify(sp || {}).length; } catch (x) {}
+      if (m >= n) { total += n; return e; }
+      total += m;
+      return Object.assign({}, e, { payload: sp, slim: true });
+    }
     const recent = Number(e.created_at) >= recentCut;
     if (total + n <= EV_BUDGET || (recent && total + n <= EV_HARD)) { total += n; return e; }
     const sp = slimPayload(e.payload);
@@ -80,7 +92,16 @@ export default async function handler(req, res) {
       // "304 nothing changed" instead of the whole list again (2026-11-07). The fingerprint is of
       // THIS caller's own answer, computed fresh every time, so it can never stand in for anyone
       // else's data. Builds that do not send it get the full list exactly as before.
-      const body = JSON.stringify({ ok: true, clients, events: slimEvents(events), eventClients });
+      // ?since=<asOf from this phone's last answer> (2026-11-13d): events older than that went to this
+      // phone already, so they come slimmed, the way the account read sends only changed keys. The
+      // cut is rounded down to the hour, less 10 minutes, so the answer (and its fingerprint) stays the
+      // same from poll to poll and the "304 nothing changed" still works. Builds that do not send it
+      // get exactly the answer they always did. It only decides how much of THIS caller's own events
+      // is sent; it is never used to pick whose.
+      let since = Math.floor(Number((req.query && req.query.since) || 0));
+      if (!(since > 0) || since > Date.now() + 86400000) since = 0;
+      const cut = since ? Math.floor(since / 3600000) * 3600000 - 600000 : 0;
+      const body = JSON.stringify({ ok: true, clients, events: slimEvents(events, cut), eventClients, asOf: Math.floor(Date.now() / 3600000) * 3600000 });
       const etag = '"' + createHash('sha1').update(body).digest('base64').replace(/=+$/, '') + '"';
       res.setHeader('ETag', etag);
       res.setHeader('Cache-Control', 'private, no-store');

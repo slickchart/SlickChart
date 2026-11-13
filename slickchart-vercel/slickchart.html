@@ -10,12 +10,13 @@ still signed in with that same pass and asks for the same thing (_takeEarly), el
 (function(){try{
   if(/demo/i.test(location.pathname)||/selfcheck=1/.test(location.search))return;
   var t=localStorage.getItem('sc_token');if(!t||!localStorage.getItem('sc_onboarded'))return;
-  var me='';try{var d=String(t).split('.')[0];var o0=JSON.parse(atob(d.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((d.length+3)%4)));me=(o0&&o0.u)?String(o0.u):('t:'+d);}catch(e){}
+  var d=String(t).split('.')[0],me=d?('t:'+d):'';try{var o0=JSON.parse(atob(d.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((d.length+3)%4)));if(o0&&o0.u)me=String(o0.u);}catch(e){}
   var su='/api/store';try{var o=JSON.parse(localStorage.getItem('scl_pull_asof')||'null');if(o&&me&&o.o===me&&o.t>0)su='/api/store?since='+encodeURIComponent(o.t);}catch(e){}
+  var cu='/api/clients';try{var oc=JSON.parse(localStorage.getItem('scl_ev_asof')||'null');if(oc&&me&&oc.o===me&&oc.t>0)cu='/api/clients?since='+encodeURIComponent(oc.t);}catch(e){}
   var H={'Authorization':'Bearer '+t};
   var f=function(u){return fetch(u,{headers:H,cache:'no-store'}).catch(function(){return null;});};
   var sq='/api/square/appointments?days=90';
-  window.__scPre={tok:t,at:Date.now(),store:{u:su,p:f(su)},clients:{u:'/api/clients',p:f('/api/clients')},sq:{u:sq,p:f(sq)}};
+  window.__scPre={tok:t,at:Date.now(),store:{u:su,p:f(su)},clients:{u:cu,p:f(cu)},sq:{u:sq,p:f(sq)}};
 }catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
@@ -369,7 +370,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-13c';
+const APP_BUILD='2026-11-13d';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -4358,7 +4359,7 @@ const Cloud={
       _idb.set('pull_base',base).then(function(ok){if(ok!==false)note();}).catch(function(){});
     }catch(e){}
   },
-  _baseDrop(){this._pullBase=null;try{localStorage.removeItem('scl_pull_asof');}catch(e){}try{if(typeof _idb!=='undefined')_idb.del('pull_base');}catch(e){}},
+  _baseDrop(){this._pullBase=null;try{localStorage.removeItem('scl_pull_asof');}catch(e){}try{localStorage.removeItem('scl_ev_asof');}catch(e){}try{if(typeof _idb!=='undefined')_idb.del('pull_base');}catch(e){}},
   async _takePrefetch(tok){try{const pre=this._storePre;if(!pre)return null;this._storePre=null;if(pre.tok!==tok||Date.now()-pre.at>60000)return null;return await pre.p;}catch(e){return null;}},
   async _pullInner(){if(!this.token)return -1;const _pullTok=this.token;let r=await this._takePrefetch(_pullTok);let _full=false;let j=null;
     /* Up to two reads: the changed-only one, and a full one if the saved answer could not be used. */
@@ -33518,7 +33519,7 @@ function _reconcileEventAttachments(events){
       // re-dates an old check-in to today. That is how a record ended up labelled "Friday,
       // July 31" carrying a timestamp of October 8. 0 means unknown, and every consumer
       // already treats unknown as "cannot confirm".
-      c.lastCheckin={id:ev.id,dateLabel:payload.dateLabel||'',time:payload.time||'',treatment:payload.treatment||'',groups:(payload.groups||[]).slice(),flagged:(payload.flagged||[]).slice(),notes:payload.notes||'',photoCount:ciPhotos.length,at:at||0};
+      c.lastCheckin={id:ev.id,dateLabel:payload.dateLabel||'',time:payload.time||'',treatment:payload.treatment||'',groups:(payload.groups||[]).slice(),flagged:(payload.flagged||[]).slice(),notes:payload.notes||'',photoCount:(ciPhotos.length||Number(payload.photosCount)||0),at:at||0};
       _stampCheckinDone(c,{dateLabel:payload.dateLabel||'',at:at});
       if(payload.flagged&&payload.flagged.length&&!((typeof _isCheckinDismissed==='function')&&_isCheckinDismissed(ev.id))&&typeof _mergeContra==='function'){
         const _fd=[];(payload.groups||[]).forEach(g=>{(g.rows||[]).forEach(r=>{if(r&&r.flagged)_fd.push({label:r.label||'',detail:(r.detail||'').trim()});});});
@@ -33598,6 +33599,11 @@ async function _wholeSlimEvents(events,tok){
   const hold={};need.forEach(function(e){if(!got[e.id])hold[e.id]=1;});
   return events.filter(function(e){return !(e&&hold[e.id]);}).map(function(e){return (e&&got[e.id])?got[e.id]:e;});
 }
+function _evSinceUrl(){
+  try{const o=JSON.parse(localStorage.getItem('scl_ev_asof')||'null');const me=(typeof _tokenOwner==='function')?_tokenOwner():'';
+    if(o&&me&&o.o===me&&Number(o.t)>0)return '/api/clients?since='+encodeURIComponent(Number(o.t));}catch(e){}
+  return '/api/clients';
+}
 async function syncClientEvents(){
   if(_syncingEvents)return;
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
@@ -33619,9 +33625,13 @@ async function syncClientEvents(){
     const _evc=syncClientEvents._last;
     const _evh={'Authorization':'Bearer '+tok};
     if(_evc&&_evc.tok===tok&&_evc.etag)_evh['If-None-Match']=_evc.etag;
+    // Changed-only (2026-11-13d): name the last answer this device FINISHED filing, and events older
+    // than it come without their photos (it filed them already). Anything older it has not seen, or a
+    // form missing from its chart, is still fetched whole by _wholeSlimEvents before it is filed.
+    const _evUrl=_evSinceUrl();
     let r=null;
-    if(!_evh['If-None-Match']){const _ep=_takeEarly('clients','/api/clients');if(_ep)r=await _ep;}
-    if(!r)r=await fetch('/api/clients',{headers:_evh,cache:'no-store'});
+    if(!_evh['If-None-Match']){const _ep=_takeEarly('clients',_evUrl);if(_ep)r=await _ep;}
+    if(!r)r=await fetch(_evUrl,{headers:_evh,cache:'no-store'});
     const _same=(r.status===304&&!!_evc&&_evc.tok===tok);
     // How the poll went, for the device report: a poll that fails EVERY time means no client
     // submission reaches this device at all, and the founder health sweep should say so.
@@ -33976,6 +33986,9 @@ async function syncClientEvents(){
     // THREW is deliberately left unseen: marking it handled would strand the client's submission
     // permanently, and every branch above is idempotent so retrying one costs nothing.
     _markEventsSeen(fresh.filter(ev=>!_evFailedIds[ev.id]).map(ev=>ev.id));
+    // This whole answer has been filed, so the next ask can name it. Only when the same account is
+    // still signed in, and only from the server's own clock.
+    try{const _me=_tokenOwner();if(_me&&Number(j.asOf)>0&&Cloud.token===tok)localStorage.setItem('scl_ev_asof',JSON.stringify({o:_me,t:Number(j.asOf)}));}catch(e){}
     if(touchedRequests&&document.getElementById('requests-screen'))renderRequests();
     if(touchedMsgs){
       if(document.getElementById('msg-tab-inbox')&&document.getElementById('msg-tab-inbox').classList.contains('active'))showMsgTab('inbox');
