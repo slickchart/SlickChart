@@ -57,6 +57,8 @@ saved anywhere", not "does this always call that".
 | `_assembleClientData` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_assembleClientData` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_assembleClientData` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_attnGateCheck` | `/api/clients` | via `syncClientEvents` |
+| `_attnGateCheck` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_attnTilesHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_autoHomecareFromPurchases` | `/api/square/orders` | direct |
 | `_autoMergeSquareDuplicates` | `/api/clients` | via `_serverMergeClients` |

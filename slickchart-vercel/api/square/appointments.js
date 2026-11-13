@@ -42,6 +42,11 @@ export default async function handler(req, res) {
       windows.push([new Date(ws).toISOString(), new Date(we).toISOString()]);
     }
 
+    // Square's service names are fetched alongside everything else instead of last (2026-11-13: every
+    // request below used to run one after another, which is most of the 3-7 s her phone waited for the
+    // schedule on opening). A failure just leaves the names blank, as before.
+    const svcP = listBookableServices(ctx.token).catch(() => []);
+
     // Every location on the account.
     let locIds = [];
     try {
@@ -65,13 +70,16 @@ export default async function handler(req, res) {
         }
       } catch (e) { /* skip a location/window/pass that errors */ }
     };
+    // Every (window, location) query at once, a few at a time, instead of one after another. Each one's
+    // own pages still follow in order; the result is sorted by start time below, so arrival order does
+    // not matter, and `seen` keeps a booking found by two queries from being listed twice.
+    const queries = [];
     for (const [wMin, wMax] of windows) {
-      for (const lid of locIds) {
-        await pull(new URLSearchParams({ location_id: lid, start_at_min: wMin, start_at_max: wMax, limit: '100' }));
-      }
+      for (const lid of locIds) queries.push(new URLSearchParams({ location_id: lid, start_at_min: wMin, start_at_max: wMax, limit: '100' }));
       // Unfiltered safety net (covers any location we didn't enumerate) for this window.
-      await pull(new URLSearchParams({ start_at_min: wMin, start_at_max: wMax, limit: '100' }));
+      queries.push(new URLSearchParams({ start_at_min: wMin, start_at_max: wMax, limit: '100' }));
     }
+    for (let i = 0; i < queries.length; i += 6) await Promise.all(queries.slice(i, i + 6).map(pull));
 
     const bookings = raw.filter(isLive);
 
@@ -121,8 +129,8 @@ export default async function handler(req, res) {
         .map((b) => ((b.appointment_segments || [])[0] || {}).service_variation_id)
         .filter(Boolean))];
       if (varIds.length) {
-        const svcs = await listBookableServices(ctx.token);
-        svcs.forEach((sv) => { if (sv && sv.variationId) svcName[sv.variationId] = sv.name; });
+        const svcs = await svcP;
+        (svcs || []).forEach((sv) => { if (sv && sv.variationId) svcName[sv.variationId] = sv.name; });
       }
     } catch (e) { /* names unavailable — the app shows its generic label rather than nothing */ }
 

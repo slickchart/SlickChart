@@ -1,5 +1,6 @@
 // /api/store  — the app's saved data, per logged-in owner.
 //   GET  -> { data: { key: value, ... } }            (everything, for hydration)
+//   GET ?since=<asOf> -> only rows changed since then in `data`, the rest as `keep: {key: md5}`
 //   PUT  -> body { items: { key: value, ... } }       (upsert many)
 //        -> body { key, value }                        (upsert one)
 // Most keys are last-writer-wins. A few append-only ones are MERGED server-side instead — see
@@ -101,10 +102,35 @@ export default async function handler(req, res) {
         res.status(200).json({ data, count: rows.length });
         return;
       }
-      const rows = await q`SELECT k, v FROM kv WHERE owner = ${owner}`;
-      const data = {};
-      rows.forEach(r => { data[r.k] = r.v; });
-      const out = { data, count: rows.length };
+      // ?since=<ms> (2026-11-13): send only what CHANGED. Opening the app read her whole workspace every
+      // time, 3-4 s on her phone before anything current could be shown. The app keeps the last answer
+      // it was sent (device-only) and says when that was (`asOf`, this server's clock, never the phone's).
+      // Rows written since then, plus a 10-minute margin for a write that was still committing during
+      // that read, come back in full. Every other row comes back as `keep: {key: md5}`, and the app reuses
+      // its saved value ONLY when the fingerprint matches; any mismatch and it asks for everything. So a
+      // writer that forgets to stamp updated_at costs a full read, never a stale value.
+      // Same owner scoping as always: the owner is from the verified token, never the request.
+      // Additive: a build that never sends `since` gets `data` exactly as before, plus `h`/`asOf` it ignores.
+      let since = Math.floor(Number((req.query && req.query.since) || 0));
+      if (!Number.isFinite(since) || since < 0) since = 0;
+      const rows = await q`SELECT k, md5(v) AS h, (extract(epoch from now()) * 1000)::bigint AS now_ms,
+          (${since}::bigint <= 0 OR updated_at IS NULL
+            OR ${since}::bigint > (extract(epoch from now()) * 1000)::bigint
+            OR updated_at > to_timestamp(${since}::bigint / 1000.0) - interval '10 minutes') AS fresh,
+          CASE WHEN (${since}::bigint <= 0 OR updated_at IS NULL
+            OR ${since}::bigint > (extract(epoch from now()) * 1000)::bigint
+            OR updated_at > to_timestamp(${since}::bigint / 1000.0) - interval '10 minutes') THEN v END AS v
+        FROM kv WHERE owner = ${owner}`;
+      const data = {}, h = {}, keep = {};
+      let asOf = 0;
+      rows.forEach(r => {
+        if (!asOf && r.now_ms != null) asOf = Number(r.now_ms) || 0;
+        if (r.fresh || !since) { data[r.k] = r.v; h[r.k] = r.h; }
+        else keep[r.k] = r.h;
+      });
+      const out = { data, count: rows.length, h };
+      if (asOf) out.asOf = asOf;
+      if (since) out.keep = keep;   // only ever sent to a build that asked for it
       const renew = renewedToken(req._scPayload);
       if (renew) out.renew = renew;   // additive: a build that does not read it is unaffected
       res.status(200).json(out);

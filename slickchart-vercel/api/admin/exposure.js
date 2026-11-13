@@ -82,7 +82,7 @@ export default async function handler(req, res) {
                 const c = blob[cid] || {}; const e = norm(c.email), p = digits(c.phone);
                 if ((e && myEmails.has(e)) || (p.length >= 7 && myPhones.has(p))) { delete blob[cid]; changed = true; }
               }
-              if (changed) await q`INSERT INTO kv (owner, k, v) VALUES (${pid}, 'sc_clients', ${JSON.stringify(blob)}) ON CONFLICT (owner, k) DO UPDATE SET v = EXCLUDED.v`;
+              if (changed) await q`INSERT INTO kv (owner, k, v) VALUES (${pid}, 'sc_clients', ${JSON.stringify(blob)}) ON CONFLICT (owner, k) DO UPDATE SET v = EXCLUDED.v, updated_at = now()`;
             }
           }
         } catch (e) { /* best-effort blob scrub */ }

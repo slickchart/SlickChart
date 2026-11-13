@@ -9248,3 +9248,53 @@ linked, whatever she did.
 - Test: `scratchpad/founder-push/ui-native-perm-hang.mjs` (8 checks), Chromium (file) and WebKit
   (`ENGINE=webkit`, served on :8899). Fails 7/8 on the old build. `ui-native-coldlaunch`, `-fresh`,
   `-link`, `-relink`, `ui-test-push` still pass.
+
+## 2026-11-13 — Cards that were not current any more, and a slow open (build `2026-11-13b`, PREVIEW)
+
+**Her words:** "load time for the app is still feeling slow, and sometimes still shows un-updated
+notification cards before updating to what is current ... so that providers are never seeing false
+information". Third time (11-06a, 11-07b).
+
+**What her phone shows (launch log, device `3y77iu`, Android, 11-13):** `home 504 · acct 4014 · done
+4768 · sq 3287` and `home 1662 · acct 3530 · done 4230 · sq 7351`. Home draws at ~0.5 s; the account
+read is 3-4 s; Square 3-7 s. Locally the merge after the bytes arrive is ~0.3 s (4x CPU, 2 MB account,
+`scratchpad/probe-pull-cpu.mjs`), so the wait is the read itself, not the phone.
+
+**Why cards were still stale:** 11-06a made the cards wait for the ACCOUNT only. They are also built
+from her clients' submissions (`/api/clients` events: a check-in or intake sent while the app was
+closed turns off "hasn't done their check-in" / "First visit for") and from Square (which visit is
+next, moved or cancelled). Those answered seconds after the account, so the cards drawn in between
+were from before she closed the app. Coming back to an app left in the background redrew nothing.
+
+**Fix (app):**
+- `_attnGate` (`_attnCoreReady` = account + a submissions pass started after the wait began;
+  `_attnSqReady` = a Square answer started after it). Square-only cards (check-in reminders,
+  first-visit) wait for Square; the rest do not. A grey "checking" block (`_attnWaitHTML`,
+  `data-attn-wait`) holds the place on Home and in the bell feed. Unread messages / flagged-intakes
+  numbers and the Messages tab badge are grey/hidden until the account and submissions answered.
+- After `_ATTN_WAIT_MAX` (12 s) the device's own copy is shown, so a source that is down never hides
+  real work for good.
+- Back in the app after 2+ minutes away: the wait starts again (needs a fresh account read too), the
+  cards go behind the grey block, and submissions + Square are asked again (`._again` re-runs one that
+  was already in flight).
+- Launch log `boot-ms` gains `attn <ms>` (when the cards could be drawn) and `read changed n/N` or
+  `read full`.
+
+**Fix (speed):**
+- Changed-only account read: `GET /api/store?since=<asOf>` sends rows whose `updated_at` moved since
+  the device's last answer (10-minute margin), the rest as `keep:{key: md5}`. The device keeps that
+  answer in IndexedDB `pull_base` (owner-stamped; note in localStorage `scl_pull_asof`, not synced)
+  and reuses a value only when the md5 matches; any mismatch = a full read, so the merge always sees
+  exactly what a full read would give. Dropped at sign-out and by `_purgeOffloaded`. Old builds never
+  send `since` and get the same answer as before (+ `h`, `asOf`, ignored).
+- Two kv writers did not move `updated_at` (Square webhook `sc_square_activity`, founder exposure
+  tool): fixed, and CI `scripts/check-kv-stamps.cjs` keeps a third out.
+- `/api/square/appointments`: the (window x location) booking queries run 6 at once and the catalog
+  walk starts at the beginning instead of last. Same answer; 3.8 s -> 1.0 s with 250 ms per Square
+  call (stubbed Square, same output).
+
+**Tests:** `scratchpad/test-stale-cards-sources.mjs` (9: old build fails 3), `test-store-changed-only.mjs`
+(8), SQL checked in pglite. Still passing: test-attn-boot-flash, test-load-no-false-info,
+test-booking-toast-boot and the boot/storage sweeps listed in the PR.
+**Read next time:** her `boot-ms` lines after this ships: `acct` should drop to well under a second on
+a "read changed" open, and `attn` says when the cards appeared.

@@ -612,7 +612,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-13a';
+const APP_BUILD='2026-11-13b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -4514,7 +4514,7 @@ const Cloud={
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
-  logout(){try{if(this.token&&typeof _alAdd==='function')_alAdd('token-dropped',(this._dropWhy?'server said '+this._dropWhy+': ':'')+(new Error().stack||'').split('\n').slice(1,4).map(function(x){return x.trim().replace(/^at /,'').replace(/\s*\(.*$/,'').replace(/@.*$/,'');}).join(' < '));}catch(e){}this._dropWhy='';this.token='';try{localStorage.removeItem('sc_token');}catch(e){}},
+  logout(){try{if(this.token&&typeof _alAdd==='function')_alAdd('token-dropped',(this._dropWhy?'server said '+this._dropWhy+': ':'')+(new Error().stack||'').split('\n').slice(1,4).map(function(x){return x.trim().replace(/^at /,'').replace(/\s*\(.*$/,'').replace(/@.*$/,'');}).join(' < '));}catch(e){}this._dropWhy='';this.token='';try{localStorage.removeItem('sc_token');}catch(e){}try{this._baseDrop();}catch(e){}},
   // Device-local keys the server is still holding from before they were excluded. Cleared out of the
   // account after the pull, so they stop occupying space there and stop arriving on new devices.
   async _dropStaleDeviceLocal(keys){
@@ -4536,9 +4536,68 @@ const Cloud={
   // longest wait between Home drawing and her real data arriving. Read-only, same pass, same answer
   // the pull would have fetched a moment later; taken once, only by a pull made with that same pass,
   // and only while fresh. Anything else (a failed early read, a later pull) fetches as before.
-  _prefetchStore(){try{if(!this.token||this._storePre)return;const tok=this.token;this._storePre={tok:tok,at:Date.now(),p:fetch('/api/store',{headers:{'Authorization':'Bearer '+tok}}).catch(function(){return null;})};}catch(e){}},
+  _prefetchStore(){try{if(!this.token||this._storePre)return;const tok=this.token;const url=this._storeUrl();if(url!=='/api/store'){try{if(typeof _idb!=='undefined'&&_idb.available())this._basePre=_idb.get('pull_base');}catch(e){}}this._storePre={tok:tok,at:Date.now(),p:fetch(url,{headers:{'Authorization':'Bearer '+tok}}).catch(function(){return null;})};}catch(e){}},
+  // CHANGED-ONLY ACCOUNT READ (2026-11-13). Opening the app downloaded her whole workspace every time,
+  // and on her phone that alone was 3-4 s before anything current could be shown (launch log boot-ms
+  // "acct"). This device keeps the last answer the account sent it (IndexedDB 'pull_base', stamped with
+  // the account, never synced) and asks only for what changed since then (api/store.js ?since=). A
+  // reused value must match the account's own fingerprint of it, or the whole account is read as
+  // before, so what the merge below receives is exactly what a full read would have given it.
+  _storeUrl(){try{const o=JSON.parse(localStorage.getItem('scl_pull_asof')||'null');const me=(typeof _tokenOwner==='function')?_tokenOwner():'';if(o&&me&&o.o===me&&o.t>0)return '/api/store?since='+encodeURIComponent(o.t);}catch(e){}return '/api/store';},
+  async _baseFill(j){
+    try{
+      const me=(typeof _tokenOwner==='function')?_tokenOwner():'';if(!me)return null;
+      let b=this._pullBase;
+      if(!b||b.o!==me){b=null;try{const pre=this._basePre;this._basePre=null;if(pre)b=await pre;else if(typeof _idb!=='undefined'&&_idb.available())b=await _idb.get('pull_base');}catch(e){b=null;}}
+      if(!b||b.o!==me||!b.v||!b.h)return null;
+      this._pullBase=b;
+      const out=Object.assign({},j.data);const keep=j.keep||{};
+      for(const k of Object.keys(keep)){
+        if(!Object.prototype.hasOwnProperty.call(b.v,k)||b.h[k]!==keep[k])return null;
+        out[k]=b.v[k];
+      }
+      return out;
+    }catch(e){return null;}
+  },
+  _baseSave(j,data){
+    try{
+      const me=(typeof _tokenOwner==='function')?_tokenOwner():'';
+      if(!me||!j||!(j.asOf>0)||!j.h||typeof j.h!=='object')return;
+      const h=Object.assign({},j.keep||{},j.h);
+      // Every key must have a fingerprint, or the next read could not check it.
+      if(Object.keys(data).some(function(k){return !Object.prototype.hasOwnProperty.call(h,k);}))return;
+      const note=function(){try{localStorage.setItem('scl_pull_asof',JSON.stringify({o:me,t:j.asOf}));}catch(e){}};
+      // Nothing changed since the saved answer (the usual case on a reopen): move the note on and keep
+      // the saved copy as it is, instead of rewriting megabytes to the phone's storage every time.
+      const prev=this._pullBase;
+      if(prev&&prev.o===me&&j.keep&&Object.keys(data).length===Object.keys(prev.v).length&&Object.keys(h).every(function(k){return prev.h[k]===h[k];})){prev.t=j.asOf;note();return;}
+      const base={o:me,t:j.asOf,v:Object.assign({},data),h:h};
+      this._pullBase=base;
+      if(typeof _idb==='undefined'||!_idb.available())return;
+      // The saved answer first, then the note that points at it. If the two ever disagree, the
+      // fingerprints do not match and the next open simply reads the whole account.
+      _idb.set('pull_base',base).then(function(ok){if(ok!==false)note();}).catch(function(){});
+    }catch(e){}
+  },
+  _baseDrop(){this._pullBase=null;try{localStorage.removeItem('scl_pull_asof');}catch(e){}try{if(typeof _idb!=='undefined')_idb.del('pull_base');}catch(e){}},
   async _takePrefetch(tok){try{const pre=this._storePre;if(!pre)return null;this._storePre=null;if(pre.tok!==tok||Date.now()-pre.at>60000)return null;return await pre.p;}catch(e){return null;}},
-  async _pullInner(){if(!this.token)return -1;const _pullTok=this.token;let r=await this._takePrefetch(_pullTok);if(!r){try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+_pullTok}});}catch(e){this._pullFailed=true;return -1;}}if(r.status===401){this._authFailed=true;try{const _w=await r.clone().json();this._dropWhy=(_w&&_w.reason)||'no reason';}catch(e){this._dropWhy='unreadable';}try{this._prevOwner=(typeof _tokenOwner==='function')?_tokenOwner():'';localStorage.setItem('sc_prev_owner',this._prevOwner||'');}catch(e){}this.logout();return -1;}if(!r.ok){this._pullFailed=true;return -1;}let j=null;try{j=await r.json();}catch(e){}if(!j||!j.data||typeof j.data!=='object'){this._pullFailed=true;return -1;}const data=j.data;/* A fresh 30-day pass for the same session (api/store.js renewedToken). Only taken when this device still holds the pass the pull was made with, so a sign-out or account switch during the pull is never undone. */if(typeof j.renew==='string'&&j.renew.indexOf('.')>0&&this.token&&this.token===_pullTok){this.token=j.renew;try{localStorage.setItem('sc_token',j.renew);}catch(e){}}this._incoming=data;const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
+  async _pullInner(){if(!this.token)return -1;const _pullTok=this.token;let r=await this._takePrefetch(_pullTok);let _full=false;let j=null;
+    /* Up to two reads: the changed-only one, and a full one if the saved answer could not be used. */
+    for(let _try=0;_try<2;_try++){
+      if(!r){try{r=await fetch(_full?'/api/store':this._storeUrl(),{headers:{'Authorization':'Bearer '+_pullTok}});}catch(e){this._pullFailed=true;return -1;}}
+      if(r.status===401){this._authFailed=true;try{const _w=await r.clone().json();this._dropWhy=(_w&&_w.reason)||'no reason';}catch(e){this._dropWhy='unreadable';}try{this._prevOwner=(typeof _tokenOwner==='function')?_tokenOwner():'';localStorage.setItem('sc_prev_owner',this._prevOwner||'');}catch(e){}this.logout();return -1;}
+      if(!r.ok){this._pullFailed=true;return -1;}
+      j=null;try{j=await r.json();}catch(e){}
+      if(!j||!j.data||typeof j.data!=='object'){this._pullFailed=true;return -1;}
+      if(!j.keep||typeof j.keep!=='object')break;
+      const _filled=await this._baseFill(j);
+      if(_filled){j.data=_filled;break;}
+      j=null;r=null;_full=true;try{this._pullBase=null;}catch(e){}
+    }
+    if(!j){this._pullFailed=true;return -1;}
+    try{if(window.__scT&&!window.__scT.read)window.__scT.read=(j.keep?('changed '+(Object.keys(j.data).length-Object.keys(j.keep).length)+'/'+Object.keys(j.data).length):'full');}catch(e){}
+    if(this.token===_pullTok){try{this._baseSave(j,j.data);}catch(e){}}   /* signed out or switched mid-read: keep nothing */
+    const data=j.data;/* A fresh 30-day pass for the same session (api/store.js renewedToken). Only taken when this device still holds the pass the pull was made with, so a sign-out or account switch during the pull is never undone. */if(typeof j.renew==='string'&&j.renew.indexOf('.')>0&&this.token&&this.token===_pullTok){this.token=j.renew;try{localStorage.setItem('sc_token',j.renew);}catch(e){}}this._incoming=data;const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
     // What the account holds, as of right now. Boot re-persists a lot of what it just read (a
     // normalised list, a re-seeded default), and each of those used to be its own upload. Knowing
     // the account's copy means an echo of the pull costs nothing instead of a round trip.
@@ -5284,6 +5343,7 @@ async function _purgeOffloaded(){
     const keys=await d.keys();
     for(const raw of keys){
       const kk=String(raw||'');
+      if(kk==='pull_base'){try{await d.del(kk);n++;}catch(e){}continue;}   // the saved account answer (changed-only read)
       if(kk!==_OFF_OWNER_KEY&&kk.indexOf(_OFF_PREFIX)!==0)continue;
       try{await d.del(kk);n++;}catch(e){}
       if(kk.indexOf(_OFF_PREFIX)===0){const k=kk.slice(_OFF_PREFIX.length);try{delete Cloud._offloaded[k];delete Cloud._mem[k];}catch(e){}}
@@ -7504,6 +7564,7 @@ function setNav(id){
 // screen change (setNav) and whenever the notification state refreshes (updateBadge).
 function _updateMsgTabBadge(){
   try{const el=document.getElementById('msgs-tab-badge');if(!el)return;
+    if(typeof _attnCoreReady==='function'&&!_attnCoreReady()){el.style.display='none';return;}   // not known yet
     const n=(typeof threads!=='undefined'&&Array.isArray(threads))?threads.filter(t=>t&&t.unread).length:0;
     el.textContent=n>9?'9+':String(n);el.style.display=n>0?'flex':'none';
   }catch(e){}
@@ -9815,8 +9876,89 @@ function _fvpCandidates(){
 function _attnWaitForAccount(){
   try{return !!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&!Cloud._pulledOnce&&!Cloud._pullFailed);}catch(e){return false;}
 }
+// IS WHAT THE CARDS ARE BUILT FROM CURRENT YET? (2026-11-13)
+// Ashley, after the 11-06 fix: "sometimes still shows un-updated notification cards before updating to
+// what is current ... so that providers are never seeing false information". Waiting for the ACCOUNT
+// was not enough, because the cards are built from three things that answer at different times:
+//  - the account (cards she cleared on another device, forms she already reviewed)
+//  - her clients' submissions (/api/clients: a check-in or intake sent while the app was closed is
+//    what turns "hasn't done their check-in" / "First visit for ..." off)
+//  - Square (which visit is next, and whether it was moved or cancelled, drives those same two)
+// On her phone those land 3-7 s apart (launch log boot-ms), and a card drawn in between was a card
+// from before she closed the app. So nothing is drawn from a source until it has answered, a grey
+// "checking" block holds the place, and coming back to the app after a while starts the wait again.
+// A source that fails or is slow never hides real work for long: after _ATTN_WAIT_MAX the device's
+// own copy is shown, exactly as before. Square-only cards wait for Square; the rest do not.
+const _ATTN_WAIT_MAX=12000;
+const _attnGate={t0:Date.now(),ev:0,sq:0,needPull:false,last:'',timer:null};
+function _attnSignedIn(){try{return !!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&!window.__SC_DEMO__);}catch(e){return false;}}
+function _attnTimedOut(){return Date.now()-_attnGate.t0>=_ATTN_WAIT_MAX;}
+function _attnCoreReady(){
+  try{
+    if(!_attnSignedIn()||_attnTimedOut())return true;
+    if(_attnWaitForAccount())return false;
+    if(_attnGate.needPull&&!((Cloud._lastPullAt||0)>=_attnGate.t0))return false;
+    return !!_attnGate.ev;
+  }catch(e){return true;}
+}
+function _attnSqReady(){
+  try{
+    if(!_attnSignedIn()||_attnTimedOut())return true;
+    return _sqApptsState==='off'||!!_attnGate.sq;
+  }catch(e){return true;}
+}
+function _attnPending(){return !_attnCoreReady()||!_attnSqReady();}
+function _attnState(){return (_attnCoreReady()?'c':'-')+(_attnSqReady()?'s':'-');}
+// A source answered (or gave up). Only an answer to a request made AFTER the wait began counts, so a
+// request from before the app went to the background cannot vouch for what is on screen now.
+function _attnGateNote(which,startedAt){
+  try{if(which&&(startedAt||0)>=_attnGate.t0&&!_attnGate[which])_attnGate[which]=Date.now();}catch(e){}
+  _attnGateCheck();
+}
+function _attnGateCheck(){
+  try{
+    const st=_attnState();if(st===_attnGate.last)return;
+    _attnGate.last=st;
+    try{if(st==='cs'&&window.__scT&&!window.__scT.cards)window.__scT.cards=Math.round(performance.now());}catch(e){}
+    try{_updateMsgTabBadge();}catch(e){}
+    if(typeof Cloud!=='undefined'&&Cloud&&Cloud._booting)return;   // boot draws Home itself when it ends
+    _reRenderAttn();
+  }catch(e){}
+}
+function _attnGateStart(resume){
+  _attnGate.t0=Date.now();_attnGate.ev=0;_attnGate.sq=0;_attnGate.needPull=!!resume;_attnGate.last=_attnState();
+  try{clearTimeout(_attnGate.timer);}catch(e){}
+  _attnGate.timer=setTimeout(_attnGateCheck,_ATTN_WAIT_MAX+50);
+}
+try{_attnGate.timer=setTimeout(_attnGateCheck,_ATTN_WAIT_MAX+50);}catch(e){}
+// Back in the app after a while: what is on screen is from before. Hide the cards behind the grey
+// block, ask every source again, and draw them once each has answered. A quick switch away and back
+// (under two minutes) is left alone, since the 15-second checks kept it current.
+let _attnHiddenAt=0;
+try{document.addEventListener('visibilitychange',function(){
+  try{
+    if(document.visibilityState==='hidden'){_attnHiddenAt=Date.now();return;}
+    const away=_attnHiddenAt?Date.now()-_attnHiddenAt:0;_attnHiddenAt=0;
+    if(away<120000||!_attnSignedIn()||!(Cloud&&Cloud._pulledOnce))return;
+    _attnGateStart(true);
+    _reRenderAttn();
+    // A check already on its way started before she came back, so it cannot vouch for now: run another
+    // straight after it. Square the same way (its forced reload is a no-op while one is loading).
+    setTimeout(function(){
+      try{if(_syncingEvents)syncClientEvents._again=true;else syncClientEvents();}catch(e){}
+      try{if(_sqApptsState==='loading')_loadSquareAppts._again=true;else if(_sqApptsState!=='off')_loadSquareAppts(true);}catch(e){}
+    },0);
+  }catch(e){}
+});}catch(e){}
+// The grey "checking" block that holds the cards' place while a source is still answering.
+function _attnWaitHTML(){
+  return '<div data-attn-wait="1" role="status" aria-label="Checking for anything new" style="margin:0 16px 10px;display:flex;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--p-line-ctl);border-radius:12px;background:var(--surf1);">'
+    +'<span class="sk" style="width:40px;height:40px;border-radius:12px;flex-shrink:0;"></span>'
+    +'<span style="flex:1;min-width:0;"><span class="sk" style="display:block;height:14px;width:58%;margin-bottom:8px;"></span><span class="sk" style="display:block;height:12px;width:82%;"></span></span></div>';
+}
 function _attnTilesHTML(){
-  if(_attnWaitForAccount())return '';
+  if(_attnWaitForAccount()||!_attnCoreReady())return '';
+  const _sqOk=_attnSqReady();
   const newCheckins=unreadCheckins();
   return `
   ${(()=>{const unseenReq=pendingRequests().filter(b=>!b.seen);return unseenReq.length?(`<div style="margin:0 16px 10px;">
@@ -9862,6 +10004,7 @@ function _attnTilesHTML(){
   ${(function(){
     // Brand-new clients with a first appointment coming up who haven't been set up yet —
     // nudge to send the first-visit package (invite + intake in one tap).
+    if(!_sqOk)return '';   // which visit is next comes from Square
     var cands=_fvpCandidates().slice(0,3);
     return cands.map(function(e){var id=e[0],c=e[1];var na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;return _swipeTile(`
     <div onclick="sendFirstVisitPackage('${id}')" style="margin:0;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-green-line);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
@@ -9873,7 +10016,7 @@ function _attnTilesHTML(){
   ${(function(){
     const flagged=_shotFilterEntries(Object.entries(CL).filter(([id,c])=>_fcActive(c)));
     const reviews=_shotFilterEntries(Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!_fcActive(c)));
-    const nudges=_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]);
+    const nudges=_sqOk?_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]):[];   // the visit time is Square's
     if(!flagged.length&&!reviews.length&&!nudges.length)return '';
     let h='';   // header is now rendered once, above the booking/check-in/VC tiles (unified attention area)
     h+=nudges.map(([id,c])=>{
@@ -10113,8 +10256,8 @@ function renderHome(){
         :["Documents","OK","all current","var(--p-green)","vault"];
       return [
         _sqCountsUnknown()?["Today's appts",null,null,"var(--p-ink)","today-appts"]:["Today's appts",String(todayN),(rem!=null?rem+" remaining":(todayN?"scheduled":"none today")),"var(--p-ink)","today-appts"],
-        ["Unread messages",String(um),umSub,"var(--accent)","messages"],
-        third
+        _attnCoreReady()?["Unread messages",String(um),umSub,"var(--accent)","messages"]:["Unread messages",null,null,"var(--accent)","messages"],
+        _attnCoreReady()?third:["Documents",null,null,"var(--p-green)","vault"]
       ];
     })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${v==null?l+': loading':l+': '+v+', '+s}" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:14px;color:var(--p-mut);margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v==null?'<span class="sk sk-num"></span>':v}</div><div style="font-size:14px;color:var(--p-mut);">${s==null?'<span class="sk sk-sub"></span>':s}</div></button>`).join('')}
   </div>
@@ -10126,14 +10269,15 @@ function renderHome(){
     // `anyAttn` gate used looser predicates than the tiles' handled-state filters (ackHome / _homeDismissed
     // / _attnFresh / reviewAck), so it stayed lit after the last tile was cleared.
     const _tiles=_attnTilesHTML();
-    if(!_tiles||!_tiles.trim())return '';
+    const _wait=_attnPending()?_attnWaitHTML():'';
+    if(!_tiles||!_tiles.trim())return _wait;
     // With 836 clients synced from Square, a backlog of completed intakes is dozens of cards deep.
     // Clearing them one at a time, three on screen at once, is indistinguishable from them coming
     // back — you clear three, three more appear, forever. One button ends it.
     return '<div class="sh" style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;">'
       +'<h2 style="margin:0;">Needs your attention</h2>'
       +'<button onclick="_clearAllAttn()" style="border:none;background:none;color:var(--accent-strong);font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;padding:2px 0;">Clear all</button>'
-      +'</div>'+_tiles;
+      +'</div>'+_tiles+_wait;
   })()}
   <div class="sh"><h2>Up next</h2></div>
   ${(()=>{
@@ -16319,7 +16463,9 @@ function _logBootTimes(){
     try{const n=performance.getEntriesByType('navigation')[0];if(n)out.push('html '+Math.round(n.responseEnd));}catch(e){}
     try{const js=performance.getEntriesByType('resource').filter(function(r){return /\/assets\/app-[a-f0-9]+\.js/.test(r.name);})[0];
       if(js)out.push('js '+Math.round(js.responseEnd)+(js.transferSize===0?' cached':''));}catch(e){}
-    ['run','home','acct','done','sq'].forEach(function(k){if(T[k]!=null)out.push(k+' '+T[k]);});
+    ['run','home','acct','done','sq','cards'].forEach(function(k){if(T[k]!=null)out.push(k+' '+T[k]);});
+    // How the account was read: "read changed 3/212" (changed-only, 3 keys sent of 212) or "read full".
+    if(T.read)out.push('read '+T.read);
     if(out.length)_alAdd('boot-ms',out.join(' · '));
   }catch(e){}
 }
@@ -28876,9 +29022,10 @@ function renderNotifFeed(){
   // check-ins, photo consults, flagged intakes, form reviews, check-in nudges) render here at the top,
   // straight from the same source Home uses. Clearing one here clears it on Home too, and vice-versa.
   let attn='';try{attn=(_attnTilesHTML()||'').trim();}catch(e){attn='';}
+  let attnWait='';try{attnWait=_attnPending()?_attnWaitHTML():'';}catch(e){}
   S.innerHTML=`
   <div id="notif-feed-screen"></div>
-  ${attn?`<div class="sh"><h2>Needs action</h2></div>${attn}`:''}
+  ${attn?`<div class="sh"><h2>Needs action</h2></div>${attn}`:''}${attnWait}
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
     <div style="font-size:16px;color:var(--p-mut);">${unread.length} unread</div>
     ${unread.length>0?`<button onclick="markAllNotifsRead()" style="border:none;background:none;font-size:16px;color:var(--accent-strong);cursor:pointer;">Mark all read</button>`:''}
@@ -28889,7 +29036,7 @@ function renderNotifFeed(){
   ${read.length>0?`
   <div class="sh"><h2>Earlier</h2></div>
   ${read.map(n=>notifRow(n)).join('')}`:''}
-  ${(!attn&&!unread.length&&!read.length)?emptyState({icon:'ti-bell',title:'You\u2019re all caught up',body:'New activity \u2014 booking requests, form submissions, check-ins, and messages \u2014 shows up here as it happens.'}):''}
+  ${(!attn&&!attnWait&&!unread.length&&!read.length)?emptyState({icon:'ti-bell',title:'You\u2019re all caught up',body:'New activity \u2014 booking requests, form submissions, check-ins, and messages \u2014 shows up here as it happens.'}):''}
   <div style="height:16px;"></div>`;
   setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
 }
@@ -33679,6 +33826,7 @@ async function syncClientEvents(){
   // fresh timestamps. Verified reachable in scratchpad/prehydrate.mjs. Waiting costs one tick.
   if(_rosterNotReadYet())return;
   _syncingEvents=true;
+  const _evStart=Date.now();
   try{
     // Send back the fingerprint of the last answer: when nothing has changed the server says "304" and
     // sends nothing, instead of the same megabytes every 15 seconds (api/clients.js, 2026-11-07). The
@@ -34064,7 +34212,7 @@ async function syncClientEvents(){
     // submission in it down silently and nothing anywhere said so. Record it for the self-check.
     try{_evIngestFail({id:'(the whole poll)',kind:'sync'},e);}catch(_){}
   }
-  finally{_syncingEvents=false;}   // always release the guard, even on an early return above
+  finally{_syncingEvents=false;try{_attnGateNote('ev',_evStart);}catch(e){}if(syncClientEvents._again){syncClientEvents._again=false;setTimeout(function(){try{syncClientEvents();}catch(e){}},0);}}   // always release the guard, even on an early return above
 }
 // ── Founder-only: "new paid provider" in-app notification ──────────────────────────────────────
 // A little joy for the founder: pop an in-app notification + toast when a new provider PAYS. The
@@ -36207,6 +36355,7 @@ async function _loadSquareAppts(force){
   // own without hammering Square.
   if(!force&&_sqApptsState==='error'&&(Date.now()-(_sqApptsErrAt||0))<60000)return;
   _sqApptsState='loading';
+  const _sqStart=Date.now();
   let _changed=true;
   try{
     const data=await _sqFetch('/api/square/appointments?days=90');
@@ -36242,6 +36391,10 @@ async function _loadSquareAppts(force){
   // poll only repaints when the data actually changed (avoids flicker), but a manual Refresh (force)
   // must ALWAYS repaint — otherwise, if the refetch returns the same set, the screen that briefly
   // emptied itself while state was 'loading' would stay stuck on "Nothing on the books today".
+  // The attention cards that depend on which visit is next can be drawn now (see _attnGateNote).
+  if(_loadSquareAppts._again){_loadSquareAppts._again=false;setTimeout(function(){try{_loadSquareAppts(true);}catch(e){}},0);}
+  try{if(_sqStart>=_attnGate.t0&&!_attnGate.sq)_attnGate.sq=Date.now();
+    if((_changed||force)&&_navCur&&_navCur.screen==='home'){_attnGate.last=_attnState();try{if(_attnGate.last==='cs'&&window.__scT&&!window.__scT.cards)window.__scT.cards=Math.round(performance.now());}catch(e){}}else _attnGateCheck();}catch(e){}
   if(_changed||force){try{if(_navCur&&_navCur.screen==='home')renderHome();else if(_navCur&&_navCur.screen==='calendar')renderCalendar();else if(_navCur&&_navCur.screen==='today-appts'&&typeof renderTodayAppts==='function')renderTodayAppts();}catch(e){}}
 }
 // Create/refresh SlickChart client records from Square online bookings, so a client who booked
