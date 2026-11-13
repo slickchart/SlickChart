@@ -3,12 +3,13 @@
 // booking availability, branding). Client submissions (forms, booking requests,
 // messages) are logged as events for the provider to see.
 import crypto from 'crypto';
-import { sql } from './db.js';
+import { sql, schemaInPlace } from './db.js';
 
 let _ready = false;
 export async function ensureClientTables() {
   if (_ready) return;
   const q = sql();
+  if (await schemaInPlace(ensureClientTables, q)) { _ready = true; return; }   // one query, not 12 (lib/db.js)
   await q`CREATE TABLE IF NOT EXISTS clients (
     id text PRIMARY KEY,
     provider_id text NOT NULL,

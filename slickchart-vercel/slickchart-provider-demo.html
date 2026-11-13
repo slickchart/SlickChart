@@ -2,6 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>/* START THE THREE OPENING READS NOW (2026-11-13). The account, her clients' submissions and her
+Square schedule used to be asked for only after the 4 MB app code had loaded and run (and Square only
+after Home drew), ~0.4-0.6 s into every open on a phone. These are the same requests, with the same
+signed-in pass, started while the code is still on its way; the app adopts each one only if it is
+still signed in with that same pass and asks for the same thing (_takeEarly), else asks again. */
+(function(){try{
+  if(/demo/i.test(location.pathname)||/selfcheck=1/.test(location.search))return;
+  var t=localStorage.getItem('sc_token');if(!t||!localStorage.getItem('sc_onboarded'))return;
+  var me='';try{var d=String(t).split('.')[0];var o0=JSON.parse(atob(d.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((d.length+3)%4)));me=(o0&&o0.u)?String(o0.u):('t:'+d);}catch(e){}
+  var su='/api/store';try{var o=JSON.parse(localStorage.getItem('scl_pull_asof')||'null');if(o&&me&&o.o===me&&o.t>0)su='/api/store?since='+encodeURIComponent(o.t);}catch(e){}
+  var H={'Authorization':'Bearer '+t};
+  var f=function(u){return fetch(u,{headers:H,cache:'no-store'}).catch(function(){return null;});};
+  var sq='/api/square/appointments?days=90';
+  window.__scPre={tok:t,at:Date.now(),store:{u:su,p:f(su)},clients:{u:'/api/clients',p:f('/api/clients')},sq:{u:sq,p:f(sq)}};
+}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#050d0c">
@@ -612,7 +627,18 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-13b';
+const APP_BUILD='2026-11-13c';
+// One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
+// and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
+function _takeEarly(name,url){
+  try{
+    const P=window.__scPre;if(!P||!P[name])return null;
+    const e=P[name];P[name]=null;
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!tok||P.tok!==tok||e.u!==url||Date.now()-P.at>60000)return null;
+    return e.p;
+  }catch(e){return null;}
+}
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3728,6 +3754,17 @@ function _carryAnimalLink(win,lose){
 function _mergeClients(serverStr,localStr){
   try{
     if(localStr==null)return null;   // fresh device with no local roster — let the server copy load as-is
+    // Byte-identical copies (the usual reopen): the union below cannot change anything, unless the
+    // shared copy still holds a client this device deleted. Skipping the two big parses and 1,400
+    // signatures saved ~340 ms of the freeze after the account answers (2026-11-13, 700 clients, 4x CPU).
+    if(typeof serverStr==='string'&&serverStr===localStr){
+      var _d0=Object.assign({},(typeof _deletedClientIds==='object'&&_deletedClientIds)||{});
+      try{Object.keys(_unDeletedClientIds()).forEach(function(x){delete _d0[x];});}catch(e){}
+      var _dk=Object.keys(_d0);
+      if(!_dk.length)return {str:localStr,changed:false};
+      var _sv0=JSON.parse(serverStr);
+      if(_sv0&&typeof _sv0==='object'&&!_dk.some(function(x){return Object.prototype.hasOwnProperty.call(_sv0,x);}))return {str:localStr,changed:false};
+    }
     var sv=JSON.parse(serverStr||'{}'),lv=JSON.parse(localStr||'{}');
     if(!sv||typeof sv!=='object'||!lv||typeof lv!=='object')return null;
     var del=Object.assign({},(typeof _deletedClientIds==='object'&&_deletedClientIds)||{});
@@ -4536,7 +4573,7 @@ const Cloud={
   // longest wait between Home drawing and her real data arriving. Read-only, same pass, same answer
   // the pull would have fetched a moment later; taken once, only by a pull made with that same pass,
   // and only while fresh. Anything else (a failed early read, a later pull) fetches as before.
-  _prefetchStore(){try{if(!this.token||this._storePre)return;const tok=this.token;const url=this._storeUrl();if(url!=='/api/store'){try{if(typeof _idb!=='undefined'&&_idb.available())this._basePre=_idb.get('pull_base');}catch(e){}}this._storePre={tok:tok,at:Date.now(),p:fetch(url,{headers:{'Authorization':'Bearer '+tok}}).catch(function(){return null;})};}catch(e){}},
+  _prefetchStore(){try{if(!this.token||this._storePre)return;const tok=this.token;const url=this._storeUrl();if(url!=='/api/store'){try{if(typeof _idb!=='undefined'&&_idb.available())this._basePre=_idb.get('pull_base');}catch(e){}}const _ep=_takeEarly('store',url);if(_ep){this._storePre={tok:tok,at:Date.now(),p:_ep};return;}this._storePre={tok:tok,at:Date.now(),p:fetch(url,{headers:{'Authorization':'Bearer '+tok}}).catch(function(){return null;})};}catch(e){}},
   // CHANGED-ONLY ACCOUNT READ (2026-11-13). Opening the app downloaded her whole workspace every time,
   // and on her phone that alone was 3-4 s before anything current could be shown (launch log boot-ms
   // "acct"). This device keeps the last answer the account sent it (IndexedDB 'pull_base', stamped with
@@ -4862,6 +4899,7 @@ const Cloud={
       // into the history of an empty account. (This cannot be gated on Cloud._booting instead:
       // bootDone() clears that before the boot batch flushes — §2ad, four fixes failed on it.)
       if(!data||data[k]==null)return;
+      if(String(mine)===String(data[k]))return;   // the same copy cannot be richer (~260 ms per open saved)
       const mineN=Cloud._countEntries(mine),theirsN=Cloud._countEntries(data[k]);
       const theirs=String(data[k]);
       // Richer by entry count, by WEIGHT (entries emptied in place — Diana's case), or simply
@@ -5493,6 +5531,9 @@ function _lsPersist(k,v,_noOffload){
   const set=(typeof Cloud!=='undefined'&&Cloud&&Cloud._origSet)||localStorage.setItem.bind(localStorage);
   const str=String(v==null?'':v);
   if(!_noOffload&&_offloadEligible(k,str.length)){
+    // Already the value in the big box, byte for byte, and the last write there did not fail: writing
+    // the same megabytes again changes nothing (2026-11-13: ~50-60 ms of every open, at 4x CPU).
+    try{if(Cloud._offloaded[k]&&Cloud._mem[k]===str&&!(Cloud._offBad&&Cloud._offBad[k]))return null;}catch(e){}
     // Memory first, so this session reads the new value even before IndexedDB acknowledges it.
     Cloud._mem[k]=str;Cloud._offloaded[k]=true;_offIndexWrite();
     try{(Cloud._origRemove||localStorage.removeItem.bind(localStorage))(k);}catch(e){}
@@ -32140,8 +32181,9 @@ async function _sqFetch(path,opts){
   if(tok)headers['Authorization']='Bearer '+tok;                 // identifies the provider → uses THEIR OWN Square only
   const init={method:opts.method||'GET',headers};
   if(opts.body!==undefined){headers['Content-Type']='application/json';init.body=JSON.stringify(opts.body);}
-  let resp;
-  try{
+  let resp=null;
+  if(init.method==='GET'){const _ep=_takeEarly('sq',path);if(_ep)resp=await _ep;}
+  if(!resp)try{
     resp=await fetch(path,init);
   }catch(netErr){
     const e=new Error("Couldn't reach the Square sync service. This works once the app is deployed to Vercel (it won't work from a file opened directly on your computer).");
@@ -33835,7 +33877,9 @@ async function syncClientEvents(){
     const _evc=syncClientEvents._last;
     const _evh={'Authorization':'Bearer '+tok};
     if(_evc&&_evc.tok===tok&&_evc.etag)_evh['If-None-Match']=_evc.etag;
-    const r=await fetch('/api/clients',{headers:_evh,cache:'no-store'});
+    let r=null;
+    if(!_evh['If-None-Match']){const _ep=_takeEarly('clients','/api/clients');if(_ep)r=await _ep;}
+    if(!r)r=await fetch('/api/clients',{headers:_evh,cache:'no-store'});
     const _same=(r.status===304&&!!_evc&&_evc.tok===tok);
     // How the poll went, for the device report: a poll that fails EVERY time means no client
     // submission reaches this device at all, and the founder health sweep should say so.

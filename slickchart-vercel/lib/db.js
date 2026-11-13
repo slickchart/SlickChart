@@ -23,6 +23,42 @@ export function sql() {
   return neon(cs);
 }
 
+// IS THIS SCHEMA ALREADY IN PLACE? (2026-11-13, faster opening)
+// ensureProvidersTable is 25 statements and ensureClientTables 12, each its own round trip to the
+// database, and every endpoint is its own function instance, so a fresh instance (the first open of
+// the morning, or after a quiet spell) paid ~0.5-1.2 s of "CREATE TABLE IF NOT EXISTS" before reading
+// anything. This reads the ensure function's OWN source, lists every table, column and index it
+// creates, and checks them all in ONE query. Everything present: skip the statements. Anything
+// missing, or any statement this does not recognise: run the function in full, exactly as before.
+// So a column added to an ensure function later is still created, with nothing to remember.
+export async function schemaInPlace(fn, q) {
+  try {
+    const src = String(fn || '');
+    const tables = new Set(), cols = [], idx = new Set();
+    let known = 0;
+    for (const m of src.matchAll(/CREATE TABLE IF NOT EXISTS\s+([a-z_][a-z0-9_]*)/gi)) { tables.add(m[1].toLowerCase()); known++; }
+    for (const m of src.matchAll(/ALTER TABLE\s+([a-z_][a-z0-9_]*)\s+ADD COLUMN IF NOT EXISTS\s+([a-z_][a-z0-9_]*)/gi)) { tables.add(m[1].toLowerCase()); cols.push([m[1].toLowerCase(), m[2].toLowerCase()]); known++; }
+    for (const m of src.matchAll(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS\s+([a-z_][a-z0-9_]*)/gi)) { idx.add(m[1].toLowerCase()); known++; }
+    // A one-time default change on a column that exists does not need re-running.
+    for (const m of src.matchAll(/ALTER TABLE\s+[a-z_][a-z0-9_]*\s+ALTER COLUMN\s+[a-z_][a-z0-9_]*\s+DROP DEFAULT/gi)) known++;
+    const all = (src.match(/\b(CREATE|ALTER|DROP)\s+(TABLE|INDEX|UNIQUE)\b/gi) || []).length;
+    if (!tables.size || all !== known) return false;
+    q = q || sql();
+    const rows = await q`SELECT 'c' AS k, table_name AS a, column_name AS b FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = ANY(${[...tables]})
+      UNION ALL SELECT 'i' AS k, relname AS a, '' AS b FROM pg_class WHERE relkind = 'i' AND relname = ANY(${[...idx, '-']})`;
+    const haveT = new Set(), haveC = new Set(), haveI = new Set();
+    for (const r of rows) {
+      if (r.k === 'i') haveI.add(r.a);
+      else { haveT.add(r.a); haveC.add(r.a + '.' + r.b); }
+    }
+    for (const t of tables) if (!haveT.has(t)) return false;
+    for (const [t, c] of cols) if (!haveC.has(t + '.' + c)) return false;
+    for (const i of idx) if (!haveI.has(i)) return false;
+    return true;
+  } catch (e) { return false; }
+}
+
 // A single, simple key→value table per owner. Values are stored as text exactly
 // as the app saved them (the app already JSON-encodes its own data).
 let _ready = false;
@@ -121,6 +157,7 @@ let _provReady = false;
 export async function ensureProvidersTable() {
   if (_provReady) return;
   const q = sql();
+  if (await schemaInPlace(ensureProvidersTable, q)) { _provReady = true; return; }
   await q`CREATE TABLE IF NOT EXISTS providers (
     id text PRIMARY KEY,
     email text UNIQUE NOT NULL,
