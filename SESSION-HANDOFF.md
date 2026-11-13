@@ -9328,8 +9328,26 @@ research). Live launch log, 47 opens before 13b: html 397, home 819, acct 2873, 
   53 KB shell. A max-age would remove it but opens yesterday's code once after each deploy.
 - iOS has no service worker (no App-Bound Domains); Android Capacitor may refetch the page natively.
   Both need store rebuilds.
-- `/api/clients` is 2.7 MB per open for a busy account: a `since` cursor like /api/store's.
+- ~~`/api/clients` is 2.7 MB per open: a `since` cursor~~ DONE in `2026-11-13d` (below).
 - Client page: 587 KB no-store, third-party icon CSS and Google Fonts still render-blocking.
 - Square bookings cache kept fresh by webhooks (+ reconcile on open).
 - CPU: `loadClients` signature seeding (~115 ms), `_clientSig` replacer (~50 ms), five renderHome
   passes per open, `_snapshotBundled` (~20 ms).
+
+## 2026-11-13 — The forms/check-ins download sends only what is new (build `2026-11-13d`, PREVIEW)
+
+Ashley approved this ("yes go ahead with number 4"). `/api/clients` GET was ~2.7 MB on every open for
+a busy account, nearly all of it photos in events the phone had already filed.
+- Server (`api/clients.js`): `?since=<ms>` makes events created before `floor(since to the hour) - 10
+  min` come slimmed (`slimPayload`: photos/refs emptied with counts, data-URL signature/avatar/answers
+  dropped). An event with nothing heavy is sent unchanged, NOT marked `slim`. The body gains `asOf`
+  (server time floored to the hour, so the ETag/304 stays stable within the hour). Bad/absent/future
+  since = the old answer exactly. It never decides WHOSE events: identity is still the token.
+- App: `_evSinceUrl()` reads `scl_ev_asof` {o,t} (device-only, owner-checked against `_tokenOwner()`),
+  saved only after a pass is fully filed and `_markEventsSeen` ran, cleared by `Cloud._baseDrop()`
+  (logout). The head prefetch builds the same URL. Safety net unchanged: `_wholeSlimEvents` fetches
+  whole any slim event that is unseen, or a form not on its client's chart, before filing it.
+- `_reconcileEventAttachments` check-in fallback: `photoCount` uses `payload.photosCount` when slim.
+- Head prefetch owner fix: an unparseable token now gives `'t:'+payload` like `_tokenOwner()` (before,
+  it gave '' and the early reads just skipped `since`; harmless, slower).
+- Test: `scratchpad/test-events-since.mjs` (node + app, 23 checks, Chromium and WebKit).

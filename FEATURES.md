@@ -22,11 +22,9 @@ saved anywhere", not "does this always call that".
 | Caller | Endpoint | How |
 |---|---|---|
 | `_adLoadSlots` | `/api/square/availability` | direct |
-| `_addAnimalSave` | `/api/clients` | via `syncClientEvents` |
 | `_addCardOnFile` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_addCardOnFile` | `/api/square/pay-config` | direct |
 | `_addCardOnFile` | `/api/square/save-card` | direct |
-| `_addClientFromBooking` | `/api/clients` | via `syncClientEvents` |
 | `_afterAccountRead` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_aiComplete` | `/api/ai` | direct |
 | `_aiDayRecap` | `/api/ai` | via `_aiComplete` |
@@ -39,25 +37,21 @@ saved anywhere", not "does this always call that".
 | `_aiSuggestReplies` | `/api/ai` | via `_aiComplete` |
 | `_aiVisionAnalyze` | `/api/ai` | via `_aiComplete` |
 | `_alSend` | `/api/app-launch` | direct |
-| `_animalOwnerHTML` | `/api/clients` | via `syncClientEvents` |
 | `_apptCancelSquare` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_apptCancelSquare` | `/api/square/cancel-booking` | via `_doCancelSquare` |
 | `_apptClientIdOf` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_apptRescheduleSquare` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_apptRescheduleSquare` | `/api/square/reschedule-booking` | direct |
-| `_apptRowHTML` | `/api/clients` | via `syncClientEvents` |
 | `_apptRowHTML` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_apptRowHTML` | `/api/square/availability` | via `_adLoadSlots` |
 | `_apptRowHTML` | `/api/square/cancel-booking` | via `_doCancelSquare` |
 | `_apptRowHTML` | `/api/square/reschedule-booking` | via `_apptRescheduleSquare` |
 | `_askBookRun` | `/api/ai` | via `_aiComplete` |
-| `_askBookRun` | `/api/clients` | via `syncClientEvents` |
 | `_assembleClientData` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_assembleClientData` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_assembleClientData` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_assembleClientData` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_assembleClientData` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_attnGateCheck` | `/api/clients` | via `syncClientEvents` |
 | `_attnGateCheck` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_attnTilesHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_autoHomecareFromPurchases` | `/api/square/orders` | direct |
@@ -72,7 +66,6 @@ saved anywhere", not "does this always call that".
 | `_autoRecipRefreshChips` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_autoRecipRefreshChips` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_autoRecipRefreshChips` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_autoSyncCatalog` | `/api/clients` | via `syncClientEvents` |
 | `_autoSyncCatalog` | `/api/square/catalog` | direct |
 | `_autoSyncCustomers` | `/api/square/appointments` | via `_syncSquareClientsNow` |
 | `_autoSyncCustomers` | `/api/square/customers` | direct |
@@ -83,10 +76,7 @@ saved anywhere", not "does this always call that".
 | `_beginTotpEnroll` | `/api/totp-verify` | via `_confirmTotpEnroll` |
 | `_biPreview` | `/api/square/invoice` | via `_biSend` |
 | `_biPreview` | `/api/square/tax-rate` | via `_fetchSquareTaxRate` |
-| `_biSaveUnpaid` | `/api/clients` | via `syncClientEvents` |
-| `_biSend` | `/api/clients` | via `syncClientEvents` |
 | `_biSend` | `/api/square/invoice` | direct |
-| `_biTextLink` | `/api/clients` | via `syncClientEvents` |
 | `_biTextLink` | `/api/square/payment-link` | direct |
 | `_billingHTML` | `/api/create-portal-session` | via `_openBillingPortal` |
 | `_bookCheckSquare` | `/api/consult-slug` | via `_setConsultSlug` |
@@ -118,8 +108,6 @@ saved anywhere", not "does this always call that".
 | `_bookToggle` | `/api/square/connection` | via `_sqConnState` |
 | `_bookUseMenu` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_bookUseMenu` | `/api/square/connection` | via `_sqConnState` |
-| `_briefBodyHTML` | `/api/clients` | via `syncClientEvents` |
-| `_calBookLinkRowHTML` | `/api/clients` | via `syncClientEvents` |
 | `_calGo` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_calGo` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_calGo` | `/api/square/booking-options` | via `openSquareBook` |
@@ -129,7 +117,6 @@ saved anywhere", not "does this always call that".
 | `_calToday` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_calToday` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_calToday` | `/api/square/booking-options` | via `openSquareBook` |
-| `_cancelEditSummary` | `/api/clients` | via `syncClientEvents` |
 | `_cbAutosaveFlush` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbAutosaveNow` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbAutosaveNow` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
@@ -138,7 +125,6 @@ saved anywhere", not "does this always call that".
 | `_cbAutosaveVis` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbCommit` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbCommit` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
-| `_cbDone` | `/api/clients` | via `syncClientEvents` |
 | `_cbDone` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbFlushNow` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbFlushNow` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
@@ -157,24 +143,18 @@ saved anywhere", not "does this always call that".
 | `_checkForNewBuild` | `/api/build-id` | direct |
 | `_checkGiftCard` | `/api/square/giftcard` | direct |
 | `_checkNews` | `/api/announcements` | direct |
-| `_checkinCard` | `/api/clients` | via `syncClientEvents` |
 | `_checkinDone` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_checkinDone` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_checkinDone` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_checkinDone` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_checkinDone` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_ciSendClientRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_clearAllAttn` | `/api/clients` | via `syncClientEvents` |
 | `_clearAllAttn` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `_clearSampleData` | `/api/clients` | via `syncClientEvents` |
 | `_clientIdByName` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_clientIdByName` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_clientIdByName` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_clientIdByName` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_clientIdByName` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_clientNameLink` | `/api/clients` | via `syncClientEvents` |
-| `_clientPhotosTabHTML` | `/api/clients` | via `syncClientEvents` |
-| `_clientPickerBody` | `/api/clients` | via `syncClientEvents` |
 | `_clientSendCode` | `/api/client-code` | direct |
 | `_clientVerifyCode` | `/api/client-code` | direct |
 | `_clientsNotInSquare` | `/api/square/customers` | via `_fetchSquareDirectory` |
@@ -182,7 +162,6 @@ saved anywhere", not "does this always call that".
 | `_coDoCharge` | `/api/square/charge-card` | direct |
 | `_coEnsureMenu` | `/api/square/booking-options` | direct |
 | `_coEnsureMenu` | `/api/square/catalog` | direct |
-| `_coErr` | `/api/clients` | via `syncClientEvents` |
 | `_coInvoice` | `/api/square/invoice` | direct |
 | `_coLink` | `/api/square/payment-link` | direct |
 | `_coMarkPaid` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -190,13 +169,11 @@ saved anywhere", not "does this always call that".
 | `_coMenuOpen` | `/api/square/catalog` | via `_coEnsureMenu` |
 | `_coRecordPaid` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_commitDeleteSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_commitPhoto` | `/api/clients` | via `syncClientEvents` |
 | `_commitRenameSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_commitWriteNote` | `/api/beta-event` | via `_pingChart` |
 | `_composeBroadcast` | `/api/automation-claim` | via `_ssSend` |
 | `_confirmDeleteAccount` | `/api/delete-account` | direct |
 | `_confirmDeleteAccount` | `/api/store` | direct |
-| `_confirmDeleteDoc` | `/api/clients` | via `syncClientEvents` |
 | `_confirmDisableTotp` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_confirmDisableTotp` | `/api/totp-verify` | direct |
 | `_confirmEmailChange` | `/api/change-email` | direct |
@@ -205,19 +182,14 @@ saved anywhere", not "does this always call that".
 | `_confirmTotpEnroll` | `/api/totp-verify` | direct |
 | `_consultLinkCardHTML` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `_consultLinkCardHTML` | `/api/consult-slug` | via `_setConsultSlug` |
-| `_coursesTabHTML` | `/api/clients` | via `syncClientEvents` |
 | `_coursesTabHTML` | `/api/course-versions` | via `_cvMarkDeleted` |
-| `_csvDoImport` | `/api/clients` | via `syncClientEvents` |
-| `_csvDoImportProducts` | `/api/clients` | via `syncClientEvents` |
 | `_cvFetchList` | `/api/course-versions` | direct |
 | `_cvKnownCourseIds` | `/api/course-versions` | via `_cvFetchList` |
 | `_cvLostCourses` | `/api/course-versions` | via `_cvFetchList` |
 | `_cvMarkDeleted` | `/api/course-versions` | direct |
-| `_cvReconcileOnBoot` | `/api/clients` | via `syncClientEvents` |
 | `_cvReconcileOnBoot` | `/api/course-versions` | direct |
 | `_cvSnapshot` | `/api/course-versions` | direct |
 | `_dayRecapCardHTML` | `/api/ai` | via `_aiComplete` |
-| `_deleteBundle` | `/api/clients` | via `syncClientEvents` |
 | `_deleteGuideFileFromServer` | `/api/guide-file` | direct |
 | `_demoPaymentSeed` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_demoPaymentSeed` | `/api/square/loyalty` | via `_loadClientLoyalty` |
@@ -230,15 +202,11 @@ saved anywhere", not "does this always call that".
 | `_depositSettingCard` | `/api/square/connection` | via `_sqCheckStatus` |
 | `_depositSettingCard` | `/api/square/customers` | via `_sqLoadCustomers` |
 | `_deviceStorageStats` | `/api/guide-file` | via `_evictableFileCache` |
-| `_dismissCinTile` | `/api/clients` | via `syncClientEvents` |
 | `_dismissCinTile` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_dismissDupBanner` | `/api/square/appointments` | via `_syncSquareClientsNow` |
 | `_dismissDupBanner` | `/api/square/customers` | via `_autoSyncCustomers` |
-| `_dismissReqTile` | `/api/clients` | via `syncClientEvents` |
 | `_dismissReqTile` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `_dismissTile` | `/api/clients` | via `syncClientEvents` |
 | `_dismissTile` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `_dismissVcTile` | `/api/clients` | via `syncClientEvents` |
 | `_dismissVcTile` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_doAiDraftAutomation` | `/api/ai` | via `_aiComplete` |
 | `_doBulkInvite` | `/api/client-invite` | direct |
@@ -270,15 +238,13 @@ saved anywhere", not "does this always call that".
 | `_fbMonitorKey` | `/api/feedback` | via `_fbMonitorPost` |
 | `_fbMonitorOff` | `/api/feedback` | via `_fbMonitorPost` |
 | `_fbMonitorPost` | `/api/feedback` | direct |
-| `_fcOpenAction` | `/api/clients` | via `syncClientEvents` |
+| `_fcOpenAction` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_fetchSquareDirectory` | `/api/square/customers` | direct |
 | `_fetchSquareTaxRate` | `/api/square/tax-rate` | direct |
-| `_ffPickFolder` | `/api/clients` | via `syncClientEvents` |
 | `_ffPickFolder` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `_fillGcalPill` | `/api/google-cal` | via `_gcalStatus` |
 | `_finalizeGuideFiles` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
 | `_firstVisitNudgeHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_flagAckHome` | `/api/clients` | via `syncClientEvents` |
 | `_flagAckHome` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_flushAllPendingProviderMsgs` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_flushBeforeSignOut` | `/api/store` | direct |
@@ -289,7 +255,6 @@ saved anywhere", not "does this always call that".
 | `_flushPendingProviderMsgs` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_flushSettingsEdits` | `/api/store` | via `_verifyFormSave` |
 | `_forcePhotoRecovery` | `/api/guide-file` | via `_recoverUnindexedServerPhotos` |
-| `_formCard` | `/api/clients` | via `syncClientEvents` |
 | `_founderClientRecover` | `/api/admin/client-recover` | direct |
 | `_founderClientRecover` | `/api/admin/recover-import` | direct |
 | `_founderClientRecover` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
@@ -302,10 +267,8 @@ saved anywhere", not "does this always call that".
 | `_fvpChooser` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_fvpClientRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_gcalCardHTML` | `/api/google-cal` | via `_gcalDisconnect` |
-| `_gcalDisconnect` | `/api/clients` | via `syncClientEvents` |
 | `_gcalDisconnect` | `/api/google-cal` | direct |
 | `_gcalDisconnectOne` | `/api/google-cal` | via `_gcalDoDisconnectOne` |
-| `_gcalDoDisconnectOne` | `/api/clients` | via `syncClientEvents` |
 | `_gcalDoDisconnectOne` | `/api/google-cal` | direct |
 | `_gcalPreConnectPrivacyHTML` | `/api/calendar-url` | via `_loadCalFeedUrl` |
 | `_gcalPreConnectPrivacyHTML` | `/api/google-cal` | via `_gcalStatus` |
@@ -313,20 +276,16 @@ saved anywhere", not "does this always call that".
 | `_gcalPush` | `/api/google-cal` | direct |
 | `_gcalPushSoon` | `/api/google-cal` | via `_gcalPush` |
 | `_gcalSetPreConnectPrivacy` | `/api/calendar-url` | via `_loadCalFeedUrl` |
-| `_gcalSetPreConnectPrivacy` | `/api/clients` | via `syncClientEvents` |
 | `_gcalSetPreConnectPrivacy` | `/api/google-cal` | via `_gcalStatus` |
-| `_gcalSetPrivacy` | `/api/clients` | via `syncClientEvents` |
 | `_gcalSetPrivacy` | `/api/google-cal` | direct |
 | `_gcalStatus` | `/api/google-cal` | direct |
 | `_gcalStatusCached` | `/api/google-cal` | via `_gcalStatus` |
 | `_getGuideFile` | `/api/guide-file` | direct |
-| `_gettingStartedHTML` | `/api/clients` | via `syncClientEvents` |
-| `_guidesTabHTML` | `/api/clients` | via `syncClientEvents` |
 | `_handleAuthParams` | `/api/app-launch` | via `_alSend` |
 | `_handleAuthParams` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_handleAuthParams` | `/api/change-email` | via `_confirmEmailChange` |
 | `_handleAuthParams` | `/api/client-code` | via `_clientSendCode` |
-| `_handlePushParams` | `/api/clients` | via `syncClientEvents` |
+| `_handlePushParams` | `/api/clients` | via `_wholeSlimEvents` |
 | `_handlePushParams` | `/api/provider-form` | via `_flushInPersonForms` |
 | `_hasIntakeOnFile` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_hasIntakeOnFile` | `/api/square/loyalty` | via `_loadClientLoyalty` |
@@ -340,7 +299,6 @@ saved anywhere", not "does this always call that".
 | `_hcPickerButtonHTML` | `/api/square/orders` | via `_hcFetchBought` |
 | `_hcPickerSheet` | `/api/square/orders` | via `_hcFetchBought` |
 | `_hcStepSheet` | `/api/square/orders` | via `_hcFetchBought` |
-| `_helpRowHTML` | `/api/clients` | via `syncClientEvents` |
 | `_hydrateOffloaded` | `/api/announcements` | via `_checkNews` |
 | `_hydrateOffloaded` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_hydrateOffloaded` | `/api/square/connection` | via `_sqConnState` |
@@ -350,7 +308,6 @@ saved anywhere", not "does this always call that".
 | `_impUndo` | `/api/clients` | via `_serverDeleteClients` |
 | `_impUndoGo` | `/api/clients` | via `_serverDeleteClients` |
 | `_impUndoTap` | `/api/clients` | via `_serverDeleteClients` |
-| `_initCapturedPhotos` | `/api/clients` | via `syncClientEvents` |
 | `_initCapturedPhotos` | `/api/guide-file` | via `_getGuideFile` |
 | `_initDeepLinks` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_initDeepLinks` | `/api/square/loyalty` | via `_loadClientLoyalty` |
@@ -358,7 +315,6 @@ saved anywhere", not "does this always call that".
 | `_initDeepLinks` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_initDeepLinks` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_initNativeProvider` | `/api/announcements` | via `_checkNews` |
-| `_initNativeProvider` | `/api/clients` | via `syncClientEvents` |
 | `_initNativeProvider` | `/api/native-push` | via `_flushNativePushTok` |
 | `_inkScanField` | `/api/ai` | via `_aiComplete` |
 | `_instantBookingOut` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -382,7 +338,6 @@ saved anywhere", not "does this always call that".
 | `_libSafeToPersist` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_libSafeToPersist` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_libSafeToPersist` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_linkOwnerSave` | `/api/clients` | via `syncClientEvents` |
 | `_loadBetaStats` | `/api/admin-stats` | direct |
 | `_loadBetaStats` | `/api/admin/build-buyers` | via `_downloadBuildBuyersCSV` |
 | `_loadBetaStats` | `/api/waitlist` | via `_downloadWaitlistCSV` |
@@ -434,7 +389,7 @@ saved anywhere", not "does this always call that".
 | `_mergeAuthoredMap` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_mergeAuthoredMap` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_mergeClientRecords` | `/api/clients` | via `_serverMergeClients` |
-| `_mergeClients` | `/api/clients` | via `syncClientEvents` |
+| `_mergeClients` | `/api/clients` | via `_wholeSlimEvents` |
 | `_mergeClients` | `/api/provider-form` | via `_flushInPersonForms` |
 | `_mergeSeenEvents` | `/api/cloud-status` | direct |
 | `_mergeSeenEvents` | `/api/login` | direct |
@@ -456,13 +411,11 @@ saved anywhere", not "does this always call that".
 | `_msgSave` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `_msgSave` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_nativePushPermRetry` | `/api/announcements` | via `_checkNews` |
-| `_nativePushPermRetry` | `/api/clients` | via `syncClientEvents` |
 | `_nativePushPermRetry` | `/api/native-push` | via `_flushNativePushTok` |
 | `_ncNextContinue` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_ncNextContinue` | `/api/logout` | via `_doLogout` |
 | `_ncNextContinue` | `/api/native-push` | via `_doLogout` |
 | `_ncNextContinue` | `/api/provider-push` | via `_doLogout` |
-| `_newMessageSheet` | `/api/clients` | via `syncClientEvents` |
 | `_noteEditCancel` | `/api/ai` | via `_aiComplete` |
 | `_noteEditCancel` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_noteEditCancel` | `/api/square/catalog` | via `_autoSyncCatalog` |
@@ -470,7 +423,6 @@ saved anywhere", not "does this always call that".
 | `_offerCourseRecovery` | `/api/course-versions` | via `_cvFetchList` |
 | `_offerTakeBackDeleted` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_openBillingPortal` | `/api/create-portal-session` | direct |
-| `_openLessonView` | `/api/clients` | via `syncClientEvents` |
 | `_openLessonView` | `/api/guide-file` | via `_getGuideFile` |
 | `_openMergeSheet` | `/api/clients` | via `_serverMergeClients` |
 | `_openPracticeDoc` | `/api/collection-pdf` | via `_plDocUrl` |
@@ -483,14 +435,12 @@ saved anywhere", not "does this always call that".
 | `_openSquarePurge` | `/api/square/customer-map` | direct |
 | `_openSquarePurge` | `/api/square/customers` | direct |
 | `_openSquarePurge` | `/api/square/delete-customers` | via `_sqp_execute` |
-| `_ownerAnimalsHTML` | `/api/clients` | via `syncClientEvents` |
 | `_payDelete` | `/api/square/giftcard` | via `_checkGiftCard` |
 | `_payDelete` | `/api/square/invoices` | via `_paySyncSquare` |
 | `_payDeleteDo` | `/api/square/giftcard` | via `_checkGiftCard` |
 | `_payDeleteDo` | `/api/square/invoices` | via `_paySyncSquare` |
 | `_payDeleteDo` | `/api/square/payment-link` | via `_payTextLink` |
 | `_payDeleteDo` | `/api/square/refund` | via `_payRefund` |
-| `_payEdit` | `/api/clients` | via `syncClientEvents` |
 | `_payLogOpen` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_payLogOpen` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_payLogOpen` | `/api/square/customers` | via `_autoSyncCustomers` |
@@ -527,8 +477,6 @@ saved anywhere", not "does this always call that".
 | `_postAftercareDrip` | `/api/aftercare-drip` | direct |
 | `_postAftercareDrip` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_postAnnouncement` | `/api/announcements` | via `_sendAnnouncement` |
-| `_pr_moved` | `/api/clients` | via `syncClientEvents` |
-| `_pr_open` | `/api/clients` | via `syncClientEvents` |
 | `_pr_render` | `/api/guide-file` | via `_recoverUnindexedServerPhotos` |
 | `_pr_run` | `/api/guide-file` | via `_recoverUnindexedServerPhotos` |
 | `_practiceLibraryTabHTML` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
@@ -550,7 +498,7 @@ saved anywhere", not "does this always call that".
 | `_pushVcSubsSlim` | `/api/guide-file` | via `_putFileBody` |
 | `_putFileBody` | `/api/guide-file` | direct |
 | `_putFileWithRetry` | `/api/guide-file` | via `_putFileBody` |
-| `_reRenderAttn` | `/api/clients` | via `syncClientEvents` |
+| `_reRenderAttn` | `/api/clients` | via `_wholeSlimEvents` |
 | `_reRenderAttn` | `/api/provider-form` | via `_flushInPersonForms` |
 | `_reRenderAttn` | `/api/referral` | via `_refLoad` |
 | `_reRenderAttn` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -603,7 +551,6 @@ saved anywhere", not "does this always call that".
 | `_recoverUnDelete` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverUnDelete` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverUnindexedServerPhotos` | `/api/guide-file` | direct |
-| `_redrawCurrentScreen` | `/api/clients` | via `syncClientEvents` |
 | `_refCopy` | `/api/referral` | via `_refCount` |
 | `_refCount` | `/api/referral` | direct |
 | `_refHomeCardHTML` | `/api/referral` | via `_refLoad` |
@@ -617,11 +564,9 @@ saved anywhere", not "does this always call that".
 | `_reloadTopLevelStores` | `/api/google-cal` | via `_gcalPush` |
 | `_remClearDone` | `/api/provider-push` | via `_pushDisable` |
 | `_remDelete` | `/api/provider-push` | via `_pushDisable` |
-| `_remDone` | `/api/clients` | via `syncClientEvents` |
 | `_remDone` | `/api/provider-push` | via `_pushDisable` |
 | `_remEdit` | `/api/provider-push` | via `_pushDisable` |
 | `_remSaveFromSheet` | `/api/provider-push` | via `_pushDisable` |
-| `_renderBillingBanner` | `/api/clients` | via `syncClientEvents` |
 | `_renderFvpClients` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_renderLessonFile` | `/api/guide-file` | via `_getGuideFile` |
 | `_renderPhotosView` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -646,23 +591,19 @@ saved anywhere", not "does this always call that".
 | `_reqToLocalAppt` | `/api/google-cal` | via `_gcalPush` |
 | `_requestClientLink` | `/api/client-link` | direct |
 | `_requestEmailChange` | `/api/change-email` | direct |
-| `_restorePhotosFromCloud` | `/api/clients` | via `syncClientEvents` |
 | `_restorePhotosFromCloud` | `/api/guide-file` | via `_getGuideFile` |
-| `_restoreSampleData` | `/api/clients` | via `syncClientEvents` |
 | `_resumePull` | `/api/announcements` | via `_checkNews` |
 | `_resumePull` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_resumePull` | `/api/square/connection` | via `_sqConnState` |
 | `_resumePull` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_resumePull` | `/api/transcribe` | via `_probeWhisper` |
 | `_retryProviderMsg` | `/api/provider-message` | via `_sendProviderMessageToClient` |
-| `_reviewAckHome` | `/api/clients` | via `syncClientEvents` |
 | `_reviewAckHome` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_revokeOtherSessions` | `/api/sessions` | direct |
 | `_revokeSession` | `/api/sessions` | direct |
 | `_roomMarkComplete` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_roomMarkComplete` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_roomMarkComplete` | `/api/transcribe` | via `_probeWhisper` |
-| `_routeDeepLink` | `/api/clients` | via `syncClientEvents` |
 | `_runClientCleanup` | `/api/clients` | via `_tidySaveToAccount` |
 | `_runClientCleanup` | `/api/store` | via `_pushFlushNow` |
 | `_runInkOCR` | `/api/ai` | via `_aiComplete` |
@@ -670,24 +611,18 @@ saved anywhere", not "does this always call that".
 | `_runSelfCheck` | `/api/store` | direct |
 | `_runTakeBackUndo` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveAndSendNote` | `/api/beta-event` | via `_pingChart` |
-| `_saveAndSendNote` | `/api/clients` | via `syncClientEvents` |
-| `_saveEditDoc` | `/api/clients` | via `syncClientEvents` |
 | `_saveEditedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveManualAppts` | `/api/google-cal` | via `_gcalPush` |
-| `_saveNewDoc` | `/api/clients` | via `syncClientEvents` |
 | `_savePersistenceSweep` | `/api/announcements` | via `_checkNews` |
-| `_savePersistenceSweep` | `/api/clients` | via `syncClientEvents` |
+| `_savePersistenceSweep` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_savePersistenceSweep` | `/api/square/connection` | via `_sqConnState` |
 | `_savePersistenceSweep` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_savePersistenceSweep` | `/api/transcribe` | via `_probeWhisper` |
 | `_saveSummaryDate` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveWriteNote` | `/api/beta-event` | via `_pingChart` |
-| `_saveWriteNote` | `/api/clients` | via `syncClientEvents` |
 | `_saveWriteNote` | `/api/feedback` | via `_sendPulse` |
-| `_scBack` | `/api/clients` | via `syncClientEvents` |
 | `_scanInkLabel` | `/api/ai` | via `_aiComplete` |
 | `_scheduleSpecificClientSync` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_sectionTabBar` | `/api/clients` | via `syncClientEvents` |
 | `_sendAdHocBundle` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendAdHocBundle` | `/api/logout` | via `_doLogout` |
 | `_sendAdHocBundle` | `/api/native-push` | via `_doLogout` |
@@ -727,7 +662,6 @@ saved anywhere", not "does this always call that".
 | `_setLang` | `/api/app-launch` | via `_alSend` |
 | `_setLang` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_setLang` | `/api/client-code` | via `_clientSendCode` |
-| `_setLang` | `/api/clients` | via `syncClientEvents` |
 | `_setLoginMode` | `/api/app-launch` | via `_alSend` |
 | `_setLoginMode` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_setLoginMode` | `/api/client-code` | via `_clientSendCode` |
@@ -743,7 +677,6 @@ saved anywhere", not "does this always call that".
 | `_shareGuideLink` | `/api/native-push` | via `_doLogout` |
 | `_shareGuideLink` | `/api/provider-push` | via `_doLogout` |
 | `_signedOutBannerHTML` | `/api/client-code` | via `_clientSendCode` |
-| `_sqApptsErrHTML` | `/api/clients` | via `syncClientEvents` |
 | `_sqApptsErrHTML` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_sqCheckExpiry` | `/api/square/connect` | via `_sqConnect` |
 | `_sqCheckExpiry` | `/api/square/connection` | via `_sqConnState` |
@@ -752,7 +685,6 @@ saved anywhere", not "does this always call that".
 | `_sqConnState` | `/api/square/connection` | direct |
 | `_sqConnect` | `/api/square/connect` | direct |
 | `_sqDiag` | `/api/square/diag` | direct |
-| `_sqDisconnect` | `/api/clients` | via `syncClientEvents` |
 | `_sqDisconnect` | `/api/square/connection` | direct |
 | `_sqDoBook` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_sqDoBook` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -794,7 +726,6 @@ saved anywhere", not "does this always call that".
 | `_startAftercareDrip` | `/api/aftercare-drip` | via `_postAftercareDrip` |
 | `_startAftercareDrip` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_startVoiceNoteRecorded` | `/api/transcribe` | via `_transcribeAndPreview` |
-| `_starterChipsHTML` | `/api/clients` | via `syncClientEvents` |
 | `_starterChipsHTML` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `_starterChipsHTML` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_starterDelete` | `/api/consult-requests` | via `_loadConsultRequests` |
@@ -821,13 +752,16 @@ saved anywhere", not "does this always call that".
 | `_takeBackSent` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_tidySaveToAccount` | `/api/clients` | direct |
 | `_tidySaveToAccount` | `/api/store` | via `_pushFlushNow` |
-| `_tidyShowResult` | `/api/clients` | via `syncClientEvents` |
 | `_todayCheckinSendHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_toggleAuto` | `/api/clients` | via `syncClientEvents` |
+| `_toggleAuto` | `/api/clients` | via `_wholeSlimEvents` |
 | `_toggleAuto` | `/api/provider-form` | via `_flushInPersonForms` |
+| `_toggleSquareImport` | `/api/square/appointments` | via `_sqLoadAppointments` |
+| `_toggleSquareImport` | `/api/square/catalog` | via `_sqLoadCatalog` |
+| `_toggleSquareImport` | `/api/square/connect` | via `_sqConnect` |
+| `_toggleSquareImport` | `/api/square/connection` | via `_sqCheckStatus` |
+| `_toggleSquareImport` | `/api/square/customers` | via `_autoSyncCustomers` |
 | `_transcribeAndPreview` | `/api/ai` | via `_aiComplete` |
 | `_transcribeAndPreview` | `/api/transcribe` | direct |
-| `_tryConsumeDeepLink` | `/api/clients` | via `syncClientEvents` |
 | `_uSendCopy` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_uSendDone` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_uSendEmail` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -835,15 +769,12 @@ saved anywhere", not "does this always call that".
 | `_uSendText` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_updateNoteFromNotes` | `/api/ai` | via `_aiComplete` |
 | `_updatePassword` | `/api/change-password` | direct |
-| `_uploadCourseFilesInBackground` | `/api/clients` | via `syncClientEvents` |
 | `_uploadGuideFileToServer` | `/api/guide-file` | via `_putFileBody` |
 | `_upsertClientsFromSquare` | `/api/clients` | via `_serverMergeClients` |
 | `_vcFillRefs` | `/api/guide-file` | via `_getGuideFile` |
 | `_vcFlagBannerHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_vcFlagBannerHTML` | `/api/provider-message` | via `_sendProviderMessageToClient` |
-| `_vcFollowUpDone` | `/api/clients` | via `syncClientEvents` |
 | `_vcFollowUpPickerHTML` | `/api/provider-message` | via `_sendProviderMessageToClient` |
-| `_vcInvitePickerSheet` | `/api/clients` | via `syncClientEvents` |
 | `_vcInvitePickerSheet` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_vcRoutineSaveSoon` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_vcRoutineSetFeedback` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -883,13 +814,12 @@ saved anywhere", not "does this always call that".
 | `aiDraftTips` | `/api/ai` | via `_aiComplete` |
 | `aiSuggestForm` | `/api/ai` | via `_aiComplete` |
 | `analyzeVirtualConsult` | `/api/ai` | via `_aiComplete` |
-| `applyProfessions` | `/api/clients` | via `syncClientEvents` |
 | `attachProviderLink` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `attachProviderPhoto` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `buildSummaryCustomPanel` | `/api/ai` | via `_aiComplete` |
 | `buildSummaryCustomPanel` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `buildSummaryCustomPanel` | `/api/square/catalog` | via `_autoSyncCatalog` |
-| `clearNotif` | `/api/clients` | via `syncClientEvents` |
+| `clearNotif` | `/api/clients` | via `_wholeSlimEvents` |
 | `clearNotif` | `/api/provider-form` | via `_flushInPersonForms` |
 | `cloudLogout` | `/api/app-launch` | via `_alSend` |
 | `cloudLogout` | `/api/logout` | via `_doLogout` |
@@ -901,17 +831,16 @@ saved anywhere", not "does this always call that".
 | `confirmSendProduct` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendResource` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendRoutine` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `deleteAffiliate` | `/api/clients` | via `syncClientEvents` |
 | `deleteClient` | `/api/clients` | via `_serverDeleteClients` |
-| `deleteCourse` | `/api/clients` | via `syncClientEvents` |
 | `deleteCourse` | `/api/course-versions` | via `_cvMarkDeleted` |
 | `deleteFormCard` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `deleteGuideCard` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
-| `deleteInventoryItem` | `/api/clients` | via `syncClientEvents` |
-| `deleteResource` | `/api/clients` | via `syncClientEvents` |
+| `deleteProtocol` | `/api/square/charge-card` | via `_loadClientCards` |
+| `deleteProtocol` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `deleteProtocol` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `deleteProtocol` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `deleteProtocol` | `/api/square/save-card` | via `_addCardOnFile` |
 | `deleteRoutineTemplate` | `/api/square/catalog` | via `_autoSyncCatalog` |
-| `deleteVendor` | `/api/clients` | via `syncClientEvents` |
-| `dismissCheckinNudge` | `/api/clients` | via `syncClientEvents` |
 | `dismissCheckinNudge` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `dismissFlag` | `/api/square/charge-card` | via `_loadClientCards` |
 | `dismissFlag` | `/api/square/loyalty` | via `_loadClientLoyalty` |
@@ -924,7 +853,6 @@ saved anywhere", not "does this always call that".
 | `doResetPw` | `/api/app-launch` | via `_alSend` |
 | `doResetPw` | `/api/billing-status` | via `_checkBillingBanner` |
 | `doResetPw` | `/api/client-code` | via `_clientSendCode` |
-| `doSignup` | `/api/clients` | via `syncClientEvents` |
 | `editSavedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `editSentRoutine` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `editSummaryNote` | `/api/ai` | via `_aiComplete` |
@@ -935,12 +863,10 @@ saved anywhere", not "does this always call that".
 | `editVitals` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `editVitals` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `editVitals` | `/api/square/save-card` | via `_addCardOnFile` |
-| `emptyState` | `/api/clients` | via `syncClientEvents` |
 | `finishNewClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `finishNewClient` | `/api/logout` | via `_doLogout` |
 | `finishNewClient` | `/api/native-push` | via `_doLogout` |
 | `finishNewClient` | `/api/provider-push` | via `_doLogout` |
-| `finishOnboarding` | `/api/clients` | via `syncClientEvents` |
 | `fmtBookingDate` | `/api/announcements` | via `_checkNews` |
 | `fmtBookingDate` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `fmtBookingDate` | `/api/square/connection` | via `_sqConnState` |
@@ -956,25 +882,18 @@ saved anywhere", not "does this always call that".
 | `linkSavedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `loadBrief` | `/api/ai` | via `_aiComplete` |
 | `loadCapturedPhotos` | `/api/guide-file` | via `_getGuideFile` |
-| `loadCustomResources` | `/api/clients` | via `syncClientEvents` |
 | `loadRoutineTemplate` | `/api/square/catalog` | via `_autoSyncCatalog` |
-| `loadVcState` | `/api/clients` | via `syncClientEvents` |
 | `loadVcState` | `/api/guide-file` | via `_getGuideFile` |
 | `loadVcState` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `markAllNotifsRead` | `/api/clients` | via `syncClientEvents` |
+| `markAllNotifsRead` | `/api/clients` | via `_wholeSlimEvents` |
 | `markAllNotifsRead` | `/api/provider-form` | via `_flushInPersonForms` |
 | `moveClientProd` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `nav` | `/api/ai` | via `_aiComplete` |
-| `nav` | `/api/clients` | via `syncClientEvents` |
+| `nav` | `/api/clients` | via `_wholeSlimEvents` |
 | `nav` | `/api/provider-form` | via `_flushInPersonForms` |
 | `nav` | `/api/store` | via `_verifyFormSave` |
-| `navBack` | `/api/clients` | via `syncClientEvents` |
-| `ncBack` | `/api/clients` | via `syncClientEvents` |
-| `ncSaveBasic` | `/api/clients` | via `syncClientEvents` |
 | `ncSaveBasic` | `/api/square/connection` | via `_sqConnState` |
 | `ncSaveBasic` | `/api/square/customers` | via `_pushClientToSquare` |
-| `notifCard` | `/api/clients` | via `syncClientEvents` |
-| `notifRow` | `/api/clients` | via `syncClientEvents` |
 | `onSend` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `onboardBack` | `/api/feedback` | via `_sendBetaFeedback` |
 | `onboardBack` | `/api/square/connect` | via `_sqConnect` |
@@ -987,7 +906,6 @@ saved anywhere", not "does this always call that".
 | `onboardToggleDay` | `/api/square/connect` | via `_sqConnect` |
 | `onboardToggleProf` | `/api/feedback` | via `_sendBetaFeedback` |
 | `onboardToggleProf` | `/api/square/connect` | via `_sqConnect` |
-| `openApptDetail` | `/api/clients` | via `syncClientEvents` |
 | `openApptDetail` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `openApptDetail` | `/api/square/availability` | via `_adLoadSlots` |
 | `openApptDetail` | `/api/square/cancel-booking` | via `_doCancelSquare` |
@@ -998,7 +916,7 @@ saved anywhere", not "does this always call that".
 | `openClientCleanup` | `/api/store` | via `_pushFlushNow` |
 | `openClientFormSender` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `openCourseHistory` | `/api/course-versions` | via `_cvFetchList` |
-| `openFormNotif` | `/api/clients` | via `syncClientEvents` |
+| `openFormNotif` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `openLocalQuickAdd` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `openQuickAdd` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `openQuickAdd` | `/api/square/availability` | via `_sqLoadSlots` |
@@ -1014,23 +932,18 @@ saved anywhere", not "does this always call that".
 | `openSquareBook` | `/api/square/booking-options` | direct |
 | `openStoragePanel` | `/api/course-versions` | via `_cvFetchList` |
 | `openStoragePanel` | `/api/guide-file` | via `_evictableFileCache` |
-| `providerSystemNotify` | `/api/clients` | via `syncClientEvents` |
 | `rebook` | `/api/ai` | via `_aiComplete` |
 | `rebook` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `rebook` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `rebook` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `rebook` | `/api/transcribe` | via `_probeWhisper` |
-| `recoverLostCourses` | `/api/clients` | via `syncClientEvents` |
 | `recoverLostCourses` | `/api/course-versions` | via `_cvSnapshot` |
 | `removeClientProd` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `removeDemoClients` | `/api/clients` | via `syncClientEvents` |
-| `removePartner` | `/api/clients` | via `syncClientEvents` |
 | `removeSummaryGuide` | `/api/ai` | via `_aiComplete` |
 | `removeSummaryGuide` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `removeSummaryGuide` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `renderAISettings` | `/api/transcribe` | via `_probeWhisper` |
 | `renderAddResource` | `/api/ai` | via `_aiComplete` |
-| `renderAutoForm` | `/api/clients` | via `syncClientEvents` |
 | `renderBetaStats` | `/api/admin-stats` | via `_loadBetaStats` |
 | `renderBetaStats` | `/api/admin/build-buyers` | via `_downloadBuildBuyersCSV` |
 | `renderBetaStats` | `/api/admin/contacts` | via `_loadEmailList` |
@@ -1040,53 +953,47 @@ saved anywhere", not "does this always call that".
 | `renderBookingLink` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `renderBookingLink` | `/api/square/connection` | via `_sqConnState` |
 | `renderBrief` | `/api/ai` | via `_aiComplete` |
-| `renderBrief` | `/api/clients` | via `syncClientEvents` |
-| `renderBundles` | `/api/clients` | via `syncClientEvents` |
 | `renderChat` | `/api/ai` | via `_aiComplete` |
-| `renderChat` | `/api/clients` | via `syncClientEvents` |
+| `renderChat` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderChat` | `/api/provider-message` | via `_sendProviderMessageToClient` |
-| `renderCheckinSettings` | `/api/clients` | via `syncClientEvents` |
-| `renderClientForms` | `/api/clients` | via `syncClientEvents` |
+| `renderCheckinDetail` | `/api/square/charge-card` | via `_loadClientCards` |
+| `renderCheckinDetail` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `renderCheckinDetail` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `renderCheckinDetail` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `renderCheckinDetail` | `/api/square/save-card` | via `_addCardOnFile` |
+| `renderCheckout` | `/api/square/booking-options` | via `_coEnsureMenu` |
+| `renderCheckout` | `/api/square/catalog` | via `_coEnsureMenu` |
+| `renderCheckout` | `/api/square/charge-card` | via `_coCharge` |
+| `renderCheckout` | `/api/square/invoice` | via `_coInvoice` |
+| `renderCheckout` | `/api/square/payment-link` | via `_coLink` |
+| `renderClientForms` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderClients` | `/api/ai` | via `_aiComplete` |
-| `renderClients` | `/api/clients` | via `syncClientEvents` |
+| `renderClients` | `/api/clients` | via `_tidySaveToAccount` |
 | `renderClients` | `/api/square/appointments` | via `_syncSquareClientsNow` |
 | `renderClients` | `/api/square/customers` | via `_autoSyncCustomers` |
 | `renderConnectCalendar` | `/api/calendar-url` | via `_loadCalFeedUrl` |
 | `renderConnectCalendar` | `/api/google-cal` | via `_gcalStatus` |
 | `renderCourseBuilder` | `/api/course-versions` | via `_cvMarkDeleted` |
-| `renderCourseDetail` | `/api/clients` | via `syncClientEvents` |
-| `renderDataSetup` | `/api/clients` | via `syncClientEvents` |
-| `renderDeleteAccount` | `/api/clients` | via `syncClientEvents` |
 | `renderDeleteAccount` | `/api/delete-account` | via `_confirmDeleteAccount` |
 | `renderDeleteAccount` | `/api/guide-file` | via `_getGuideFile` |
 | `renderDeleteAccount` | `/api/store` | via `_confirmDeleteAccount` |
-| `renderDocDetail` | `/api/clients` | via `syncClientEvents` |
-| `renderEditBundle` | `/api/clients` | via `syncClientEvents` |
 | `renderEditResource` | `/api/ai` | via `_aiComplete` |
-| `renderEditSuggestedForms` | `/api/clients` | via `syncClientEvents` |
 | `renderEntry` | `/api/app-launch` | via `_alSend` |
 | `renderEntry` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderEntry` | `/api/client-code` | via `_clientSendCode` |
 | `renderExportCenter` | `/api/guide-file` | via `_getGuideFile` |
 | `renderFeedbackInbox` | `/api/feedback` | via `_loadFeedbackInbox` |
-| `renderFlaggedIntakes` | `/api/clients` | via `syncClientEvents` |
 | `renderFormBuilder` | `/api/ai` | via `_aiComplete` |
 | `renderFormBuilder` | `/api/store` | via `_verifyFormSave` |
-| `renderFormDocs` | `/api/clients` | via `syncClientEvents` |
-| `renderForms` | `/api/clients` | via `syncClientEvents` |
 | `renderForms` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `renderForms` | `/api/course-versions` | via `_cvMarkDeleted` |
-| `renderGuidePreview` | `/api/clients` | via `syncClientEvents` |
 | `renderGuidePreview` | `/api/guide-file` | via `_getGuideFile` |
-| `renderHelpArticle` | `/api/clients` | via `syncClientEvents` |
-| `renderHome` | `/api/clients` | via `syncClientEvents` |
+| `renderHome` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderHome` | `/api/referral` | via `_refLoad` |
 | `renderHome` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `renderHome` | `/api/square/connect` | via `_sqConnect` |
-| `renderIntegrations` | `/api/clients` | via `syncClientEvents` |
 | `renderIntegrations` | `/api/google-cal` | via `_gcalStatus` |
 | `renderIntegrations` | `/api/square/connection` | via `_sqConnState` |
-| `renderInventory` | `/api/clients` | via `syncClientEvents` |
 | `renderInventory` | `/api/square/inventory` | via `_syncInventoryFromSquare` |
 | `renderInviteClients` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderInviteClients` | `/api/logout` | via `_doLogout` |
@@ -1096,21 +1003,17 @@ saved anywhere", not "does this always call that".
 | `renderLogin` | `/api/app-launch` | via `_alSend` |
 | `renderLogin` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderLogin` | `/api/client-code` | via `_clientSendCode` |
-| `renderMessages` | `/api/clients` | via `syncClientEvents` |
+| `renderMessages` | `/api/clients` | via `_wholeSlimEvents` |
 | `renderMessages` | `/api/provider-form` | via `_flushInPersonForms` |
 | `renderNCBasicStep` | `/api/square/connection` | via `_sqConnState` |
 | `renderNCBasicStep` | `/api/square/customers` | via `_pushClientToSquare` |
-| `renderNCNextStep` | `/api/clients` | via `syncClientEvents` |
-| `renderNCStep` | `/api/clients` | via `syncClientEvents` |
+| `renderNCNextStep` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `renderNCStep` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderNewClient` | `/api/square/customers` | via `_pushClientToSquare` |
-| `renderNoteFormats` | `/api/clients` | via `syncClientEvents` |
-| `renderNotes` | `/api/clients` | via `syncClientEvents` |
 | `renderNotes` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `renderNotes` | `/api/transcribe` | via `_probeWhisper` |
 | `renderOnboard` | `/api/feedback` | via `_sendBetaFeedback` |
 | `renderOnboard` | `/api/square/connect` | via `_sqConnect` |
-| `renderPartnerDetail` | `/api/clients` | via `syncClientEvents` |
-| `renderPartners` | `/api/clients` | via `syncClientEvents` |
 | `renderPasswordSecurity` | `/api/change-email` | via `_drawLoginEmail` |
 | `renderPasswordSecurity` | `/api/change-password` | via `_updatePassword` |
 | `renderPasswordSecurity` | `/api/sessions` | via `_loadSessions` |
@@ -1118,52 +1021,44 @@ saved anywhere", not "does this always call that".
 | `renderPasswordSecurity` | `/api/totp-verify` | via `_confirmDisableTotp` |
 | `renderPhotos` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderProductRecs` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `renderProfessionDetail` | `/api/clients` | via `syncClientEvents` |
-| `renderProfessionSettings` | `/api/clients` | via `syncClientEvents` |
-| `renderProtocolApply` | `/api/clients` | via `syncClientEvents` |
-| `renderProtocolDetail` | `/api/clients` | via `syncClientEvents` |
-| `renderProtocols` | `/api/clients` | via `syncClientEvents` |
-| `renderProviderFillIntake` | `/api/clients` | via `syncClientEvents` |
 | `renderProviderFillIntake` | `/api/provider-form` | via `_flushInPersonForms` |
-| `renderRebook` | `/api/clients` | via `syncClientEvents` |
+| `renderRebook` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderRebook` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `renderRefer` | `/api/referral` | via `_refLoad` |
-| `renderReminders` | `/api/clients` | via `syncClientEvents` |
 | `renderReminders` | `/api/provider-push` | via `_pushDisable` |
-| `renderRoom` | `/api/clients` | via `syncClientEvents` |
+| `renderRoom` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderRoom` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `renderRoom` | `/api/transcribe` | via `_probeWhisper` |
 | `renderRoutineBuilder` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderRoutineBuilder` | `/api/square/catalog` | via `_autoSyncCatalog` |
-| `renderServiceMenu` | `/api/clients` | via `syncClientEvents` |
 | `renderSessionDetail` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderShop` | `/api/square/catalog` | via `_autoSyncCatalog` |
-| `renderSignOnDevice` | `/api/clients` | via `syncClientEvents` |
 | `renderSignOnDevice` | `/api/provider-form` | via `_flushInPersonForms` |
+| `renderSquareGuide` | `/api/health` | via `_sqGuideStatus` |
+| `renderSquareGuide` | `/api/square/connect` | via `_sqConnect` |
+| `renderSquareGuide` | `/api/square/connection` | via `_sqConnState` |
+| `renderSquareGuide` | `/api/square/diag` | via `_sqDiag` |
+| `renderSquareGuide` | `/api/square/token-status` | via `_sqCheckPerms` |
+| `renderSquareSync` | `/api/square/appointments` | via `_sqLoadAppointments` |
+| `renderSquareSync` | `/api/square/catalog` | via `_sqLoadCatalog` |
+| `renderSquareSync` | `/api/square/connect` | via `_sqConnect` |
+| `renderSquareSync` | `/api/square/connection` | via `_sqCheckStatus` |
+| `renderSquareSync` | `/api/square/customers` | via `_sqLoadCustomers` |
 | `renderSubscriptionBilling` | `/api/billing-status` | via `_loadBillingStatus` |
-| `renderSubscriptionBilling` | `/api/clients` | via `syncClientEvents` |
 | `renderSubscriptionBilling` | `/api/create-portal-session` | via `_openBillingPortal` |
 | `renderSummaryHistory` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `renderSwitchApp` | `/api/clients` | via `syncClientEvents` |
-| `renderTeamAccess` | `/api/clients` | via `syncClientEvents` |
-| `renderTodayAppts` | `/api/clients` | via `syncClientEvents` |
 | `renderTodayAppts` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `renderVault` | `/api/clients` | via `syncClientEvents` |
-| `renderVcInbox` | `/api/clients` | via `syncClientEvents` |
 | `renderVcInbox` | `/api/provider-message` | via `_sendProviderMessageToClient` |
-| `renderVendorDetail` | `/api/clients` | via `syncClientEvents` |
-| `renderVendors` | `/api/clients` | via `syncClientEvents` |
 | `renderVirtual` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `renderVirtual` | `/api/consult-slug` | via `_loadConsultLink` |
 | `renderVirtualClient` | `/api/ai` | via `_aiComplete` |
-| `renderVirtualClient` | `/api/clients` | via `syncClientEvents` |
+| `renderVirtualClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderVirtualClient` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `renderVirtualClient` | `/api/consult-slug` | via `_loadConsultLink` |
 | `renderVirtualClient` | `/api/provider-message` | via `_sendProviderMessageToClient` |
-| `renderWalkthrough` | `/api/clients` | via `syncClientEvents` |
-| `renderWeekAppts` | `/api/clients` | via `syncClientEvents` |
+| `renderWeekAppts` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderWeekAppts` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `renderWeekClients` | `/api/clients` | via `syncClientEvents` |
+| `renderWeekClients` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderWeekClients` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `renderWhatsNew` | `/api/announcements` | via `_sendAnnouncement` |
 | `renderWriteNote` | `/api/beta-event` | via `_pingChart` |
@@ -1177,32 +1072,16 @@ saved anywhere", not "does this always call that".
 | `resendRoutine` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `resendRoutine` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `resendSavedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `restoreCourseVersion` | `/api/clients` | via `syncClientEvents` |
 | `restoreCourseVersion` | `/api/course-versions` | direct |
-| `retryCourseFileUploads` | `/api/clients` | via `syncClientEvents` |
 | `retryCourseFileUploads` | `/api/guide-file` | via `_putFileBody` |
-| `saveAffiliate` | `/api/clients` | via `syncClientEvents` |
-| `saveAmazonStore` | `/api/clients` | via `syncClientEvents` |
-| `saveAuto` | `/api/clients` | via `syncClientEvents` |
-| `saveBundle` | `/api/clients` | via `syncClientEvents` |
-| `saveEditPartner` | `/api/clients` | via `syncClientEvents` |
-| `saveEditResource` | `/api/clients` | via `syncClientEvents` |
 | `saveEditResource` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
-| `saveFormBuilder` | `/api/clients` | via `syncClientEvents` |
 | `saveFormBuilder` | `/api/store` | via `_verifyFormSave` |
-| `saveInventoryItem` | `/api/clients` | via `syncClientEvents` |
-| `saveNoteTemplate` | `/api/clients` | via `syncClientEvents` |
-| `savePartner` | `/api/clients` | via `syncClientEvents` |
-| `savePhotos` | `/api/clients` | via `syncClientEvents` |
-| `saveProtocol` | `/api/clients` | via `syncClientEvents` |
 | `saveQuickAdd` | `/api/consult-slug` | via `_loadConsultLink` |
 | `saveQuickAdd` | `/api/google-cal` | via `_gcalPush` |
 | `saveQuickAdd` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `saveQuickAdd` | `/api/square/booking-options` | via `openSquareBook` |
-| `saveResource` | `/api/clients` | via `syncClientEvents` |
 | `saveResource` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
 | `saveRoutineTemplate` | `/api/square/catalog` | via `_autoSyncCatalog` |
-| `saveVendor` | `/api/clients` | via `syncClientEvents` |
 | `saveVisionEndpoint` | `/api/transcribe` | via `_probeWhisper` |
 | `sendBundleToClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `sendCheckin` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -1246,11 +1125,8 @@ saved anywhere", not "does this always call that".
 | `switchFgTab` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `switchFgTab` | `/api/course-versions` | via `_cvMarkDeleted` |
 | `switchLearnTab` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
-| `switchShopTab` | `/api/clients` | via `syncClientEvents` |
-| `switchVTab` | `/api/clients` | via `syncClientEvents` |
 | `switchVTab` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `switchVTab` | `/api/consult-slug` | via `_loadConsultLink` |
-| `syncClientEvents` | `/api/clients` | direct |
 | `toggleRoutineItem` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `toggleSharePhotos` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `toggleSummaryGuidePicker` | `/api/square/charge-card` | via `_loadClientCards` |
@@ -1258,7 +1134,6 @@ saved anywhere", not "does this always call that".
 | `toggleSummaryGuidePicker` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `toggleSummaryGuidePicker` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `toggleSummaryGuidePicker` | `/api/square/save-card` | via `_addCardOnFile` |
-| `undoLastCheckinDismiss` | `/api/clients` | via `syncClientEvents` |
 | `undoLastCheckinDismiss` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `vcAskForRetake` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `vcAskForRetake` | `/api/provider-message` | via `_sendProviderMessageToClient` |
