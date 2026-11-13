@@ -9298,3 +9298,38 @@ were from before she closed the app. Coming back to an app left in the backgroun
 test-booking-toast-boot and the boot/storage sweeps listed in the PR.
 **Read next time:** her `boot-ms` lines after this ships: `acct` should drop to well under a second on
 a "read changed" open, and `attn` says when the cards appeared.
+
+## 2026-11-13 — More opening speed (build `2026-11-13c`, PREVIEW)
+
+Ashley: "lets do as many sweeps and research streams as possible to see what else we can do to speed up
+load times". Four investigations (phone CPU at boot, every boot request, native shell + caching, outside
+research). Live launch log, 47 opens before 13b: html 397, home 819, acct 2873, sq 3690 ms (median).
+
+**Shipped in 13c:**
+- `<head>` starts the account, `/api/clients` and Square reads before the 4 MB code loads
+  (`window.__scPre`); `_takeEarly(name,url)` hands each out once, only for the same pass and address,
+  within 60 s. /api/clients no longer waits for the account read to START (it still waits for the
+  roster to be read before it is PROCESSED).
+- After the account answers there was one ~0.8 s freeze (4x CPU, 700 clients). Three skips when the two
+  copies are byte-identical: `_mergeClients` (unless the copy still holds a deleted client),
+  `_rescueRicherLocal`, and `_lsPersist`'s IndexedDB put. Measured by the CPU study: 775 -> ~300 ms.
+- `lib/db.js schemaInPlace(fn,q)`: reads an ensure function's own source and checks every table,
+  column and index it creates in ONE query; skips the DDL only if all exist and every statement was
+  recognised. Used by `ensureProvidersTable` (25 statements) and `ensureClientTables` (12). pglite:
+  39 queries -> 2; a missing column/index makes it run in full and repair. Fresh instances only.
+- `isSessionValid`: one `UPDATE ... RETURNING revoked` instead of SELECT + UPDATE; same rule; falls
+  back to the two-step check if it errors.
+- `/api/square/appointments`: the unfiltered booking pass starts alongside `/v2/locations`.
+
+**Found, not done (need a decision or a rebuild):**
+- Neon region vs Vercel `iad1`, and Neon Free scale-to-zero (+0.3-0.8 s after 5 min idle) — check the
+  DATABASE_URL host / Neon plan.
+- HTML is `max-age=0, must-revalidate`: every open pays a round trip (~0.4 s median, 0.86 p90) for a
+  53 KB shell. A max-age would remove it but opens yesterday's code once after each deploy.
+- iOS has no service worker (no App-Bound Domains); Android Capacitor may refetch the page natively.
+  Both need store rebuilds.
+- `/api/clients` is 2.7 MB per open for a busy account: a `since` cursor like /api/store's.
+- Client page: 587 KB no-store, third-party icon CSS and Google Fonts still render-blocking.
+- Square bookings cache kept fresh by webhooks (+ reconcile on open).
+- CPU: `loadClients` signature seeding (~115 ms), `_clientSig` replacer (~50 ms), five renderHome
+  passes per open, `_snapshotBundled` (~20 ms).

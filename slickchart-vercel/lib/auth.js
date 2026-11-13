@@ -136,6 +136,14 @@ export async function createSession(q, providerId, req) {
 // this — see api/store.js, the main data-sync endpoint, for where it matters most).
 export async function isSessionValid(q, sid) {
   if (!sid) return true; // tokens issued before this feature existed have no sid — don't lock those users out
+  // One round trip instead of two (2026-11-13: this runs before every account, client and Square read).
+  // Same rule: no row is a rejection, a revoked row is a rejection, and only a live session is touched.
+  // If the combined statement fails for any reason, fall back to the original two-step check.
+  try {
+    const r1 = await q`UPDATE sessions SET last_seen_at = CASE WHEN revoked THEN last_seen_at ELSE now() END WHERE id = ${sid} RETURNING revoked`;
+    if (!r1.length) return false;
+    return !r1[0].revoked;
+  } catch (e) { /* fall through */ }
   const rows = await q`SELECT revoked FROM sessions WHERE id = ${sid}`;
   // Every sid is minted by createSession, whose INSERT must succeed for the login to succeed, and the
   // only thing that deletes rows is delete-account. So an unknown sid is a deleted account's token:

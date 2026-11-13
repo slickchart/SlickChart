@@ -47,13 +47,6 @@ export default async function handler(req, res) {
     // schedule on opening). A failure just leaves the names blank, as before.
     const svcP = listBookableServices(ctx.token).catch(() => []);
 
-    // Every location on the account.
-    let locIds = [];
-    try {
-      const loc = await sf('/v2/locations');
-      locIds = (loc.locations || []).map(l => l.id).filter(Boolean);
-    } catch (e) { /* fall back to unfiltered query below */ }
-
     // Collect bookings from each location across each time window (plus an unfiltered pass).
     let raw = [];
     const seen = new Set();
@@ -70,16 +63,25 @@ export default async function handler(req, res) {
         }
       } catch (e) { /* skip a location/window/pass that errors */ }
     };
+    // The unfiltered pass needs no location ids, so it starts now, alongside the locations lookup.
+    const unfiltered = Promise.all(windows.map(([wMin, wMax]) => pull(new URLSearchParams({ start_at_min: wMin, start_at_max: wMax, limit: '100' }))));
+    // Every location on the account.
+    let locIds = [];
+    try {
+      const loc = await sf('/v2/locations');
+      locIds = (loc.locations || []).map(l => l.id).filter(Boolean);
+    } catch (e) { /* fall back to unfiltered query below */ }
+
     // Every (window, location) query at once, a few at a time, instead of one after another. Each one's
     // own pages still follow in order; the result is sorted by start time below, so arrival order does
     // not matter, and `seen` keeps a booking found by two queries from being listed twice.
+    // (The unfiltered safety net, which covers any location we didn't enumerate, is already running.)
     const queries = [];
     for (const [wMin, wMax] of windows) {
       for (const lid of locIds) queries.push(new URLSearchParams({ location_id: lid, start_at_min: wMin, start_at_max: wMax, limit: '100' }));
-      // Unfiltered safety net (covers any location we didn't enumerate) for this window.
-      queries.push(new URLSearchParams({ start_at_min: wMin, start_at_max: wMax, limit: '100' }));
     }
     for (let i = 0; i < queries.length; i += 6) await Promise.all(queries.slice(i, i + 6).map(pull));
+    await unfiltered;
 
     const bookings = raw.filter(isLive);
 
