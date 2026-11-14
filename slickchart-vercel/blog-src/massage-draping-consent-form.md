@@ -75,4 +75,4 @@ For the whole set, from intake to aftercare, browse the [massage therapist forms
 
 SlickChart has this exact draping and boundaries form and physician clearance built in for subscribers. The form goes to the client's phone to sign before the visit, or they sign on your device at the table, and their area choices are saved to their chart. Aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable massage therapist set, with this draping and area consent, the physician clearance and the aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable massage therapist set, with this draping and area consent, the physician clearance and the aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616693142), ready to print or edit in free Canva.

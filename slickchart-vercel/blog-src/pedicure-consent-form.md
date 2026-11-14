@@ -71,4 +71,4 @@ For hands, see my [manicure and e-file consent form](/blog/manicure-efile-consen
 
 SlickChart has this exact pedicure consent and aftercare built in for subscribers. The form goes to the client's phone to sign before the visit, or she signs on your device at the chair, and any contraindication she checks is flagged for you. The aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable pedicure set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable pedicure set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616670489), ready to print or edit in free Canva.

@@ -78,4 +78,4 @@ New clients fill in an intake first; see my [massage intake form](/blog/massage-
 
 SlickChart has this exact lymphatic drainage consent and aftercare built in for subscribers. The form goes to the client's phone to sign before the visit, or they sign on your device at the table, and any contraindication they check is flagged for you. The aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable massage therapist set, with this lymphatic consent, the protocol and the aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable massage therapist set, with this lymphatic consent, the protocol and the aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616701180), ready to print or edit in free Canva.

@@ -81,4 +81,4 @@ Then send the [tattoo consent form](/blog/tattoo-consent-form) for the day itsel
 
 SlickChart has this exact tattoo intake and consultation form built in for subscribers. The form goes to the client's phone before the visit, or they fill it in on your device at your station, and any contraindication they check is flagged for you. The pre-care lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable tattoo artist set, with this intake, the consultation form and the pre-care guide, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable tattoo artist set, with this intake, the consultation form and the pre-care guide, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616748485), ready to print or edit in free Canva.

@@ -65,4 +65,4 @@ Around it, the timeline is simple: makeup off for 12 to 24 hours, no touching, w
 
 SlickChart has this exact facial and extractions consent and aftercare built in for esthetician subscribers. The client signs on their phone before the visit, or on your device in the room, and any contraindication they check is flagged for you. The aftercare goes to the client's own app, styled with your logo, and it works alongside the Square account you already have. If that would make your mornings easier, [try SlickChart](/slickchart).
 
-Prefer paper? The printable facial and extractions set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable facial and extractions set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4594158298), ready to print or edit in free Canva.

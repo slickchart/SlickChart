@@ -61,4 +61,4 @@ A reaction at a test spot is a reason to stop and reschedule, not something to d
 
 SlickChart has this exact allergy alert and strand test form built in for hair stylist subscribers, along with the chemical service consent and pre-visit guide. The form goes to the client's phone to sign before the visit, or she signs on your device in the chair, and any contraindication she checks on her service consent is flagged for you. Aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable hair stylist set, with the allergy alert and strand test form, chemical service consent and before your visit guide, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable hair stylist set, with the allergy alert and strand test form, chemical service consent and before your visit guide, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616617092), ready to print or edit in free Canva.

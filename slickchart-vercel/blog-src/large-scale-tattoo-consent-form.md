@@ -79,4 +79,4 @@ Big pieces start with a consultation; see my [tattoo intake form](/blog/tattoo-i
 
 SlickChart has this exact large-scale consent and aftercare built in for subscribers. The form goes to the client's phone to sign before each session, or they sign on your device at your station, and any contraindication they check is flagged for you. The aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable tattoo artist set, with this large-scale consent, the protocol and the aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable tattoo artist set, with this large-scale consent, the protocol and the aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616762376), ready to print or edit in free Canva.

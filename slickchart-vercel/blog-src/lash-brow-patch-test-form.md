@@ -60,4 +60,4 @@ For how the test ties into each service, see my [lash extension consent form](/b
 
 SlickChart has this exact patch test consent and record built in for subscribers, along with the intake and prep guide. The form goes to the client's phone to sign before the visit, or she signs on your device in the room, and any contraindication she checks on her intake is flagged for you. The prep guide and aftercare land in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable patch test consent and record, along with the rest of my lash and brow forms, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable patch test consent and record, along with the rest of my lash and brow forms, is in my [Etsy shop](https://slickchart.etsy.com/listing/4598780293), ready to print or edit in free Canva.
