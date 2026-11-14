@@ -1,0 +1,52 @@
+name: Tell Bing about new or changed pages (IndexNow)
+
+# Ashley, 2026-11-13: ping Bing the moment a page or blog post is published or updated (ChatGPT
+# search leans on Bing). Runs after main changes, both ways main changes:
+#   - a direct content push (blog, marketing pages): pings the files that push changed;
+#   - the overnight promotion: its push is made with the workflow token, which starts no other
+#     workflow, so this also runs when "Deploy overnight" finishes and pings what changed on main
+#     in the last 26 hours. A page sent twice is harmless.
+# Only pages in sitemap.xml can ever be sent (scripts/indexnow.cjs). Never fails anything: a refused
+# ping is logged and the next change pings again.
+
+on:
+  push:
+    branches: [main]
+    paths: ['slickchart-vercel/**']
+  workflow_run:
+    workflows: ['Deploy overnight (promote release → main, after midnight Pacific)']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: indexnow
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 200
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Give Vercel time to finish deploying, so Bing fetches the new page and not the old one.
+      - name: Wait for the deploy
+        run: sleep 240
+      - name: Ping IndexNow
+        working-directory: slickchart-vercel
+        continue-on-error: true
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            node scripts/indexnow.cjs "${{ github.event.before }}" "${{ github.sha }}"
+          else
+            node scripts/indexnow.cjs --since "26 hours ago"
+          fi
