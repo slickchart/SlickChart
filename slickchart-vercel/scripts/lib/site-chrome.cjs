@@ -96,6 +96,12 @@ const chromeFooter = `<footer><div class="wrap">
 // ogImage: the picture that shows when a link is shared. Defaults to the SlickChart one; the Build
 // blog passes its own, because a Build page previewing as a SlickChart client-engagement graphic
 // tells whoever sees it the wrong thing about what they are about to open.
+// Remembers an ad or ChatGPT link's utm values AND the page it landed on, so a visitor who arrives on
+// a blog post and signs up from the homepage is still credited, with that post named in Ashley's
+// paid sign-up alert (index.html reads 'slicksrc'; lib/referral.js parseClientRef). Same snippet in
+// the hand-written forms pages and free.html.
+const SRC_CAPTURE = `<script>/* sign-up source: an ad or ChatGPT link (utm_*) and the page it landed on, read by the homepage's sign-up buttons */try{(function(){var sp=new URLSearchParams(location.search),c=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,50)},us=c(sp.get('utm_source')),uc=c(sp.get('utm_campaign')),ut=c(sp.get('utm_content'));if(us||uc||ut)localStorage.setItem('slicksrc',JSON.stringify({s:'utm__'+us+'__'+uc+'__'+ut,p:String(location.pathname||'/').toLowerCase().replace(/\\.html$/,'').replace(/[^a-z0-9\\/-]/g,'').slice(0,60)||'/',t:Date.now()}))})()}catch(e){}</script>`;
+
 function head({ title, description, canonical, keywords, jsonld, ogType, headerCta, ogImage, banner }) {
   const share = `${SITE}/assets/${ogImage || 'og-image-marine.jpg?v=4'}`;
   return `<!doctype html>
@@ -127,6 +133,7 @@ ${keywords ? `<meta name="keywords" content="${esc(keywords)}">\n` : ''}<link re
 ${HEAD_FONTS}
 <style>${CSS}</style>
 <script type="application/ld+json">${JSON.stringify(jsonld)}</script>
+${SRC_CAPTURE}
 </head>
 <body>
 ${banner ? buildBanner + '\n' : ''}${headerCta ? headerWith(headerCta.href, headerCta.label) : chromeHeader}`;

@@ -139,6 +139,9 @@ export async function ensureReferralTables(q) {
     ref_code text,
     created_at timestamptz DEFAULT now()
   )`;
+  // The page the visitor first landed on with that link (e.g. /blog/virtual-esthetician), so a
+  // ChatGPT or ad visit shows WHICH page brought them. Added 2026-11-13; older rows have none.
+  await q`ALTER TABLE signup_sources ADD COLUMN IF NOT EXISTS landing text`;
   _ready = true;
 }
 
@@ -579,14 +582,19 @@ export async function retryFailedRewards(q) {
 }
 
 // ── Sign-up source (referral code + ad utm values) ──────────────────────────────────────────────
-// The landing page appends client_reference_id=utm__{source}__{campaign}__{content} to the Stripe
-// links (each value a-z 0-9 dash, at most 50, empty when missing). Anything else there is ignored.
+// The landing page appends client_reference_id=utm__{source}__{campaign}__{content}[__{landing}] to
+// the Stripe links (each value a-z 0-9 dash, at most 50, empty when missing; landing is the path the
+// visitor first arrived on, a-z 0-9 dash slash, at most 60, and older pages send no landing at all).
+// Anything else there is ignored.
 export function parseClientRef(v) {
   const s = String(v || '');
   if (!/^utm__/.test(s) || s.length > 200) return null;
-  const parts = s.split('__').slice(1, 4).map(x => String(x || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 50));
+  const all = s.split('__');
+  const parts = all.slice(1, 4).map(x => String(x || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 50));
   const [source, campaign, content] = [parts[0] || '', parts[1] || '', parts[2] || ''];
-  return source || campaign || content ? { source, campaign, content } : null;
+  let landing = String(all[4] || '').toLowerCase().replace(/[^a-z0-9\/-]/g, '').slice(0, 60);
+  if (landing && landing[0] !== '/') landing = '/' + landing;
+  return source || campaign || content ? { source, campaign, content, landing } : null;
 }
 
 export async function recordSignupSource(q, session, refRow) {
@@ -598,8 +606,8 @@ export async function recordSignupSource(q, session, refRow) {
     const code = refRow && refRow.status !== 'blocked' ? refRow.code : null;
     if (!utm && !code) return null;
     await ensureReferralTables(q);
-    await q`INSERT INTO signup_sources (email, source, campaign, content, ref_code)
-      VALUES (${email}, ${utm ? utm.source : null}, ${utm ? utm.campaign : null}, ${utm ? utm.content : null}, ${code})
+    await q`INSERT INTO signup_sources (email, source, campaign, content, ref_code, landing)
+      VALUES (${email}, ${utm ? utm.source : null}, ${utm ? utm.campaign : null}, ${utm ? utm.content : null}, ${code}, ${utm && utm.landing ? utm.landing : null})
       ON CONFLICT (email) DO NOTHING`;
     return { utm, code };
   } catch (e) { console.error('[referral] source record failed:', e && e.message || e); return null; }
@@ -608,7 +616,7 @@ export async function recordSignupSource(q, session, refRow) {
 export function sourceLine(row) {
   if (!row) return '';
   const bits = [];
-  if (row.source) bits.push(row.source + (row.campaign ? ' / ' + row.campaign : '') + (row.content ? ' / ' + row.content : ''));
+  if (row.source) bits.push(row.source + (row.campaign ? ' / ' + row.campaign : '') + (row.content ? ' / ' + row.content : '') + (row.landing ? ' (landed on ' + row.landing + ')' : ''));
   if (row.ref_code) bits.push('referral code ' + row.ref_code);
   return bits.length ? 'Source: ' + bits.join(', ') : '';
 }

@@ -131,7 +131,7 @@ async function notifyFounderPaid(q, email) {
   } catch (e) {}
   // Ad link values carried through checkout (signup_sources). Shown only when there is one.
   try {
-    const sr = await q`SELECT source, campaign, content, ref_code FROM signup_sources WHERE email = ${em} LIMIT 1`;
+    const sr = await q`SELECT * FROM signup_sources WHERE email = ${em} LIMIT 1`;
     const line = sourceLine(sr[0] && sr[0].source ? Object.assign({}, sr[0], { ref_code: null }) : null);
     if (line) refLine = refLine ? refLine + '\n' + line : line;
   } catch (e) {}
