@@ -9351,3 +9351,23 @@ a busy account, nearly all of it photos in events the phone had already filed.
 - Head prefetch owner fix: an unparseable token now gives `'t:'+payload` like `_tokenOwner()` (before,
   it gave '' and the early reads just skipped `since`; harmless, slower).
 - Test: `scratchpad/test-events-since.mjs` (node + app, 23 checks, Chromium and WebKit).
+
+## 2026-11-13 — "Add a past visit": bring earlier treatments in, one visit per date (build `2026-11-13e`, PREVIEW)
+
+Asked in the Feedback Inbox by Lisa Joy (new esthetician, 2026-11-13 5:41pm PT).
+**What she OBSERVED / asked:** she wants to import existing clients' previous facials with their original
+dates, products and notes; she made appointments with past dates, but they do not show in the client's
+Journey or session summaries; she asks for a way to make completed records for past dates, each visit
+separate.
+
+**What already existed:** Notes → Edit opens Write Note, whose Session date files the note under any
+day (`_commitWriteNote`, one record per `_draftDate`). But nothing pointed there from Journey, and after
+a save the same note stayed open for 12 hours (`_expireCommittedDraft`), so a second past visit opened
+showing the first one's date and text.
+
+- `_addPastVisit(id)`: Journey tab and Session summaries each get **Add a past visit**. It opens a BLANK
+  Write Note dated yesterday with a hint to pick the day. A note she is still writing (unsaved text) is
+  never dropped: she is sent back to it with a toast. A saved draft is retired the same way
+  `_expireCommittedDraft` does (dated `sc_deleted_note_drafts` entry).
+- A note saved from this mode is marked `pastVisit`, so the next note starts blank right away.
+- Test: `scratchpad/test-past-visit.mjs` (8 checks) Chromium + WebKit; `sweep2-ui-nextvisit-note` passes.
