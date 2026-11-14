@@ -370,7 +370,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-13d';
+const APP_BUILD='2026-11-13e';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -11289,6 +11289,7 @@ function renderClient(id){
       <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${(sessionSummaries[id]||[]).length} saved summar${(sessionSummaries[id]||[]).length===1?'y':'ies'}</div><div style="font-size:14px;color:var(--p-mut);">${(sessionSummaries[id]||[]).length?'Last: '+_fileEsc(sessionSummaries[id][0].date)+' · '+_fileEsc(sessionSummaries[id][0].treatment||'Session'):'Finish a session to save one here'}</div></div>
       <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>
     </button>
+    <button onclick="_addPastVisit('${id}')" style="width:100%;margin-top:8px;background:none;border:1px dashed var(--p-line-ctl);border-radius:12px;padding:11px 14px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-family:inherit;font-size:16px;color:var(--accent-strong);font-weight:600;"><i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:18px;"></i> Add a past visit</button>
   </div>
   </div>
   <div class="ctab" data-tab="photos"${_clientTab==='photos'?'':' hidden'}>
@@ -13650,11 +13651,32 @@ function _expireCommittedDraft(id){
     const saved=d.committed||((typeof sessionSummaries!=='undefined'&&Array.isArray(sessionSummaries[id]))&&sessionSummaries[id].some(function(h){return h&&h._draftDate===d.date;}));
     if(!saved)return;
     if(d.date===(typeof _isoToday==='function'?_isoToday():''))return;
-    if(Date.now()-(Number(d.committedAt||d.ts)||0)<12*3600000)return;
+    if(!d.pastVisit&&Date.now()-(Number(d.committedAt||d.ts)||0)<12*3600000)return;
     // Record the expiry first, dated, so the smaller upload is accepted and no other device puts the
     // old draft back. A draft written after this moment (a newer ts) still wins.
     try{const tk='sc_deleted_note_drafts';const t=JSON.parse(_lsGet(tk)||'{}')||{};t['nd:'+id]=Date.now();const v=JSON.stringify(t);localStorage.setItem(tk,v);if(typeof _pushKeyNow==='function')_pushKeyNow(tk,v);}catch(e){}
     delete providerNoteDrafts[id];if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
+  }catch(e){}
+}
+function _isoDaysAgo(n){const d=new Date(Date.now()-n*86400000);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// "Add a past visit" (Lisa Joy, 2026-11-13: bringing her clients' earlier facials in, one record per
+// visit with its own date). Opens a BLANK note with a date picker. The note is filed under the date she
+// picks by the same _commitWriteNote as every note, so each past date is its own visit in Journey.
+// A note she is still writing (not saved yet) is never thrown away: she is sent back to it instead.
+function _addPastVisit(id){
+  try{
+    const d=providerNoteDrafts[id];
+    const hasText=d&&d.sections&&Object.keys(d.sections).some(function(k){return String(d.sections[k]||'').trim();});
+    if(d&&hasText&&!d.committed){if(typeof proToast==='function')proToast('Save the note you are writing first, then add the past visit');window._wnPastVisit=null;nav('write-note',id);return;}
+    if(d){
+      // The open draft is already saved as a visit. Retire it the same way _expireCommittedDraft does,
+      // dated, so another device does not put it back into this blank note.
+      try{const tk='sc_deleted_note_drafts';const t=JSON.parse(_lsGet(tk)||'{}')||{};t['nd:'+id]=Date.now();const v=JSON.stringify(t);localStorage.setItem(tk,v);if(typeof _pushKeyNow==='function')_pushKeyNow(tk,v);}catch(e){}
+      delete providerNoteDrafts[id];if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
+    }
+    window._wnPastVisit=id;
+    nav('write-note',id);
+    setTimeout(function(){try{const el=document.getElementById('wn-date');if(el&&el.focus)el.focus();}catch(e){}},80);
   }catch(e){}
 }
 function renderWriteNote(id){
@@ -13663,7 +13685,8 @@ function renderWriteNote(id){
   _writeNoteClientId=id;   // whose editor is currently on screen — guards the async autosave below
   const c=CL[id];const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
   const draft=providerNoteDrafts[id]||{};
-  const dateVal=draft.date||_isoToday();
+  const _past=(window._wnPastVisit===id);
+  const dateVal=draft.date||(_past?_isoDaysAgo(1):_isoToday());
   // Each template has its own section ids (soap s1-s4, dap d1-d3, …), so a draft written under a
   // different template doesn't map onto these fields. The old code blanked the editor in that case,
   // but the single per-client draft then got OVERWRITTEN on the next save — losing whatever was
@@ -13680,7 +13703,7 @@ function renderWriteNote(id){
   <div style="padding:0 16px 10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
     <span style="font-size:14px;color:var(--p-mut);">Session date</span>
     <input id="wn-date" type="date" value="${dateVal}" oninput="_autosaveWriteNote('${id}')" style="background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:6px 10px;font-size:16px;font-family:inherit;">
-    <span style="font-size:14px;color:var(--p-mut);">(change this if you're catching up on a note from another day)</span>
+    <span style="font-size:14px;color:${_past?'var(--accent-strong)':'var(--p-mut)'};">${_past?'Pick the day of this past visit. Each date is its own visit in their history.':"(change this if you're catching up on a note from another day)"}</span>
   </div>
   ${_faceChartField(id)}
   <div style="padding:0 16px;">
@@ -14135,7 +14158,10 @@ function _commitWriteNote(id){
   const sections={};
   t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);sections[s.id]=el?el.value:'';});
   const _fc=_faceChartOf(id);
+  const _wasPast=(window._wnPastVisit===id);if(_wasPast)window._wnPastVisit=null;
   providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate,ts:Date.now(),committed:true,committedAt:Date.now()};
+  // A past visit she added is finished once saved: the next note starts blank, not 12 hours later.
+  if(_wasPast)providerNoteDrafts[id].pastVisit=true;
   if(_fc)providerNoteDrafts[id].faceChart=_fc;
   saveProviderNoteDrafts();
   // Reflect this note in the client's real session history too, so it shows
@@ -15370,8 +15396,9 @@ function renderSummaryHistory(id){
   S.innerHTML=`
   
   <div style="padding:10px 16px 4px;display:flex;align-items:center;justify-content:space-between;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_clientNameLink(id,c.name,{color:'var(--p-ink)'})}</div><span class="bdg ba" style="font-size:16px;">${list.length} summar${list.length===1?'y':'ies'}</span></div>
+  <div style="padding:0 16px 8px;"><button onclick="_addPastVisit('${id}')" style="width:100%;background:none;border:1px dashed var(--p-line-ctl);border-radius:12px;padding:11px 14px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-family:inherit;font-size:16px;color:var(--accent-strong);font-weight:600;"><i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:18px;"></i> Add a past visit</button></div>
   ${_searchBar('Search summaries…','.summary-card','summaries-noresults')}
-  ${list.length===0?emptyState({icon:'ti-file-text',title:'No summaries yet',body:'When you finish a session and send a summary, it is saved here in their client file.'}):list.map((s,i)=>`
+  ${list.length===0?emptyState({icon:'ti-file-text',title:'No summaries yet',body:'When you finish a session and send a summary, it is saved here in their client file. To add visits from before SlickChart, tap Add a past visit.'}):list.map((s,i)=>`
   <div class="summary-card" data-search="${((s.date||'')+' '+(s.treatment||'')+' '+(s.note||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="position:relative;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="position:absolute;top:8px;right:8px;z-index:2;display:flex;gap:6px;">
       <button onclick="event.stopPropagation();editSummaryDate('${id}',${i})" aria-label="Edit session date" style="background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:8px;color:var(--p-blue);cursor:pointer;padding:4px 8px;display:flex;align-items:center;gap:4px;font-size:14px;font-family:inherit;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:16px;"></i> Date</button>
