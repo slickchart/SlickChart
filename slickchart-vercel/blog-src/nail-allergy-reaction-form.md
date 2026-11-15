@@ -66,4 +66,4 @@ Notice the order. The tech removes the product, the doctor assesses, and the rec
 
 SlickChart has this exact allergy and reaction record built in for subscribers, alongside the service consents. Forms go to the client's phone to sign before the visit, or she signs on your device at the table, and any contraindication she checks on a consent, including a past reaction, is flagged for you. Aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable nail artist collection, with the allergy and reaction record and a reaction and incident report, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable nail artist collection, with the allergy and reaction record and a reaction and incident report, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616671056), ready to print or edit in free Canva.

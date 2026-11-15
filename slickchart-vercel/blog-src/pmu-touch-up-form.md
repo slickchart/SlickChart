@@ -70,4 +70,4 @@ The touch-up goes better when she trusted the heal. My "what to expect while you
 
 SlickChart has this exact touch-up form built in for subscribers. The form goes to the client's phone to sign before the visit, or she signs on your device in the room, and any health change she checks is flagged for you. Aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable PMU set, with the touch-up form, booking policy and healing guide, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable PMU set, with the touch-up form, booking policy and healing guide, is in my [Etsy shop](https://slickchart.etsy.com/listing/4600399883), ready to print or edit in free Canva.

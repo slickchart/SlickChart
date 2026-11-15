@@ -81,4 +81,4 @@ New clients fill in an intake first; see my [tattoo intake form](/blog/tattoo-in
 
 SlickChart has this exact cover-up consent and aftercare built in for subscribers. The form goes to the client's phone to sign before the session, or they sign on your device at your station, and any contraindication they check is flagged for you. The aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable tattoo artist set, with this cover-up consent, the protocol and the aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable tattoo artist set, with this cover-up consent, the protocol and the aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616761280), ready to print or edit in free Canva.

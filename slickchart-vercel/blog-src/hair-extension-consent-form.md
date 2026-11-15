@@ -66,4 +66,4 @@ The call-me list covers itching, soreness or pulling that won't settle; bumps, r
 
 SlickChart has this exact hair extension consent and aftercare built in for hair stylist subscribers. The form goes to the client's phone to sign before the visit, or she signs on your device in the chair, and any contraindication she checks is flagged for you. The aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable hair extension set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable hair extension set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616648407), ready to print or edit in free Canva.

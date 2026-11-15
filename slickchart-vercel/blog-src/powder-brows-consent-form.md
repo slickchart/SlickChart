@@ -64,4 +64,4 @@ The quick rules: hands off the flakes, a rice-grain of balm, no swimming, sauna 
 
 SlickChart has this exact powder and ombré brow consent and aftercare built in for subscribers. The form goes to the client's phone to sign before the visit, or she signs on your device in the room, and any contraindication she checks is flagged for you. The aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable powder, ombré and combo brow set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable powder, ombré and combo brow set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4600440676), ready to print or edit in free Canva.

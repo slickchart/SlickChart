@@ -68,4 +68,4 @@ The guide asks her to come in within 5 to 7 days for any lift, never gluing it d
 
 SlickChart has this exact gel extension consent and aftercare built in for subscribers. The form goes to the client's phone to sign before the visit, or she signs on your device at the table, and any contraindication she checks is flagged for you. The aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable gel extensions set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable gel extensions set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616677382), ready to print or edit in free Canva.

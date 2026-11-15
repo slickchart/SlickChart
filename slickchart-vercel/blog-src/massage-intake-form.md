@@ -67,4 +67,4 @@ For the next step after intake, see my [deep tissue massage consent form](/blog/
 
 SlickChart has this exact massage intake and body chart built in for subscribers. The form goes to the client's phone to fill in before the visit, or they sign on your device at the table, and any health item they check is flagged for you. Aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
 
-Prefer paper? The printable massage therapist set, with this intake, the body chart and the treatment plan, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable massage therapist set, with this intake, the body chart and the treatment plan, is in my [Etsy shop](https://slickchart.etsy.com/listing/4616693142), ready to print or edit in free Canva.

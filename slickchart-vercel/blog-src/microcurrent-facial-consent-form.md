@@ -80,4 +80,4 @@ Consent requirements and scope of practice vary by state, so check with your sta
 
 SlickChart has this exact form and aftercare built in for esthetician subscribers. The client signs on their phone before the visit, or on your device in the room, and any checked contraindication is flagged for you, which matters most when a box is a hard stop. The aftercare goes to the client's own app, styled with your logo, and it works alongside the Square account you already have. If that would take paperwork off your plate, [try SlickChart](/slickchart).
 
-Prefer paper? The printable microcurrent facial set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
+Prefer paper? The printable microcurrent facial set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com/listing/4594143177), ready to print or edit in free Canva.
