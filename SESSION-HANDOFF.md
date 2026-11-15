@@ -9371,3 +9371,25 @@ showing the first one's date and text.
   `_expireCommittedDraft` does (dated `sc_deleted_note_drafts` entry).
 - A note saved from this mode is marked `pastVisit`, so the next note starts blank right away.
 - Test: `scratchpad/test-past-visit.mjs` (8 checks) Chromium + WebKit; `sweep2-ui-nextvisit-note` passes.
+
+## 2026-11-15: a sent form opens straight into the form (Lisa, build 2026-11-15a)
+
+**What Lisa observed (her words, email 2026-11-15):** "Is there any way for me to only send the form I
+want for them to fill out before their appt. without sending the app link?" (She uses an iPad; earlier
+emails in the same thread.)
+
+**What it did before:** every form send (`shareFormLink`, all 6 callers) texted the client's care-space
+link, which opened on Home with the "Complete before your visit" card; the client had to tap Start.
+
+**Change:** `shareFormLink` now sends `_clientFormLink(cid)` = the same `/space?c=<token>` link plus
+`&s=previsit`, the deep link the client page already handled for push taps, so the client lands on
+the form itself. Plain invites and every other link are unchanged. Older client pages ignore `s`.
+
+**Bug found on the way (client page):** that deep link never actually stayed on the form. Boot's
+`_loadClientPrefsFromServer().then(...)` repainted Home whenever ANY screen had `#page-heading`
+(fill-form has one), so a push tap to `s=previsit` flashed the form and then showed Home again.
+It now repaints only when `currentScreen==='home'`.
+
+Test: `scratchpad/test-form-link-direct.mjs` (10 checks, Chromium and WebKit): link shape, the send
+message, no-token gives no link, client lands on the form with the question showing, `s=` stripped,
+plain link still lands on Home, no page errors.
