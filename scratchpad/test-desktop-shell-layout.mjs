@@ -1,4 +1,4 @@
-// Desktop/tablet apps fill their window (2026-11-16). A desktop BROWSER keeps the 390px phone frame;
+// Desktop/tablet apps fill their window (2026-11-16). A desktop BROWSER 900px+ gets up to 1200px; narrower keeps the phone frame;
 // the Mac/Windows app (window.slickchartDesktop) and the store app (Capacitor native) fill the window,
 // and the desktop app does not show the "download the app" banner. Serves slickchart-vercel on :8899.
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
@@ -15,8 +15,12 @@ async function run(name, vp, init, touch=false){
   // a sheet opens across the whole window too
   await c.close(); return r;
 }
-let r=await run('browser',{width:1180,height:820});
-ok(r.w<=392 && !r.full, `desktop browser keeps the phone frame (shell ${r.w}px)`);
+let r=await run('browser-narrow',{width:860,height:820});
+ok(r.w<=392 && !r.full, `narrow desktop browser keeps the phone frame (shell ${r.w}px)`);
+r=await run('browser',{width:1180,height:820});
+ok(Math.abs(r.w-1180)<2 && !r.full, `desktop browser 1180 wide: app fills it (shell ${r.w}px)`);
+r=await run('imac',{width:2048,height:1152});
+ok(Math.abs(r.w-1200)<2, `iMac-size browser: app 1200 wide, centred (shell ${r.w}px)`);
 r=await run('electron',{width:1180,height:820},()=>{window.slickchartDesktop={isDesktop:true,platform:'darwin',retry(){}};});
 ok(Math.abs(r.w-r.vw)<2 && r.full, `desktop app fills the window (shell ${r.w}/${r.vw})`);
 ok(!r.banner, 'desktop app shows no "download the app" banner');

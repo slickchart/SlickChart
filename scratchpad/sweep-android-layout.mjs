@@ -63,10 +63,15 @@ if(WHAT==='tablet'||WHAT==='all'){
     for(const s of ['home','clients','client','messages','calendar','settings'])  {await go(page,s);await page.waitForTimeout(250);await page.screenshot({path:OUT+name.replace(' ','-')+'-'+s+'.png'});}
     await ctx.close();
   }
-  console.log('\n[desktop with a mouse keeps the phone frame]');
-  const {ctx,page}=await open(browser,{vp:{width:1280,height:900}});
+  // 2026-11-16: a desktop browser 900px+ wide gets the app up to 1200px (a provider on an iMac);
+  // a narrower window keeps the phone frame.
+  console.log('\n[desktop with a mouse: wide app at 900px+, phone frame below]');
+  {const {ctx,page}=await open(browser,{vp:{width:1280,height:900}});
   const w=await page.evaluate(()=>Math.round(document.querySelector('.shell').getBoundingClientRect().width));
-  check('desktop: still the 390px frame',w===390,'width '+w);await ctx.close();
+  check('desktop 1280: app 1200 wide',w===1200,'width '+w);await ctx.close();}
+  {const {ctx,page}=await open(browser,{vp:{width:860,height:900}});
+  const w=await page.evaluate(()=>Math.round(document.querySelector('.shell').getBoundingClientRect().width));
+  check('desktop 860: still the 390px frame',w===390,'width '+w);await ctx.close();}
 }
 if(WHAT==='zoom'||WHAT==='all'){
   for(const [name,vp] of [['130% zoom on a 412px phone',{width:317,height:700}],['130% zoom on a 360px phone',{width:277,height:600}]]){
