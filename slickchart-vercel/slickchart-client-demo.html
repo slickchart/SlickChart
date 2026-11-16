@@ -769,6 +769,10 @@ async function _initNativePush(){
 // data) or an `?s=` url param (web push). Because the client's data may not have loaded yet on a cold
 // start, we hold the target and route it once the app is ready (client._real), then clear it.
 let _pendingClientScreen=null;
+// A form-only link (?s=form&f=<formId>, sent by the provider's "Send" on ONE form) opens just that form:
+// no other pending items, no check-in after it, no "get the app" card. Lisa 2026-11-15: "only send the
+// form I want for them to fill out ... without sending the app link". Cleared once that form is sent.
+let _formOnlyId=null;
 // Normalize native FCM data OR a web-push url into a screen name.
 function _clientLinkFromData(d){
   if(!d)return '';
@@ -798,9 +802,17 @@ function _routeClientScreen(scr){
 function _tryClientDeepLink(){
   const link=_pendingClientScreen;
   if(!link)return;
-  if(Date.now()-(link.ts||0)>60000){_pendingClientScreen=null;return;}   // never let a stale tap hijack nav later
+  if(Date.now()-(link.ts||0)>60000){_pendingClientScreen=null;if(link.screen==='form')_formOnlyId=null;return;}   // never let a stale tap hijack nav later
   if(!client._real)return;   // wait until this client's own data has loaded
   const scr=link.screen;
+  if(scr==='form'){
+    // Wait until that form is in this client's list (the provider's send may still be syncing in).
+    const has=(activeProvider().pendingForms||[]).some(function(x){return x&&x.formId===link.formId;});
+    if(!has)return;
+    _pendingClientScreen=null;
+    try{_fillFormId=link.formId;nav('fill-form');}catch(e){try{nav('home');}catch(_){}}
+    return;
+  }
   if(scr==='previsit'||scr==='checkin'){
     // Route into the pre-visit flow (merged intake+check-in package, or the check-in). Wait until the
     // check-in config/forms are loaded so we land on the right step rather than bouncing to Home; the
@@ -819,10 +831,13 @@ function _tryClientDeepLink(){
 // refresh doesn't re-trigger the jump.
 function _handleClientPushParams(){
   try{
-    const s=new URLSearchParams(location.search).get('s');
+    const _q=new URLSearchParams(location.search);
+    const s=_q.get('s');
     if(!s)return;
-    _queueClientDeepLink(String(s));
-    try{const u=new URL(location.href);u.searchParams.delete('s');history.replaceState({},'',u);}catch(e){}
+    const f=_q.get('f');
+    if(s==='form'&&f){_formOnlyId=String(f);_pendingClientScreen={screen:'form',formId:String(f),ts:Date.now()};_tryClientDeepLink();}
+    else _queueClientDeepLink(String(s));
+    try{const u=new URL(location.href);u.searchParams.delete('s');u.searchParams.delete('f');history.replaceState({},'',u);}catch(e){}
   }catch(e){}
 }
 
@@ -2481,6 +2496,7 @@ function _previsitFlowPos(type,formId){
 // what finally makes a two-form package obvious: while filling form 1 the client can see there's a
 // form 2 still to come, and each screen names how many are left.
 function _previsitProgressHTML(type,formId){
+  if(_formOnlyId&&type==='form'&&formId===_formOnlyId)return '';
   const pos=_previsitFlowPos(type,formId);
   if(!pos)return '';
   const {idx,total}=pos;
@@ -2813,6 +2829,7 @@ function _showAppDownloadNudge(){
   try{
     if(typeof _isNativeApp==='function'&&_isNativeApp())return;    // already inside the installed app
     if(typeof client==='undefined'||!client._real)return;          // sample/demo preview — don't nudge
+    if(_formOnlyId)return;                                         // a form-only link: just the form, no app pitch
     var dismissed='';try{dismissed=localStorage.getItem('sc_appnudge_dismissed')||'';}catch(e){}
     if(dismissed)return;
     if(document.getElementById('sc-appnudge'))return;
@@ -4297,7 +4314,9 @@ function _submitFillForm(){
       try{if(!(p.pendingForms||[]).some(function(x){return x&&x.formId===pf.formId;}))(p.pendingForms=p.pendingForms||[]).push(pf);}catch(e){}
       try{_unmarkFormDone(p.id,pf);}catch(e){}
     };
-    if(_nextPrevisitItem()){
+    const _soloForm=!!_formOnlyId&&pf.formId===_formOnlyId;
+    if(_soloForm)_formOnlyId=null;
+    if(_nextPrevisitItem()&&!_soloForm){
       _clientSubmit('form',_ffPayload).then(function(res){
         if(res&&res.duplicate)return;
         if(res&&res.ok!==false){ try{_ffClearIdem(pf);}catch(e){} try{_ffClearDraft(_ffSK);}catch(e){} }
@@ -4310,8 +4329,8 @@ function _submitFillForm(){
     showToast('Sending\u2026');
     _clientSubmit('form',_ffPayload).then(function(res){
       if(res&&res.duplicate)return;
-      if(res&&res.ok!==false){ try{_ffClearIdem(pf);}catch(e){} try{_ffClearDraft(_ffSK);}catch(e){} showToast('Sent \u2713'); nav('home'); }
-      else{ _ffRestore(); showToast("Couldn't send \u2014 check your connection and tap Submit again",false); }
+      if(res&&res.ok!==false){ try{_ffClearIdem(pf);}catch(e){} try{_ffClearDraft(_ffSK);}catch(e){} showToast('Sent \u2713'); if(_soloForm){try{_formSentHTML(pf);}catch(e){nav('home');}} else nav('home'); }
+      else{ _ffRestore(); if(_soloForm)_formOnlyId=pf.formId; showToast("Couldn't send \u2014 check your connection and tap Submit again",false); }
     });
     return;
   }
@@ -4799,6 +4818,20 @@ function _ciBuildPayload(){
   return{groups,flagged,notes,photos,firstVisit:_ciFirstVisit()};
 }
 
+// The end of a form-only link: just a thank-you. Nothing else to do, no app pitch.
+function _formSentHTML(pf){
+  const S=document.getElementById('S');if(!S)return;
+  setNav('home');
+  try{document.getElementById('tt').textContent=pf.title||'Form';}catch(e){}
+  S.innerHTML=`
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;padding:24px;">
+    <div style="width:80px;height:80px;background:var(--accent-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
+      <i class="ti ti-check" aria-hidden="true" style="font-size:40px;color:var(--accent-ink-lt);"></i>
+    </div>
+    <div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:var(--c-ink);margin-bottom:8px;">Thank you!</div>
+    <div style="font-size:14px;color:var(--c-mut);text-align:center;line-height:1.7;">${_txt(client.providerFirst)} has your ${_txt(pf.title||'form')}. You're all done.</div>
+  </div>`;
+}
 function _checkinSuccessHTML(flagged){
   return `
   <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;padding:24px;">

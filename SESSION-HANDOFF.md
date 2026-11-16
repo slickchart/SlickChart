@@ -9393,3 +9393,18 @@ It now repaints only when `currentScreen==='home'`.
 Test: `scratchpad/test-form-link-direct.mjs` (10 checks, Chromium and WebKit): link shape, the send
 message, no-token gives no link, client lands on the form with the question showing, `s=` stripped,
 plain link still lands on Home, no page errors.
+
+### Same day, round 2: a one-form send opens ONLY that form (build 2026-11-15b)
+
+**Lisa observed (email 2026-11-16 02:02Z, iPhone screenshot, Safari opened from Messages, live build
+2026-11-13e):** "I tried to sen myself only the client intake & health information form but it sent all
+of this also." Her screen: "Complete before your visit, 0 of 3 done" listing New client intake & consent
+(an earlier send), Client intake & health history, and Pre-visit check-in, then a "For the best
+experience, get the app / App Store" card.
+
+So `s=previsit` (round 1) was not enough: it walks every pending item and the check-in. Now a one-form
+send links `?c=<tok>&s=form&f=<formId>`. The client page (`_formOnlyId`): opens that form only, no
+"Step 1 of N", no app card, and after it sends a "Thank you!" screen instead of flowing into the
+check-in or other forms. A failed send restores the form and stays in form-only mode. If the form is
+already done the link opens Home as before. Home, the client's other to-dos and the push deep links are
+unchanged. `test-form-link-direct.mjs` now replays her exact list (18 checks, Chromium + WebKit).
