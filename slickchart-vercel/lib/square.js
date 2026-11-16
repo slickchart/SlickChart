@@ -39,7 +39,10 @@ export const SQUARE_SCOPES = [
   'APPOINTMENTS_READ', 'APPOINTMENTS_WRITE', 'APPOINTMENTS_ALL_READ', 'APPOINTMENTS_ALL_WRITE', 'APPOINTMENTS_BUSINESS_SETTINGS_READ',
   'PAYMENTS_WRITE', 'PAYMENTS_READ', 'ORDERS_WRITE', 'ORDERS_READ', 'INVOICES_WRITE', 'INVOICES_READ',
   // Added for: inventory counts, loyalty balances/points, and gift-card balance/redeem.
-  'LOYALTY_READ', 'LOYALTY_WRITE', 'GIFTCARDS_READ', 'GIFTCARDS_WRITE'
+  'LOYALTY_READ', 'LOYALTY_WRITE', 'GIFTCARDS_READ', 'GIFTCARDS_WRITE',
+  // Tap to Pay in the phone app (Square Mobile Payments SDK) takes in-person payments, which Square
+  // gates on this scope. A provider connected before it was added reconnects once (mobile-auth says so).
+  'PAYMENTS_WRITE_IN_PERSON'
 ].join('+');
 
 

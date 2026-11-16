@@ -22,6 +22,35 @@ Every session: check this list whenever a change turns out to need a store build
 - **Also still waiting (from SESSION-HANDOFF):** check the earlier native items noted there as
   "needs the next Play build" / "needs the next App Store build" and fold them into the same build.
 
+### Tap to Pay on the phone (Square Mobile Payments SDK 2.7.0) — ready, switched OFF until Apple's second yes
+- **Ashley's choice (2026-11-16):** in-app Tap to Pay, not opening the Square app. Apple granted the
+  Tap to Pay entitlement on 2026-11-16, but **for Development only**. An App Store or TestFlight archive
+  with it fails until Apple approves distribution; she was given a reply to Apple's confirmation email
+  asking for that. So the iPad build (1.0.5 (8)) goes out WITHOUT it.
+- **The code:** `native-staging/tap-to-pay/` (iOS Swift plugin + bridge view controller, Android Java
+  plugin + Application class). `node scripts/native/tap-to-pay.cjs check` shows what is applied;
+  `... enable` applies all 21 steps (idempotent): Square SPM package (exact 2.7.0) + Square's setup
+  Run Script as the last phase, `ENABLE_USER_SCRIPT_SANDBOXING = NO`, **iOS minimum 17.1** (Square's
+  floor; older iPhones keep the version they have, which still works because the code is live),
+  Bluetooth + Location wording in Info.plist, the `proximity-reader.payment.acceptance` entitlement,
+  SceneDelegate -> `SlickChartBridgeViewController`, AppDelegate starts Square at launch; Android
+  maven repo + dependency, **minSdk 28**, `SlickChartApplication`, plugin registered in MainActivity,
+  microphone kept optional (`tools:replace`).
+- **The app side is already live-code** (build 2026-11-16k): the "Tap to Pay on this phone" button
+  appears only when the native plugin exists, so nothing changes until a store build carries it.
+  Test: `scratchpad/test-tap-to-pay.mjs` (mocked plugin, 21 checks).
+- **Steps when Apple approves distribution:**
+  1. Developer portal > Identifiers > com.slickchart.app > tick **Tap to Pay on iPhone**, save, then
+     regenerate the "SlickChart App Store" profile and download it in Xcode.
+  2. `node scripts/native/tap-to-pay.cjs enable`, then `npx cap sync`, build both apps.
+  3. Square Developer Dashboard > the app > Mobile Payments SDK: submit the Android release signing
+     certificate (SHA-256) or Android production payments are refused.
+  4. Play Console data safety: approximate + precise location and phone state are used for payments.
+  5. Test one real $1 payment on an iPhone XS or newer and an Android 9+ phone with NFC, then refund it.
+- **Square scope:** `PAYMENTS_WRITE_IN_PERSON` was added to the OAuth scopes (build 2026-11-16k).
+  Providers connected before then get "Reconnect Square once to turn on Tap to Pay" from
+  `/api/square/mobile-auth`, which checks the token's scopes with Square first.
+
 ## Already in the repo for the next iPhone build (2026-11-16)
 
 ### iPad (and Macs with Apple chips) — Ashley asked for this build on 2026-11-16

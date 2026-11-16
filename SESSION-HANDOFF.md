@@ -9592,3 +9592,16 @@ the products recommended in that visit's chart, and add tipping to payment links
   (no WebKit in that session).
 - **Tap to Pay inside the app**: Ashley chose this over opening Square's app. She submitted Apple's Tap to Pay
   on iPhone entitlement request on 2026-11-16 (Square as PSP, US, Jan 2027). Native work is in NEXT-STORE-BUILD.md.
+
+## 2026-11-16 — Build 2026-11-16k: Tap to Pay inside the phone app (PREVIEW; native part waits for a store build)
+- Ashley chose in-app Tap to Pay over opening the Square app. Apple's entitlement came the same day,
+  **Development only**; she has a drafted reply asking for App Store distribution. Everything native is
+  staged, not applied: see NEXT-STORE-BUILD.md "Tap to Pay on the phone" (`scripts/native/tap-to-pay.cjs`).
+- `api/square/mobile-auth.js` (new): her OWN Square OAuth token + location for the phone's Square SDK
+  (sqContext, no-store). Checks `/oauth2/token/status` for `PAYMENTS_WRITE_IN_PERSON` and answers 409
+  `reconnect` when an older connection lacks it. `lib/square.js` SQUARE_SCOPES gained that scope.
+- `slickchart.html`: `_ttpPlugin`, `_ttpTipPick` (client picks 15/20/25%, other, no tip on the phone),
+  `_coTapToPay` (authorize -> Apple terms on first use -> tip -> pay -> record paid with
+  `squarePaymentId`, `tip`, `amountPaid`), `_ttpSignOut` called from `_doLogout`. `_sqFetch` now keeps a
+  server error's `code` on non-401 errors. Button shows only when the plugin exists.
+- Tests: `scratchpad/test-tap-to-pay.mjs` (21), plus test-checkout-qr-tip and test-square-pay-cta still pass.

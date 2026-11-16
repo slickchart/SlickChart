@@ -381,7 +381,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-16j';
+const APP_BUILD='2026-11-16k';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -6703,6 +6703,7 @@ function doResetPw(){
 }
 async function _doLogout(){
   try{_alAdd('signout');_alSend(true);}catch(e){}
+  try{await _ttpSignOut();}catch(e){}
   // Revoke THIS session server-side first (while we still hold the token), so signing out actually
   // invalidates the token everywhere — not just on this device. keepalive lets it complete even as we
   // navigate away. Best-effort: local sign-out proceeds regardless.
@@ -30376,7 +30377,8 @@ function renderCheckout(id){
     ${_tipToggleHTML()}
     <div id="co-sqcta"></div>
     <div id="co-result" style="margin-bottom:14px;"></div>
-    <button class="btnp" onclick="_coQr('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;"><i class="ti ti-scan"></i> Show a QR to pay</button>
+    ${_ttpPlugin()?`<button class="btnp" onclick="_coTapToPay('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;"><i class="ti ti-device-mobile"></i> Tap to Pay on this phone</button>`:''}
+    <button class="${_ttpPlugin()?'btng':'btnp'}" onclick="_coQr('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;justify-content:center;"><i class="ti ti-scan"></i> Show a QR to pay</button>
     <button class="btng" onclick="_coLink('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;justify-content:center;"><i class="ti ti-link"></i> Send payment link</button>
     <button class="btng" onclick="_coInvoice('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;justify-content:center;"><i class="ti ti-file-invoice"></i> Send invoice by email</button>
     ${c.squareId?`<button class="btng" onclick="_coCharge('${id}')" style="width:100%;border-radius:12px;justify-content:center;margin-bottom:9px;"><i class="ti ti-credit-card"></i> Charge card on file</button>`:''}
@@ -30945,6 +30947,78 @@ function _coQrMarkPaid(payId){
   if(rec&&rec.status!=='paid'){rec.status='paid';rec.paidDate=_todayISO();rec.method='Cash / other';rec._ts=Date.now();_savePayments();}
   _coQrClose();if(typeof proToast==='function')proToast('Marked paid');
 }
+// Tap to Pay inside the phone app (Square Mobile Payments SDK, native plugin "SquareTapToPay").
+// The button exists only in a store build that carries the plugin (scripts/native/tap-to-pay.cjs),
+// so every other build, and the browser, is unchanged. The SDK runs with HER OWN Square sign-in
+// (/api/square/mobile-auth, sqContext), the card is read by the phone, and the payment is recorded
+// here as paid with Square's payment id and the tip the client picked.
+function _ttpPlugin(){try{return (_isNativeApp()&&window.Capacitor.Plugins&&window.Capacitor.Plugins.SquareTapToPay)||null;}catch(e){return null;}}
+function _ttpAttemptId(){try{if(crypto&&crypto.randomUUID)return crypto.randomUUID();}catch(e){}return 'ttp-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);}
+// Tip picker shown to the CLIENT on the phone before she taps her card: percent buttons, a custom
+// amount, and No tip. Resolves the tip in cents, or null if the provider backs out.
+function _ttpTipPick(amt){
+  return new Promise(resolve=>{
+    const old=document.getElementById('ttp-tip');if(old)old.remove();
+    const ov=document.createElement('div');ov.id='ttp-tip';
+    ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+    const cents=Math.round(amt*100);
+    const pcts=[15,20,25];
+    const btn='background:#f2f2f2;border:1px solid #ccc;color:#111;border-radius:10px;padding:14px 6px;font-size:18px;font-weight:700;cursor:pointer;font-family:inherit;';
+    ov.innerHTML='<div role="dialog" aria-label="Add a tip" style="background:#fff;color:#111;width:100%;max-width:420px;border-radius:16px;padding:18px 16px 16px;box-sizing:border-box;text-align:center;">'
+      +'<div style="font-size:16px;color:#555;">Total</div><div style="font-size:30px;font-weight:700;margin-bottom:12px;">$'+_fmtMoney(amt)+'</div>'
+      +'<div style="font-size:18px;font-weight:600;margin-bottom:10px;">Add a tip?</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px;">'
+      +pcts.map(p=>{const t=Math.round(cents*p/100);return '<button data-tip="'+t+'" style="'+btn+'">'+p+'%<div style="font-size:14px;font-weight:400;color:#555;">$'+_fmtMoney(t/100)+'</div></button>';}).join('')
+      +'</div>'
+      +'<div style="display:flex;gap:8px;margin-bottom:8px;"><input id="ttp-tip-custom" inputmode="decimal" placeholder="Other amount" aria-label="Other tip amount" style="flex:1;min-width:0;border:1px solid #ccc;border-radius:10px;padding:12px;font-size:16px;font-family:inherit;color:#111;background:#fff;"><button data-tip="custom" style="'+btn+'padding:12px 16px;font-size:16px;">Add</button></div>'
+      +'<button data-tip="0" style="'+btn+'width:100%;font-size:16px;margin-bottom:8px;">No tip</button>'
+      +'<button data-tip="back" style="background:none;border:none;color:#555;font-size:16px;cursor:pointer;font-family:inherit;padding:8px;">Back</button>'
+      +'</div>';
+    ov.addEventListener('click',ev=>{
+      const b=ev.target.closest&&ev.target.closest('button[data-tip]');if(!b)return;
+      let v=b.getAttribute('data-tip');
+      if(v==='back'){ov.remove();resolve(null);return;}
+      if(v==='custom'){const n=parseFloat(String((document.getElementById('ttp-tip-custom')||{}).value||'').replace(/[^0-9.]/g,''));if(!(n>=0)){return;}v=String(Math.round(n*100));}
+      ov.remove();resolve(Math.max(0,parseInt(v,10)||0));
+    });
+    (document.querySelector('.shell')||document.body).appendChild(ov);
+  });
+}
+let _ttpBusy=false;
+async function _coTapToPay(id){
+  const P=_ttpPlugin();if(!P)return _coErr('Tap to Pay needs the newest SlickChart app.');
+  const c=CL[id];const items=_coValidItems();const amt=_coAmount();
+  const name=_coVal('co-desc')||(items.length?items.map(it=>it.name).slice(0,2).join(', ')+(items.length>2?'…':''):'Service');
+  if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
+  if(_ttpBusy||!_coLock())return;_ttpBusy=true;
+  try{
+    _coBusy('Getting Tap to Pay ready…');
+    const a=await _sqFetch('/api/square/mobile-auth');
+    await P.authorize({appId:a.appId,accessToken:a.accessToken,locationId:a.locationId});
+    let st={};try{st=await P.status()||{};}catch(e){}
+    if(st.capable===false)throw Object.assign(new Error('This phone can’t take Tap to Pay. Use “Show a QR to pay” instead.'),{code:'NOT_CAPABLE'});
+    // iPhone: Apple asks her to accept its Tap to Pay terms once, on first use.
+    if(st.linked===false)await P.linkAccount();
+    let tipCents=0;
+    if(_coTip){_coBusy('Hand the phone to your client to add a tip…');const t=await _ttpTipPick(amt);if(t===null){_coActionLock=false;const r=document.getElementById('co-result');if(r)r.innerHTML='';return;}tipCents=t;}
+    _coBusy('Hold the client’s card or phone near the top of this phone…');
+    const attemptId=_ttpAttemptId();
+    const res=await P.pay({amountCents:Math.round(amt*100),tipCents,note:String(name).slice(0,500),referenceId:'',attemptId});
+    if(!res||res.status!=='completed'){_coActionLock=false;const r=document.getElementById('co-result');if(r)r.innerHTML='<div style="text-align:center;color:var(--p-mut);font-size:16px;padding:8px;">Payment canceled. Nothing was charged.</div>';return;}
+    const tip=(+res.tipCents||0)/100;
+    _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Tap to Pay',status:'paid',paidDate:_todayISO(),date:_todayISO(),note:name+' (tap to pay)',source:'square',squarePaymentId:res.paymentId||'',tip:tip>0?_money(tip):undefined,amountPaid:(+res.totalCents||0)>0?(+res.totalCents)/100:undefined,_ts:Date.now(),items:items.length?items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)})):undefined});
+    const svc=(items.find(it=>(it.kind||'service')==='service')||items[0]||{});
+    try{_markServiceComplete(id,svc.name||(c&&c.treatment)||'');}catch(e){}
+    const r=document.getElementById('co-result');if(r)r.innerHTML='<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;font-size:16px;color:var(--p-green);font-weight:600;"><i class="ti ti-check"></i> Paid $'+_fmtMoney(amt+tip)+(tip>0?(' · $'+_fmtMoney(tip)+' tip'):'')+' · logged in Payments</div>';
+    if(typeof proToast==='function')proToast('Paid ✓ logged in Payments');
+  }catch(e){
+    const code=e&&e.code;
+    if(code==='CANCELED'){_coActionLock=false;const r=document.getElementById('co-result');if(r)r.innerHTML='';return;}
+    _coErr((e&&e.message)||'Tap to Pay could not start. Use “Show a QR to pay” instead.',_coRecon(e));
+  }finally{_coActionLock=false;_ttpBusy=false;}
+}
+// Sign-out: the phone's Square SDK must stop holding this account's Square sign-in.
+async function _ttpSignOut(){const P=_ttpPlugin();if(!P||!P.deauthorize)return;try{await Promise.race([P.deauthorize(),new Promise(r=>setTimeout(r,2000))]);}catch(e){}}
 // Payment links (texted, or the QR) mark themselves paid: a sync checks the open ones that carry
 // their Square order. Bounded: the 8 newest from the last 30 days, so a sync stays quick.
 async function _paySyncLinks(){
@@ -32461,7 +32535,7 @@ async function _sqFetch(path,opts){
   }
   let data={};try{data=await resp.json();}catch(_){}
   if(resp.status===401){const e=new Error(data.error||'Square isn\u2019t connected yet.');e.code=(data&&data.code==='nosquare')?'nosquare':'auth';throw e;}
-  if(!resp.ok){try{console.error('[square] '+resp.status,data);}catch(_){}const e=new Error(data.error||'Something went wrong on Square’s side. Please try again in a moment.');throw e;}
+  if(!resp.ok){try{console.error('[square] '+resp.status,data);}catch(_){}const e=new Error(data.error||'Something went wrong on Square’s side. Please try again in a moment.');if(data&&data.code)e.code=data.code;throw e;}
   return data;
 }
 async function _sqConnect(){

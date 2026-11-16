@@ -179,6 +179,8 @@ saved anywhere", not "does this always call that".
 | `_coQr` | `/api/square/payment-link` | direct |
 | `_coQrSheet` | `/api/square/pay-status` | direct |
 | `_coRecordPaid` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_coTapToPay` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_coTapToPay` | `/api/square/mobile-auth` | direct |
 | `_commitDeleteSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_commitRenameSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_commitWriteNote` | `/api/beta-event` | via `_pingChart` |
@@ -1263,6 +1265,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/square/invoice` | POST | **public** | POST /api/square/invoice |
 | `/api/square/invoices` | GET | **public** | GET /api/square/invoices → { invoices:[{id,status,total,client,publicUrl,createdAt}] } |
 | `/api/square/loyalty` | GET | **public** | GET /api/square/loyalty?phone=CLIENT_PHONE |
+| `/api/square/mobile-auth` | GET | **public** | GET /api/square/mobile-auth  -> { ok, appId, accessToken, locationId } |
 | `/api/square/orders` | GET | **public** | GET /api/square/orders?customerId=SQUARE_CUSTOMER_ID |
 | `/api/square/pay-config` | GET | **public** | GET /api/square/pay-config |
 | `/api/square/pay-status` | GET | **public** | GET /api/square/pay-status?orderId=ORDER_ID |
