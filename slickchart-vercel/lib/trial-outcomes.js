@@ -38,6 +38,22 @@ export async function ensureTrialTable(q) {
     updated_at TIMESTAMPTZ DEFAULT now()
   )`;
   await q`CREATE INDEX IF NOT EXISTS trial_outcomes_end_idx ON trial_outcomes (trial_end)`;
+  // When the founder was told this trial turned paid (the "Trial converted to paid" alert), once ever.
+  await q`ALTER TABLE trial_outcomes ADD COLUMN IF NOT EXISTS converted_notified_at TIMESTAMPTZ`;
+}
+
+// Claim the "Trial converted to paid" alert for this subscription, exactly once. Only a trial whose
+// FIRST real payment landed in the last 3 days qualifies, so a renewal of someone who converted months
+// ago, or a trial that converted before this alert existed, is never announced. Returns the row to
+// announce, or null. The caller decides how to tell her.
+export async function claimTrialConversion(q, subId) {
+  if (!subId) return null;
+  await ensureTrialTable(q);
+  const r = await q`UPDATE trial_outcomes SET converted_notified_at = now()
+    WHERE sub_id = ${subId} AND outcome = 'converted' AND converted_notified_at IS NULL AND trial_end IS NOT NULL
+      AND first_paid_at IS NOT NULL AND first_paid_at > now() - interval '3 days'
+    RETURNING email, plan_amount, plan_interval`;
+  return r[0] || null;
 }
 
 const ts = s => (s ? new Date(s * 1000).toISOString() : null);
@@ -190,17 +206,24 @@ export async function trialReport(q, days) {
       reason: r.reason || '', feedback: r.feedback ? (FEEDBACK[r.feedback] || String(r.feedback).replace(/_/g, ' ')) : '', comment: r.comment || ''
     }));
   const last24 = recentLeft.filter(r => new Date(r.at).getTime() >= Date.now() - 86400000);
+  // Trials that became paying (2026-11-16, Ashley: "add to my tracking to tell me when free trials become paid").
+  const recentConverted = rows.filter(r => r.outcome === 'converted' && r.outcome_at && new Date(r.outcome_at).getTime() >= cutoff)
+    .map(r => ({ name: r.name || '', firstName: firstName(r.name), email: r.email || '', label: OUTCOME_LABELS.converted, at: r.outcome_at,
+      trialEnd: r.trial_end, plan: r.plan_amount ? '$' + (r.plan_amount / 100) + '/' + (r.plan_interval || 'month') : '' }));
+  const converted24 = recentConverted.filter(r => new Date(r.at).getTime() >= Date.now() - 86400000);
   const endingSoon = rows.filter(r => r.outcome === 'trialing' && r.trial_end && new Date(r.trial_end).getTime() - Date.now() < 3 * 86400000
     && new Date(r.trial_end).getTime() > Date.now()).map(r => ({ firstName: firstName(r.name), email: r.email || '', trialEnd: r.trial_end }));
   const lines = [];
+  for (const r of converted24) lines.push((r.name || r.email || 'A provider') + ': trial converted to paid' + (r.plan ? ' (' + r.plan + ')' : ''));
   if (last24.length) for (const r of last24) lines.push((r.name || r.email || 'A provider') + ': ' + r.label + (r.feedback || r.comment ? ' (said: ' + [r.feedback, r.comment].filter(Boolean).join(', ') + ')' : ''));
   return {
     days: d,
     counts, labels: OUTCOME_LABELS,
     trialsEnded: ended.length,
     conversionPct: ended.length ? Math.round(endedConverted * 100 / ended.length) : null,
-    last24h: last24, recentLeft, endingSoon,
-    summary: (last24.length ? last24.length + ' left in the last 24 hours. ' : 'Nobody left in the last 24 hours. ')
+    last24h: last24, recentLeft, endingSoon, converted24h: converted24, recentConverted,
+    summary: (converted24.length ? converted24.length + (converted24.length === 1 ? ' trial' : ' trials') + ' became paying in the last 24 hours. ' : '')
+      + (last24.length ? last24.length + ' left in the last 24 hours. ' : 'Nobody left in the last 24 hours. ')
       + counts.trialing + ' on a trial now' + (endingSoon.length ? ', ' + endingSoon.length + ' ending in the next 3 days' : '') + '. '
       + (ended.length ? conversionText(endedConverted, ended.length) : 'No trial has ended yet.'),
     lines

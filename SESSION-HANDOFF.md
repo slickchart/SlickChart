@@ -9622,3 +9622,9 @@ the products recommended in that visit's chart, and add tipping to payment links
 - Not done (marketing at general availability, Apple 6.1/6.3): launch email + push with Apple's toolkit
   copy; the toolkit has to be downloaded by Ashley. Face ID login (1.7, recommended) not built.
 - Test: scratchpad/test-tap-to-pay.mjs (35 checks).
+
+## 2026-11-16 — Founder sign-up alert reworded; new "Trial converted to paid" alert (build 2026-11-16m)
+Ashley: *"since we added in the free trial not every sign up is a paid provider sign up ... have it say new provider sign up"* and *"add to my tracking to tell me when free trials become paid"*.
+- The checkout alert (push, email, in-app bell/toast) now says **"🎉 New provider sign-up!"** with "N providers signed up now" (the count is active subscriptions, trials included). `notify_log` kind stays `paid-signup` so push-state reads the same.
+- New **"💰 Trial converted to paid!"** push + email to every founder device on the FIRST real payment of a trial (`notifyFounderTrialConverted` in `api/stripe-webhook.js`, claim `claimTrialConversion` in `lib/trial-outcomes.js`: once per subscription via `trial_outcomes.converted_notified_at`, only when `first_paid_at` is within 3 days, so old conversions and renewals stay silent). Fires from `invoice.paid` or the subscription event, whichever lands second. Logged as `notify_log` kind `trial-converted`. Test: `scratchpad/founder-push/trial-converted.mjs` (in CI).
+- Daily brief: health-sweep `trials.convertedLast24h` / `convertedLast30d`, and `trials.summary` opens with "N trials became paying in the last 24 hours."

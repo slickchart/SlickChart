@@ -135,7 +135,7 @@ export default async function handler(req, res) {
         _pushSkipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT, APNS_KEY_P8 or VAPID keys)';
       } else {
         const r = await pushFoundersReport({
-          title: _alreadyPaid ? '🎉 New signup (already subscribed)' : '🎉 New provider signup!',
+          title: _alreadyPaid ? '🎉 New provider sign-up (already subscribed)' : '🎉 New provider sign-up!',
           body: (name || email) + ' just created an account' + (_total ? ` — that's ${_total} accounts now` : ''),
           url: '/slickchart', tag: 'signup:' + email
         });

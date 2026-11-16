@@ -23,7 +23,7 @@ import { recordBuildSale } from '../lib/build-sales.js';
 import { liveSubForEmail } from '../lib/stripe-subs.js';
 import { recordReferralFromCheckout, markReferralCanceled, rewardOnInvoice, getReferralSettings, recordSignupSource, sourceLine } from '../lib/referral.js';
 import { notifySharer } from '../lib/referral-notify.js';
-import { recordTrialFromSubscription, recordTrialPayment } from '../lib/trial-outcomes.js';
+import { recordTrialFromSubscription, recordTrialPayment, claimTrialConversion } from '../lib/trial-outcomes.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
 // never missed even before any env is configured; FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
@@ -141,9 +141,9 @@ async function notifyFounderPaid(q, email) {
     const to = founderNotifyEmail();
     if (to) await sendEmail({
       to,
-      subject: `💰 New PAID SlickChart provider: ${name || em}`,
-      text: `A provider just started a paid subscription.\n\nName: ${name || '(not given)'}\nEmail: ${em}${refLine ? '\n' + refLine : ''}\n\nThat's real revenue — congratulations! 🎉`,
-      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;"><div style="font-size:22px;margin-bottom:6px;">💰 New PAID provider</div><div style="font-size:14px;color:#333;line-height:1.9;"><b>Name:</b> ${escHtml(name || '(not given)')}<br><b>Email:</b> ${escHtml(em)}${refLine ? '<br>' + escHtml(refLine).replace(/\n/g, '<br>') : ''}</div><div style="font-size:13px;color:#2a7;margin-top:10px;">That's real revenue — congratulations! 🎉</div></div>`
+      subject: `🎉 New SlickChart provider sign-up: ${name || em}`,
+      text: `A new provider just signed up (this can be the start of a free trial; you get a separate "Trial converted to paid" alert when their first payment goes through).\n\nName: ${name || '(not given)'}\nEmail: ${em}${refLine ? '\n' + refLine : ''}`,
+      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;"><div style="font-size:22px;margin-bottom:6px;">🎉 New provider sign-up</div><div style="font-size:14px;color:#333;line-height:1.9;"><b>Name:</b> ${escHtml(name || '(not given)')}<br><b>Email:</b> ${escHtml(em)}${refLine ? '<br>' + escHtml(refLine).replace(/\n/g, '<br>') : ''}</div><div style="font-size:13px;color:#666;margin-top:10px;">This can be the start of a free trial. You get a separate "Trial converted to paid" alert when their first payment goes through.</div></div>`
     });
   } catch (e) { console.error('[stripe-webhook] founder paid-notify email failed:', e && e.message || e); }
 
@@ -160,8 +160,11 @@ async function notifyFounderPaid(q, email) {
     } else {
       let paidTotal = 0;
       try { const c = await q`SELECT count(*)::int AS n FROM subscriptions WHERE status = 'active'`; paidTotal = (c[0] && c[0].n) || 0; } catch (e) {}
-      const pushBody = (name || em) + ' just signed up' + (paidTotal ? ` — that's ${paidTotal} paying providers now 🎉` : ' 🎉');
-      const r = await pushFoundersReport({ title: '💰 New paid provider!', body: pushBody, url: '/slickchart', tag: 'paid-signup:' + em, renotify: true });
+      // Not "paid": with the free trial most sign-ups are not paying yet (Ashley, 2026-11-16). The count
+      // is every active subscription, trials included, so it is worded as sign-ups too. A trial that
+      // turns into money gets its own "Trial converted to paid" alert (notifyFounderTrialConverted).
+      const pushBody = (name || em) + ' just signed up' + (paidTotal ? ` — that's ${paidTotal} providers signed up now 🎉` : ' 🎉');
+      const r = await pushFoundersReport({ title: '🎉 New provider sign-up!', body: pushBody, url: '/slickchart', tag: 'paid-signup:' + em, renotify: true });
       devices = r.devices || 0; sentCount = r.sent || 0;
       if (!r.providerIds || !r.providerIds.length) detail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
       else if (!devices) detail = 'founder provider row found, but no phone or browser registered under it';
@@ -174,6 +177,52 @@ async function notifyFounderPaid(q, email) {
     console.error('[stripe-webhook] founder paid-push failed:', e && e.message || e);
   }
   await recordNotify({ kind: 'paid-signup', subject: em, skipped, devices, sent: sentCount, detail });
+}
+
+// "Tell me when free trials become paid" (Ashley, 2026-11-16). Email + push to every founder device,
+// exactly once per subscription: claimTrialConversion stamps trial_outcomes.converted_notified_at in one
+// conditional UPDATE, and only for a first payment in the last 3 days, so a renewal of a provider who
+// converted long ago (or a retried webhook) stays silent. Never throws.
+async function notifyFounderTrialConverted(q, subId) {
+  if (!subId) return;
+  let row = null;
+  try { row = await claimTrialConversion(q, subId); } catch (e) { console.error('[stripe-webhook] trial-convert claim failed:', e && e.message || e); return; }
+  if (!row) return;
+  const em = String(row.email || '').trim().toLowerCase();
+  let name = '';
+  try { if (em) { const p = await q`SELECT name FROM providers WHERE lower(email) = ${em}`; name = (p[0] && p[0].name) || ''; } } catch (e) {}
+  const who = name || em || 'A provider';
+  const plan = row.plan_amount ? '$' + (row.plan_amount / 100) + '/' + (row.plan_interval || 'month') : '';
+  try {
+    const to = founderNotifyEmail();
+    if (to) await sendEmail({
+      to,
+      subject: `💰 Trial converted to paid: ${who}`,
+      text: `A free trial just turned into a paying subscription.\n\nName: ${name || '(not given)'}\nEmail: ${em || '(unknown)'}${plan ? '\nPlan: ' + plan : ''}\n\nThat's real revenue, congratulations! 🎉`,
+      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;"><div style="font-size:22px;margin-bottom:6px;">💰 Trial converted to paid</div><div style="font-size:14px;color:#333;line-height:1.9;"><b>Name:</b> ${escHtml(name || '(not given)')}<br><b>Email:</b> ${escHtml(em || '(unknown)')}${plan ? '<br><b>Plan:</b> ' + escHtml(plan) : ''}</div><div style="font-size:13px;color:#2a7;margin-top:10px;">That's real revenue, congratulations! 🎉</div></div>`
+    });
+  } catch (e) { console.error('[stripe-webhook] trial-convert email failed:', e && e.message || e); }
+  let skipped = '', devices = 0, sentCount = 0, detail = '';
+  try {
+    if (!founderPushConfigured()) {
+      skipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT, APNS_KEY_P8 or VAPID keys)';
+    } else {
+      let paying = 0;
+      try { const c = await q`SELECT count(*)::int AS n FROM trial_outcomes WHERE outcome = 'converted'`; paying = (c[0] && c[0].n) || 0; } catch (e) {}
+      const body = who + ' is now paying' + (plan ? ' (' + plan + ')' : '') + (paying > 1 ? ` — ${paying} trials have converted so far 🎉` : ' 🎉');
+      const r = await pushFoundersReport({ title: '💰 Trial converted to paid!', body, url: '/slickchart', tag: 'trial-converted:' + subId, renotify: true });
+      devices = r.devices || 0; sentCount = r.sent || 0;
+      if (!r.providerIds || !r.providerIds.length) detail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
+      else if (!devices) detail = 'founder provider row found, but no phone or browser registered under it';
+      else if (!sentCount) detail = ((r.results || []).find(x => x.error) || {}).error || 'device found but the send failed';
+      if (r.failedLine) detail = (detail ? detail + ' | ' : '') + 'not delivered: ' + r.failedLine;
+      console.log('[stripe-webhook] trial-converted push: devices=' + devices + ' sent=' + sentCount + (detail ? ' — ' + detail : ''));
+    }
+  } catch (e) {
+    skipped = 'threw: ' + ((e && e.message) || 'unknown');
+    console.error('[stripe-webhook] trial-convert push failed:', e && e.message || e);
+  }
+  await recordNotify({ kind: 'trial-converted', subject: em || subId, skipped, devices, sent: sentCount, detail });
 }
 
 export default async function handler(req, res) {
@@ -249,6 +298,7 @@ export default async function handler(req, res) {
       // A referred friend's first payment credits the provider who shared the code, exactly once.
       // A trial that turned into real money (lib/trial-outcomes.js, the daily brief reads it).
       await recordTrialPayment(q, event.data.object);
+      { const inv = event.data.object || {}; await notifyFounderTrialConverted(q, typeof inv.subscription === 'string' ? inv.subscription : (inv.subscription && inv.subscription.id)); }
       const r = await rewardOnInvoice(q, event.data.object);
       if (r && r.rewarded) await notifySharer(r.row.referrer_email, 'rewarded', { friend: r.row.friend_first_name, cents: r.cents });
     } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
@@ -333,7 +383,11 @@ export default async function handler(req, res) {
       if (effStatus === 'canceled') await markReferralCanceled(q, customerId);
       // What happened to her free trial: canceled in it, first bill failed, paying, or left after paying.
       // THIS subscription's own fields, not the live one swapped in above. Never throws.
-      if (sub && sub.trial_end) await recordTrialFromSubscription(q, sub, subEmail || '');
+      if (sub && sub.trial_end) {
+        await recordTrialFromSubscription(q, sub, subEmail || '');
+        // The bill can land before this event fills in her row; whichever comes second announces it.
+        await notifyFounderTrialConverted(q, sub.id);
+      }
     }
     res.status(200).json({ received: true });
   } catch (e) {

@@ -30,7 +30,7 @@ await handler(req, res);
 ok(status === 200, 'webhook answered 200 (' + status + ' ' + JSON.stringify(out) + ')');
 const sends = globalThis.__webSends || [];
 ok(sends.length === 2, 'paid signup pushed to both of the founder browser subscriptions (' + sends.length + ')');
-ok(sends.every(s => s.body.title === '💰 New paid provider!' && /jriske412@gmail.com just signed up — that's 7 paying providers/.test(s.body.body)), 'push carries the paid-provider title and body');
+ok(sends.every(s => s.body.title === '🎉 New provider sign-up!' && /jriske412@gmail.com just signed up — that's 7 providers signed up now/.test(s.body.body)), 'push says "New provider sign-up", not paid');
 ok(!sends.some(s => s.sub.endpoint.includes('other')), 'no push reached a non-founder subscription');
 const del = globalThis.__sqlCalls.filter(c => /DELETE FROM provider_push_subscriptions WHERE id=/.test(c.text));
 ok(del.length === 1 && del[0].vals[0] === 'pp2', 'a gone subscription is pruned by its id');

@@ -512,6 +512,7 @@ export async function runSweep(q) {
       + (r.plan ? ', ' + r.plan : '') + (r.feedback || r.comment ? '. Said: ' + [r.feedback, r.comment].filter(Boolean).join(', ').slice(0, 200) : '');
     trials = { summary: t.summary, counts: t.counts, trialsEnded: t.trialsEnded, conversionPct: t.conversionPct,
       last24h: t.last24h.map(line), last30d: t.recentLeft.map(line).slice(0, 25),
+      convertedLast24h: t.converted24h.map(line), convertedLast30d: t.recentConverted.map(line).slice(0, 25),
       endingSoon: t.endingSoon.map(r => (r.firstName ? r.firstName + ' ' : '') + '(' + maskEmail(r.email) + ') trial ends ' + String(r.trialEnd).slice(0, 10)),
       stripeSync: sync.error ? 'could not re-read Stripe: ' + sync.error : 'checked ' + sync.read + ' recent subscriptions in Stripe' };
     return { level: 'ok', items: trials.last24h, note: t.summary + (sync.error ? ' (Stripe re-read failed: ' + sync.error + ')' : '') };
