@@ -62,3 +62,5 @@ Then, if the thing is working and there is a specific reason to be in a store, d
 Your app became real when somebody used it.
 
 If you want to see what the first part feels like, the [free starter](/free) turns your idea into a clickable demo of your app on your phone, with no coding and nothing to install. No store required, which is rather the point.
+
+If you decide you do want the stores, the [Master Build Roadmap](/build-any-business) walks through both submissions in order, with the prompts for each step.

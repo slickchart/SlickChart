@@ -56,3 +56,5 @@ That is version one. Everything else on the page is version two and beyond, and 
 If the list has nothing on it that survives that test on its own, that is worth knowing now rather than halfway through the build. It usually means the idea is a collection of features rather than a job, and it can often be fixed by asking who exactly you pictured using it and what they were trying to get done.
 
 None of this requires any technical judgement, which is the point. It is judgement about the work you already understand. If you want the wider argument about why the code is not the hard part, [it is here](/build/blog/build-an-app-without-coding), and there is [a free walkthrough of the first steps](/free) when you are ready to start.
+
+Once the idea passes that test, the [step by step roadmap for building your own app](/build-any-business) takes it from there, one prompt at a time.
