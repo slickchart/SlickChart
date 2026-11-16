@@ -169,7 +169,7 @@ public class SquareTapToPayPlugin: CAPPlugin, CAPBridgedPlugin, PaymentManagerDe
     }
 
     private func doAuthorize(_ call: CAPPluginCall, token: String, locationId: String) {
-        MobilePaymentsSDK.shared.authorizationManager.authorize(accessToken: token, locationID: locationId) { error in
+        MobilePaymentsSDK.shared.authorizationManager.authorize(withAccessToken: token, locationID: locationId) { error in
             DispatchQueue.main.async {
                 if let error = error { call.reject(error.localizedDescription, "AUTH_FAILED") }
                 else { self.startObserving(); call.resolve(["authorized": true]) }
