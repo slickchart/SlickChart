@@ -9525,6 +9525,18 @@ Tests: `scratchpad/test-growth-ui.mjs` 77/77 in Chromium and WebKit (section 5b 
 
 **Later the same evening:** Ashley: "lets just remove that line". The provider count line, `/api/provider-count` and the `grow_count_*` settings are gone. The yearly-first pricing and the quote ask stay.
 
+## 2026-11-16 — Build 2026-11-16g: "Take card payments" card for providers with no Square (PREVIEW)
+
+Trigger: a trial provider (Bria) canceled saying she "doesn't have direct pay options". Take payment,
+Payments and Build invoice assumed a connected Square and only said "connect Square" after a button failed.
+`_sqPayCTA(slotId)` (next to `SQ_REFERRAL`) reads THIS account's `/api/square/connection` and, when not
+connected, fills `co-sqcta` / `pay-sqcta` / `bi-sqcta` with: the referral link (`squareup.com/refer/2832A5A0B0`,
+Square's terms: fee-free processing on the first $1,000 over 180 days), "I already have Square, connect it"
+(`_sqConnect`), and a cash/Venmo line. Expired -> Reconnect line only; connected or a failed read -> nothing.
+Deposits toggle without Square now offers "Set up Square" -> square-guide. Test: `scratchpad/test-square-pay-cta.mjs`
+(26 checks, Chromium; WebKit was not installed in that session, UI-only change, no storage/sync touched).
+Payments strategy write-up (Square app fee via `app_fee_money`, Square App Marketplace processing rev share,
+Stripe Connect as a later fallback): Claude Doc "Taking payments in SlickChart: options and recommendation".
 ## 2026-11-16 — Win-back emails to providers who left (PREVIEW, server only)
 
 Ashley: *"also do build in the win back emails you mentioned yesterday"*, fully automated. `lib/nurture.js`
