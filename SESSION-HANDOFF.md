@@ -9491,8 +9491,8 @@ relaunch, a new device does not download a removed form).
 ## 2026-11-16: booking link QR code + "send this page to a friend" (feedback #21, build 2026-11-16d)
 
 Provider feedback (#21): wanted a direct link or QR code to her booking site for business cards, and
-a way for a friend to share the link to invite someone. More → Booking link now has **QR code for
-business cards**: drawn on the device (self-hosted `assets/vendor/qrcode-generator-2.0.4.js`, MIT,
+a way for a friend to share the link to invite someone. Calendar → "Your booking link" row has a **QR** button (moved there from the Booking link settings screen at Ashley's ask, same night, to keep the app cleaner; shown only while the link is on) for
+business cards: drawn on the device (self-hosted `assets/vendor/qrcode-generator-2.0.4.js`, MIT,
 loaded only on tap), 1200px PNG, error level M, quiet zone 4, saved through `_savePhoto` (share
 sheet on a phone). It warns when the link is off; with no link name it opens the picker. Providers
 who book through Square get the same link, which forwards to Square. The public `/book/<slug>` page
