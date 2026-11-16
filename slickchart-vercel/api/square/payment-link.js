@@ -1,4 +1,4 @@
-// POST /api/square/payment-link  { amount, name, email?, phone?, note? }
+// POST /api/square/payment-link  { amount, name, email?, phone?, note?, allowTip? }
 // Creates a Square hosted checkout link (client pays on Square's secure page).
 import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
 
@@ -21,12 +21,14 @@ export default async function handler(req, res) {
     // Square rejects an over-long note and would fail the whole link.
     const note = String(b.note || '').slice(0, 500).trim();
     if (note) body.payment_note = note;
+    // Tipping on Square's hosted checkout page (2026-11-16, Ashley). Square shows its own tip choices.
+    if (b.allowTip) body.checkout_options = { allow_tipping: true };
     if (b.email || b.phone) {
       body.pre_populated_data = {};
       if (b.email) body.pre_populated_data.buyer_email = b.email;
       if (b.phone) body.pre_populated_data.buyer_phone_number = b.phone;
     }
     const data = await sf('/v2/online-checkout/payment-links', { method: 'POST', body });
-    res.status(200).json({ url: data.payment_link && data.payment_link.url, id: data.payment_link && data.payment_link.id });
+    res.status(200).json({ url: data.payment_link && data.payment_link.url, id: data.payment_link && data.payment_link.id, orderId: (data.payment_link && data.payment_link.order_id) || '' });
   } catch (e) { res.status(e.status || 500).json({ error: e.message, code: e.status === 403 ? 'reconnect' : undefined }); }
 }

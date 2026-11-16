@@ -377,7 +377,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-16h';
+const APP_BUILD='2026-11-16i';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -30359,6 +30359,7 @@ function renderCheckout(id){
   _coCharging=false;   // fresh checkout session, clear any prior in-flight guard
   _coActionLock=false;
   _coItems=[];
+  _coTip=_tipAskOn();
   S.innerHTML=`
   <div style="padding:14px 16px 4px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">${av(c,40)}<div><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${_clientNameLink(id,c.name,{color:'var(--p-ink)'})}</div><div style="font-size:16px;color:var(--p-mut);">${_fileEsc(c.email||c.phone||'No contact on file')}</div></div></div>
@@ -30367,15 +30368,19 @@ function renderCheckout(id){
     <span class="fl-lbl">What it is for</span>
     <input class="fi" id="co-desc" value="${(c.treatment&&c.treatment!=='New client')?String(c.treatment).replace(/"/g,'&quot;'):''}" placeholder="e.g. Session, package, or product" style="margin-bottom:14px;">
     <div style="margin-bottom:14px;"><span class="fl-lbl">Line items <span style="color:var(--p-mut);font-weight:400;">optional, for detailed invoices</span></span><div id="co-items"></div><div style="display:flex;gap:8px;margin-top:6px;"><button onclick="_coMenuOpen()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-list-search"></i> Add from menu</button><button onclick="_coAddCustom()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus"></i> Add custom line</button></div></div>
+    <div id="co-prefill-note"></div>
+    ${_tipToggleHTML()}
     <div id="co-sqcta"></div>
     <div id="co-result" style="margin-bottom:14px;"></div>
-    <button class="btnp" onclick="_coLink('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;"><i class="ti ti-link"></i> Send payment link</button>
+    <button class="btnp" onclick="_coQr('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;"><i class="ti ti-scan"></i> Show a QR to pay</button>
+    <button class="btng" onclick="_coLink('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;justify-content:center;"><i class="ti ti-link"></i> Send payment link</button>
     <button class="btng" onclick="_coInvoice('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;justify-content:center;"><i class="ti ti-file-invoice"></i> Send invoice by email</button>
     ${c.squareId?`<button class="btng" onclick="_coCharge('${id}')" style="width:100%;border-radius:12px;justify-content:center;margin-bottom:9px;"><i class="ti ti-credit-card"></i> Charge card on file</button>`:''}
     <button class="btng" onclick="_coMarkPaid('${id}')" style="width:100%;border-radius:12px;justify-content:center;"><i class="ti ti-cash"></i> Mark paid \u2014 cash / other</button>
     <div style="margin-top:14px;font-size:14px;color:var(--p-mut);line-height:1.6;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;"><i class="ti ti-lock" style="font-size:14px;"></i> Card payments run securely through your connected Square \u2014 never stored in SlickChart. \u201cMark paid\u201d just records a payment you took another way (cash, Venmo, your own reader) so your ledger and reports stay accurate.</div>
   </div><div style="height:20px;"></div>`;
   try{_sqPayCTA('co-sqcta');}catch(e){}
+  try{_coPrefill(id);}catch(e){}
 }
 
 
@@ -30860,6 +30865,129 @@ function _coMenuFilter(q){
 function _coPick(i){const m=(_coMenu||[])[i];if(!m)return;_coItems.push({name:m.name,price:+m.price||0,qty:1,variationId:m.variationId||null,kind:m.kind||'service',taxable:m.taxable!==false,note:''});_coRenderItems();var _a=document.getElementById('co-menu-added');if(_a){var _n=_coItems.length;_a.textContent='\u2713 Added \u00b7 '+_n+' item'+(_n===1?'':'s')+' \u00b7 $'+_coSubtotal().toFixed(2);}try{var _rows=document.querySelectorAll('#co-menu-list > div');var _r=_rows&&_rows[i];if(_r){var _bg=_r.style.background;_r.style.background='#12301f';setTimeout(function(){_r.style.background=_bg||'';},260);}}catch(e){}}
 
 
+// ── Tipping, pay-by-QR and "fill checkout from today's visit" (2026-11-16, Ashley) ──
+// Tipping: ONE choice of hers, "Ask the client to add a tip", kept in her business settings (synced,
+// so every device of hers agrees). It starts ON because she asked for tips on payment links; she can
+// switch it off on Take payment or Build invoice and it stays off. It applies to payment links, the
+// on-screen QR and emailed invoices alike.
+function _tipAskOn(){try{return !(bizInfo&&bizInfo.tipAsk===false);}catch(e){return true;}}
+function _setTipAsk(v){_coTip=!!v;try{bizInfo.tipAsk=!!v;const s=JSON.stringify(_stampNow(bizInfo));localStorage.setItem('sc_bizinfo',s);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',s);}catch(e){}}
+function _tipToggleHTML(){return '<label style="display:flex;align-items:center;gap:9px;margin:0 0 12px;cursor:pointer;padding:11px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;"><input type="checkbox" id="co-tip-ask" '+(_coTip?'checked':'')+' onchange="_setTipAsk(this.checked)" style="width:17px;height:17px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-mut);">Ask the client to add a tip</span></label>';}
+
+// A payment link / QR was paid: record it once. Tip is kept beside the amount, not inside it, so
+// revenue reports stay the service total and the tip is still visible on the record.
+function _payMarkPaidFromSquare(rec,d){
+  if(!rec||rec.status==='paid')return false;
+  rec.status='paid';rec.paidDate=_todayISO();
+  if(d&&d.tip>0)rec.tip=_money(d.tip);
+  if(d&&d.paymentId)rec.squarePaymentId=d.paymentId;
+  rec._ts=Date.now();_savePayments();return true;
+}
+// The client scans a QR on the provider's screen and pays on her own phone (Apple Pay, Google Pay,
+// Cash App or card, on Square's page). Uses her own Square payment link, so nothing new to set up.
+let _coQrTimer=null;
+async function _coQr(id){
+  const c=CL[id];const items=_coValidItems();const amt=_coAmount();
+  const name=_coVal('co-desc')||(items.length?items.map(it=>it.name).slice(0,2).join(', ')+(items.length>2?'…':''):'Service');
+  if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
+  if(!_coLock())return;
+  _coBusy('Making the QR code…');
+  try{
+    const [d]=await Promise.all([_sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name,email:c.email||'',phone:c.phone||'',allowTip:!!_coTip}}),_loadQrLib()]);
+    if(!d.url)throw new Error('No link was returned.');
+    const rec=_addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'QR at checkout · '+name,source:'square',publicUrl:d.url,squareOrderId:d.orderId||'',paymentLinkId:d.id||'',items:items.length?items.map(it=>({name:it.name,price:it.price,qty:it.qty||1})):undefined});
+    _coActionLock=false;
+    const r=document.getElementById('co-result');if(r)r.innerHTML='';
+    _coQrSheet(rec,amt);
+  }catch(e){_coErr(e.message||'Could not make the QR code.',_coRecon(e));}finally{_coActionLock=false;}
+}
+function _coQrClose(){if(_coQrTimer){clearTimeout(_coQrTimer);_coQrTimer=null;}const o=document.getElementById('coqr-sheet');if(o)o.remove();}
+function _coQrSheet(rec,amt){
+  _coQrClose();
+  let png='';try{png=_qrCanvas(rec.publicUrl,900).toDataURL('image/png');}catch(e){}
+  const ov=document.createElement('div');ov.id='coqr-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.innerHTML='<div style="background:#fff;color:#111;width:100%;max-width:420px;border-radius:16px;padding:18px 16px 16px;max-height:92%;overflow-y:auto;box-sizing:border-box;text-align:center;">'
+    +'<div style="font-size:16px;color:#555;margin-bottom:2px;">'+_fileEsc(rec.clientName||'')+'</div>'
+    +'<div style="font-size:30px;font-weight:700;margin-bottom:4px;">$'+_fmtMoney(amt)+'</div>'
+    +'<div style="font-size:16px;color:#333;margin-bottom:10px;">Scan with your phone camera to pay'+(_coTip?' and add a tip':'')+'</div>'
+    +(png?'<img src="'+png+'" alt="QR code to pay $'+_fmtMoney(amt)+'" style="width:100%;max-width:300px;aspect-ratio:1;display:block;margin:0 auto 10px;image-rendering:pixelated;">':'<div style="font-size:16px;margin:16px 0;word-break:break-all;">'+_fileEsc(rec.publicUrl)+'</div>')
+    +'<div id="coqr-status" role="status" aria-live="polite" style="font-size:16px;color:#555;min-height:24px;margin-bottom:12px;"><span class="spin" style="display:inline-block;width:14px;height:14px;vertical-align:-2px;margin-right:6px;"></span>Waiting for payment…</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;"><button onclick="_coQrMarkPaid(\''+rec.id+'\')" style="background:#f2f2f2;border:1px solid #ccc;color:#111;border-radius:8px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Paid another way</button><button onclick="_coQrClose()" style="background:#1C1C1C;border:none;color:#fff;border-radius:8px;padding:11px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;">Close</button></div>'
+    +'<div style="font-size:14px;color:#666;line-height:1.5;margin-top:10px;">If you close this, the payment still records itself when Square shows it paid.</div>'
+    +'</div>';
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  const started=Date.now();
+  const tick=async()=>{
+    _coQrTimer=null;
+    if(!document.getElementById('coqr-sheet'))return;
+    if(rec.status==='paid'){_coQrPaid(rec);return;}
+    if(rec.squareOrderId){
+      try{const d=await _sqFetch('/api/square/pay-status?orderId='+encodeURIComponent(rec.squareOrderId));
+        if(d&&d.paid){_payMarkPaidFromSquare(rec,d);_coQrPaid(rec);return;}}catch(e){}
+    }
+    if(Date.now()-started<20*60000&&document.getElementById('coqr-sheet'))_coQrTimer=setTimeout(tick,3000);
+    else{const st=document.getElementById('coqr-status');if(st)st.textContent='Still waiting. It will mark itself paid when Square shows it.';}
+  };
+  _coQrTimer=setTimeout(tick,3000);
+}
+function _coQrPaid(rec){
+  const st=document.getElementById('coqr-status');
+  if(st){st.style.color='#1d7a4c';st.style.fontWeight='700';st.innerHTML='<i class="ti ti-circle-check"></i> Paid'+(rec.tip>0?(' · $'+_fmtMoney(rec.tip)+' tip'):'')+'. Thank you!';}
+  if(typeof proToast==='function')proToast('Paid ✓ logged in Payments');
+}
+function _coQrMarkPaid(payId){
+  const rec=_payments.find(p=>p.id===payId);
+  if(rec&&rec.status!=='paid'){rec.status='paid';rec.paidDate=_todayISO();rec.method='Cash / other';rec._ts=Date.now();_savePayments();}
+  _coQrClose();if(typeof proToast==='function')proToast('Marked paid');
+}
+// Payment links (texted, or the QR) mark themselves paid: a sync checks the open ones that carry
+// their Square order. Bounded: the 8 newest from the last 30 days, so a sync stays quick.
+async function _paySyncLinks(){
+  const cutoff=Date.now()-30*86400000;
+  const open=_payments.filter(p=>p&&p.squareOrderId&&(p.status==='unpaid')&&((Date.parse(p.date||'')||0)>=cutoff)).slice(0,8);
+  let changed=false;
+  for(const p of open){try{const d=await _sqFetch('/api/square/pay-status?orderId='+encodeURIComponent(p.squareOrderId));if(d&&d.paid&&_payMarkPaidFromSquare(p,d))changed=true;}catch(e){}}
+  return changed;
+}
+
+// Checkout fills itself in from today's visit: the service she did today (today's booking, else the
+// summary saved today, else the chart's service) at its menu price, plus the products recommended in
+// today's chart. Only into an EMPTY checkout, never over what she typed, and every line can be removed.
+function _todayVisitFor(id){
+  const c=CL[id]||{};const today=_todayISO();let service='',products=[];
+  try{if(typeof squareAppts!=='undefined'&&Array.isArray(squareAppts)){const a=squareAppts.find(a=>a&&a.at&&_todayISOOf(a.at)===today&&_apptIsClients(a,id));if(a)service=_realSvc(a.tx);}}catch(e){}
+  if(!service){try{const more=(typeof confirmedAppts!=='undefined'?confirmedAppts:[]).concat(typeof manualAppts!=='undefined'?manualAppts:[]);const b=more.find(b=>b&&b.date===today&&_apptIsClients(b,id));if(b)service=_realSvc(b.tx)||_realSvc(b.treatment);}catch(e){}}
+  let sum=null;try{sum=((typeof sessionSummaries!=='undefined'&&sessionSummaries[id])||[]).find(h=>h&&h._draftDate===today)||null;}catch(e){}
+  if(!service&&sum)service=_realSvc(sum.treatment);
+  // The chart's own service counts only when she charted this client today (an open note from today):
+  // with no visit today it may be last month's service, so nothing is filled in.
+  let draftToday=false;try{const d=(typeof providerNoteDrafts!=='undefined'&&providerNoteDrafts[id])||null;draftToday=!!(d&&d.date===today);}catch(e){}
+  if(!service&&draftToday)service=_realSvc(c.treatment);
+  if(sum&&Array.isArray(sum.products)&&sum.products.length)products=sum.products.slice();
+  else{try{
+    if(draftToday)products=((clientRecs&&clientRecs[id])||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return (a&&a.active!==false)?a.name:'';}).filter(Boolean);}catch(e){}}
+  return {service,products};
+}
+function _todayISOOf(d){try{d=new Date(d);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}catch(e){return '';}}
+function _coMenuMatch(name,kind){
+  const n=String(name||'').toLowerCase().trim();if(!n)return null;const all=(_coMenu||[]).filter(m=>!kind||m.kind===kind);
+  return all.find(m=>String(m.name).toLowerCase().trim()===n)||all.find(m=>String(m.name).toLowerCase().startsWith(n+' —'))||null;
+}
+async function _coPrefill(id){
+  const v=_todayVisitFor(id);if(!v.service&&!v.products.length)return;
+  try{await _coEnsureMenu();}catch(e){}
+  // She may have typed or picked something while the menu loaded: never overwrite it.
+  if(!document.getElementById('co-items')||_coItems.length||_coVal('co-amt'))return;
+  const add=[];
+  if(v.service){const m=_coMenuMatch(v.service,'service')||_coMenuMatch(v.service);if(m&&(+m.price>0||m.variationId))add.push({name:m.name,price:+m.price||0,qty:1,variationId:m.variationId||null,kind:m.kind||'service',taxable:m.taxable!==false,note:''});}
+  v.products.forEach(pn=>{const m=_coMenuMatch(pn,'product')||_coMenuMatch(pn);if(m&&(+m.price>0||m.variationId)&&!add.some(x=>x.name===m.name))add.push({name:m.name,price:+m.price||0,qty:1,variationId:m.variationId||null,kind:m.kind||'product',taxable:m.taxable!==false,note:''});});
+  if(!add.length)return;
+  _coItems=add;_coRenderItems();
+  const el=document.getElementById('co-prefill-note');
+  if(el)el.innerHTML='<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:-4px 0 12px;"><i class="ti ti-sparkles" style="font-size:14px;"></i> Filled in from today’s visit. Remove anything she didn’t take.</div>';
+}
+
 // Redefined checkout actions: use the line-item subtotal when present, and log every payment to the ledger.
 async function _coLink(id){
   const c=CL[id];const items=_coValidItems();const amt=_coAmount();
@@ -30868,9 +30996,9 @@ async function _coLink(id){
   if(!_coLock())return;
   _coBusy('Creating payment link\u2026');
   try{
-    const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name,email:c.email||'',phone:c.phone||''}});
+    const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name,email:c.email||'',phone:c.phone||'',allowTip:!!_coTip}});
     if(!d.url)throw new Error('No link was returned.');
-    _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link',source:'square',publicUrl:d.url});
+    _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link',source:'square',publicUrl:d.url,squareOrderId:d.orderId||'',paymentLinkId:d.id||''});
     const msg='Hi '+c.name.split(' ')[0]+'! Your payment link for '+name+' ($'+(+amt).toFixed(2)+'): '+d.url;
     document.getElementById('co-result').innerHTML='<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;"><div style="font-size:16px;color:var(--p-green);font-weight:600;margin-bottom:8px;">Payment link ready \u00b7 logged in Payments</div><div style="font-size:14px;color:var(--p-mut);word-break:break-all;font-family:monospace;margin-bottom:10px;">'+d.url+'</div><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;"><button onclick="_copyText(\''+d.url+'\',this)" class="btnp" style="border-radius:8px;padding:9px;">Copy link</button><button onclick="location.href=\'sms:?&body='+encodeURIComponent(msg)+'\'" class="btng" style="border-radius:8px;padding:9px;">Text it</button></div></div>';
   }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}finally{_coActionLock=false;}
@@ -31642,6 +31770,7 @@ function renderBuildInvoice(){
   if(!_biEnterEdit){_biEditId='';_coItems=[];}
   _biEnterEdit=false;
   _coActionLock=false;   // never inherit a stale in-flight lock from a checkout session
+  _coTip=_tipAskOn();
   document.getElementById('tt').textContent=_biEditId?'Edit invoice':'Build invoice';
   const entries=Object.entries(CL);
   const opts=entries.map(([cid,c])=>`<option value="${cid}">${String(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
@@ -31659,7 +31788,7 @@ function renderBuildInvoice(){
       <button onclick="_coAddCustom()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:10px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus"></i> Add custom line</button>
     </div>
     <div id="co-result" style="margin-bottom:12px;"></div>
-    <label style="display:flex;align-items:center;gap:9px;margin:0 0 12px;cursor:pointer;padding:11px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;"><input type="checkbox" ${_coTip?'checked':''} onchange="_coTip=this.checked" style="width:17px;height:17px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-mut);">Ask the client to add a tip</span></label>
+    <label style="display:flex;align-items:center;gap:9px;margin:0 0 12px;cursor:pointer;padding:11px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;"><input type="checkbox" ${_coTip?'checked':''} onchange="_setTipAsk(this.checked)" style="width:17px;height:17px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-mut);">Ask the client to add a tip</span></label>
     <button class="btng" style="width:100%;border-radius:12px;margin-bottom:8px;justify-content:center;" onclick="_biPreview()"><i class="ti ti-eye"></i> Preview invoice</button>
     <button class="btnp" style="width:100%;border-radius:12px;margin-bottom:8px;justify-content:center;" onclick="_biSend()"><i class="ti ti-send"></i> Send invoice via Square</button>
     <button class="btng" style="width:100%;border-radius:12px;margin-bottom:8px;justify-content:center;" onclick="_coCharge(_biClient)"><i class="ti ti-credit-card"></i> Charge card on file</button>
@@ -31848,9 +31977,9 @@ async function _biTextLink(){
   if(!_coLock())return;   // block a double-tap from creating two Square links / two records
   _coBusy('Creating text link\u2026');
   try{
-    const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name:name||'Service',email:c.email||'',phone:c.phone||''}});
+    const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name:name||'Service',email:c.email||'',phone:c.phone||'',allowTip:!!_coTip}});
     if(!d.url)throw new Error('No link was returned.');
-    const _rec=_addPayment({clientId:cid,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link \u00b7 '+(name||'Service'),source:'square',publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
+    const _rec=_addPayment({clientId:cid,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link \u00b7 '+(name||'Service'),source:'square',publicUrl:d.url,squareOrderId:d.orderId||'',paymentLinkId:d.id||'',items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
     if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id){_libForget('sc_payments',_payments[_i]);_payments.splice(_i,1);}_biEditId='';_savePayments();}
     const first=String(c.name||'there').split(' ')[0];
     const msg='Hi '+first+'! Here\u2019s your payment link for $'+amt.toFixed(2)+': '+d.url;
@@ -31975,6 +32104,7 @@ async function _paySyncSquare(auto){
     _savePayments();
     if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
     try{_checkDepositOnboarding(d.invoices||[]);}catch(e){}
+    try{if(await _paySyncLinks()&&typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}catch(e){}
     if(!auto&&typeof proToast==='function')proToast('Synced from Square \u2713');
   }catch(e){if(!auto&&typeof proToast==='function')proToast(_coRecon(e)?'Reconnect Square to sync':(e.message||'Could not sync'));}
 }

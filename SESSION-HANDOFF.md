@@ -9569,3 +9569,26 @@ the email carries no payment link. Claims: `nurture_sends` seq `winback`, steps 
 tools, Referrals. Tests: `scratchpad/test-growth-nurture.mjs` (win-back block). The "feature they asked
 for shipped" idea is NOT matched per person (feedback cannot be reliably paired with a post); the email
 lists everything new instead.
+
+## 2026-11-16 — Build 2026-11-16i: pay-by-QR, tipping on links, checkout fills itself from today's visit (PREVIEW)
+
+Ashley: tap-to-pay brainstorm, then *"do this also: ... have checkout fill itself in with the service price and
+the products recommended in that visit's chart, and add tipping to payment links"*.
+- **Tipping**: one setting of hers, `bizInfo.tipAsk` (synced in `sc_bizinfo`; missing = ON, her ask). Toggle
+  "Ask the client to add a tip" on Take payment AND Build invoice (`_setTipAsk`). Applies to payment links
+  (`allowTip` -> Square `checkout_options.allow_tipping`), the QR, and invoices (`requestTip`, already there).
+- **Show a QR to pay** (`_coQr`, Take payment, first button): makes her own Square payment link, shows a QR the
+  client scans (Apple Pay / Google Pay / Cash App / card on Square's page). Polls
+  `GET /api/square/pay-status?orderId=` every 3 s for 20 min while open; paid -> record `status:'paid'`,
+  `tip` kept BESIDE `amount` (revenue unchanged), `squarePaymentId`. "Paid another way" marks it Cash / other.
+- **Links mark themselves paid**: `payment-link.js` now returns `orderId` (additive); records store
+  `squareOrderId`; `_paySyncLinks()` (inside `_paySyncSquare`) checks the 8 newest open ones from 30 days.
+- **Prefill** (`_todayVisitFor`/`_coPrefill`): only into an EMPTY checkout, only when there is a visit TODAY
+  (today's booking, a summary with `_draftDate` today, or a note draft dated today). Service matched to the
+  menu price; products from today's summary (`products`) or, with only a draft today, `clientRecs`.
+- `pay-status.js` also has `?since=&cents=` (find a just-taken payment) for the native Tap to Pay work.
+- Tests: `scratchpad/test-checkout-qr-tip.mjs` (18), `test-square-pay-cta.mjs` (26); sweeps
+  `sweep-dup-boot-payments`, `sweep2-square-invoice-xdevice`, `sweep-android-layout` pass. Chromium only
+  (no WebKit in that session).
+- **Tap to Pay inside the app**: Ashley chose this over opening Square's app. She submitted Apple's Tap to Pay
+  on iPhone entitlement request on 2026-11-16 (Square as PSP, US, Jan 2027). Native work is in NEXT-STORE-BUILD.md.

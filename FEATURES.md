@@ -173,6 +173,11 @@ saved anywhere", not "does this always call that".
 | `_coMarkPaid` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_coMenuOpen` | `/api/square/booking-options` | via `_coEnsureMenu` |
 | `_coMenuOpen` | `/api/square/catalog` | via `_coEnsureMenu` |
+| `_coPrefill` | `/api/square/booking-options` | via `_coEnsureMenu` |
+| `_coPrefill` | `/api/square/catalog` | via `_coEnsureMenu` |
+| `_coQr` | `/api/square/pay-status` | via `_coQrSheet` |
+| `_coQr` | `/api/square/payment-link` | direct |
+| `_coQrSheet` | `/api/square/pay-status` | direct |
 | `_coRecordPaid` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_commitDeleteSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_commitRenameSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -451,16 +456,12 @@ saved anywhere", not "does this always call that".
 | `_openSquarePurge` | `/api/square/delete-customers` | via `_sqp_execute` |
 | `_payDelete` | `/api/square/giftcard` | via `_checkGiftCard` |
 | `_payDelete` | `/api/square/invoices` | via `_paySyncSquare` |
-| `_payLogOpen` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `_payLogOpen` | `/api/square/catalog` | via `_autoSyncCatalog` |
-| `_payLogOpen` | `/api/square/customers` | via `_autoSyncCustomers` |
-| `_payLogOpen` | `/api/square/giftcard` | via `_checkGiftCard` |
-| `_payLogOpen` | `/api/square/invoices` | via `_paySyncSquare` |
 | `_payOpen` | `/api/square/giftcard` | via `_checkGiftCard` |
 | `_payOpen` | `/api/square/invoices` | via `_paySyncSquare` |
 | `_payOpen` | `/api/square/payment-link` | via `_payTextLink` |
 | `_payOpen` | `/api/square/refund` | via `_payRefund` |
 | `_payRefund` | `/api/square/refund` | direct |
+| `_paySyncLinks` | `/api/square/pay-status` | direct |
 | `_paySyncSquare` | `/api/square/invoices` | direct |
 | `_payTextLink` | `/api/square/payment-link` | direct |
 | `_persistAndSyncClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -1264,7 +1265,8 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/square/loyalty` | GET | **public** | GET /api/square/loyalty?phone=CLIENT_PHONE |
 | `/api/square/orders` | GET | **public** | GET /api/square/orders?customerId=SQUARE_CUSTOMER_ID |
 | `/api/square/pay-config` | GET | **public** | GET /api/square/pay-config |
-| `/api/square/payment-link` | POST | **public** | POST /api/square/payment-link  { amount, name, email?, phone?, note? } |
+| `/api/square/pay-status` | GET | **public** | GET /api/square/pay-status?orderId=ORDER_ID |
+| `/api/square/payment-link` | POST | **public** | POST /api/square/payment-link  { amount, name, email?, phone?, note?, allowTip? } |
 | `/api/square/refund` | POST | **public** | POST /api/square/refund  { paymentId, amount?, reason? } |
 | `/api/square/reschedule-booking` | POST | **public** | POST /api/square/reschedule-booking  { bookingId, startAt, version? } |
 | `/api/square/save-card` | POST | **public** | POST /api/square/save-card  { customerId, sourceId, verificationToken? } |
