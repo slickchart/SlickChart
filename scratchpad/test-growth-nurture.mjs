@@ -20,7 +20,8 @@ await db.exec(`CREATE TABLE providers (id text PRIMARY KEY, email text, name tex
 CREATE TABLE kv (owner text, k text, v text, updated_at timestamptz DEFAULT now(), PRIMARY KEY(owner,k));
 CREATE TABLE square_connections (provider_id text PRIMARY KEY, access_token text);
 CREATE TABLE client_events (id text PRIMARY KEY, client_id text, provider_id text, kind text, payload jsonb, created_at bigint);
-CREATE TABLE trial_outcomes (sub_id text PRIMARY KEY, email text, trial_start timestamptz, trial_end timestamptz, outcome text, first_paid_at timestamptz, plan_amount int, plan_interval text);
+CREATE TABLE trial_outcomes (sub_id text PRIMARY KEY, email text, trial_start timestamptz, trial_end timestamptz, outcome text, first_paid_at timestamptz, plan_amount int, plan_interval text, canceled_at timestamptz, ended_at timestamptz);
+CREATE TABLE IF NOT EXISTS announcements (id bigserial PRIMARY KEY, title text NOT NULL, body text, ts timestamptz DEFAULT now());
 CREATE TABLE subscriptions (email text PRIMARY KEY, stripe_customer_id text, stripe_subscription_id text, status text, plan_amount int, plan_interval text, cancel_at_period_end boolean DEFAULT false, paused_until timestamptz, pause_starts_at timestamptz, paid_notified_at timestamptz, current_period_end timestamptz, updated_at timestamptz);`);
 const clients = n => JSON.stringify(Object.fromEntries(Array.from({ length: n }, (_, i) => ['c' + i, { id: 'c' + i, name: 'C' + i }])));
 // new1: joined 1.5 days ago, no clients -> gets "Bring your clients in"
@@ -158,6 +159,58 @@ up = calls.find(c => c.method === 'POST');
 ok(r.ok && r.charged && /billing_cycle_anchor=now/.test(decodeURIComponent(up.body)) && /proration_behavior=none/.test(decodeURIComponent(up.body)), 'resuming while locked bills today', up && up.body);
 const row3 = (await db.query(`SELECT paused_until, pause_starts_at FROM subscriptions WHERE email='pay@x.com'`)).rows[0];
 ok(!row3.paused_until && !row3.pause_starts_at, 'resumed: her row is clear');
+
+// ── Win-back: providers who left get what's new since they left, at most twice ──
+{
+  const old = '2025-06-01';
+  const mk = async (id, email, name, status, updatedDays, paid) => {
+    await db.query(`INSERT INTO providers VALUES ($1,$2,$3,$4)`, [id, email, name, old]);
+    await db.query(`INSERT INTO subscriptions (email, status, plan_amount, plan_interval, paid_notified_at, updated_at) VALUES ($1,$2,1700,'month',$3,$4)`, [email, status, paid ? ago(200) : null, ago(updatedDays)]);
+  };
+  await mk('w1', 'wb1@x.com', 'Willa One', 'canceled', 35, true);
+  await mk('w2', 'wb2@x.com', 'Wren Two', 'canceled', 35, true);
+  await mk('w3', 'wb3@x.com', 'Tia Three', 'canceled', 40, false);
+  await db.query(`INSERT INTO trial_outcomes (sub_id, email, trial_start, outcome, canceled_at, ended_at) VALUES ('st3','wb3@x.com',$1,'canceled_in_trial',$2,$2)`, [ago(50), ago(40)]);
+  await mk('w4', 'wb4@x.com', 'Fay Four', 'canceled', 100, true);
+  await mk('w5', 'wb5@x.com', 'Old Five', 'canceled', 200, true);
+  await mk('w6', 'wb6@x.com', 'New Six', 'canceled', 10, true);
+  await mk('w7', 'wb7@x.com', 'Back Seven', 'active', 35, true);
+  await mk('w8', 'wb8@x.com', 'Out Eight', 'canceled', 35, true);
+  await db.query(`INSERT INTO nurture_optout (email) VALUES ('wb8@x.com')`);
+  await db.query(`INSERT INTO subscriptions (email, status, paid_notified_at, updated_at) VALUES ('gone@x.com','canceled',$1,$2)`, [ago(200), ago(35)]);
+  // wb2 left 35 days ago but the only post is older than that; everyone else has news since leaving.
+  await db.query(`INSERT INTO announcements (title, body, ts) VALUES ('Old thing','From before', $1), ('Pause instead of cancel','You can now pause your plan for up to 3 months.', $2), ('Paper forms','Scan a signed paper form into a client file with your camera.', $3)`, [ago(300), ago(33), ago(5)]);
+  const before = SENT.length;
+  await db.query(`UPDATE announcements SET ts = $1 WHERE title = 'Pause instead of cancel'`, [ago(33)]);
+  // wb2: make its only news older than its leave date by moving it to 34 days and the other posts... keep simple: wb2 left 2 days ago-equivalent is not wanted; instead give wb2 a later leave via trial row.
+  await db.query(`INSERT INTO trial_outcomes (sub_id, email, trial_start, outcome, canceled_at, ended_at) VALUES ('st2','wb2@x.com',$1,'canceled_after_paying',$2,$2)`, [ago(300), ago(4)]);
+  await runNurture();
+  const wb = e => SENT.slice(before).filter(m => m.to === e);
+  const m1 = wb('wb1@x.com')[0] || {};
+  ok(wb('wb1@x.com').length === 1 && /since you left/.test(m1.subject || '') && /Pause instead of cancel/.test(m1.html || '') && /Paper forms/.test(m1.html || '') && !/Old thing/.test(m1.html || ''), 'left 35 days ago: one email listing only what is new since', m1.subject);
+  ok(/slickchart\.app\/slickchart/.test(m1.html || '') && /Unsubscribe/.test(m1.html || '') && !/buy\.stripe/.test(m1.html || ''), 'comes back by signing in (her own price), unsubscribe link, no payment link in the email');
+  ok(wb('wb2@x.com').length === 0, 'left 4 days ago (by the trial record): too soon, nothing');
+  ok(wb('wb3@x.com').length === 1, 'left during the trial: gets it (her setting on)');
+  ok(wb('wb4@x.com').length === 1 && /Still here for you/.test((wb('wb4@x.com')[0] || {}).subject || ''), 'first seen 100 days after leaving: only the LAST email, once');
+  ok(wb('wb5@x.com').length === 0 && wb('wb6@x.com').length === 0, 'too long ago (200 days) or too soon (10 days): nothing');
+  ok(wb('wb7@x.com').length === 0 && wb('wb8@x.com').length === 0 && wb('gone@x.com').length === 0, 'paying again, unsubscribed, or account deleted: nothing');
+  const b2 = SENT.length; await runNurture();
+  ok(SENT.slice(b2).filter(m => /^wb|^gone/.test(m.to)).length === 0, 'running again sends nothing twice');
+  // wb1, 60 days on: the second email; but never within 21 days of the first
+  await db.query(`UPDATE subscriptions SET updated_at = $1 WHERE email = 'wb1@x.com'`, [ago(95)]);
+  const b3 = SENT.length; await runNurture();
+  ok(SENT.slice(b3).filter(m => m.to === 'wb1@x.com').length === 0, 'second email held: the first went less than 21 days ago');
+  await db.query(`UPDATE nurture_sends SET sent_at = now() - interval '60 days' WHERE email = 'wb1@x.com' AND seq = 'winback'`);
+  const b4 = SENT.length; await runNurture();
+  const s4 = SENT.slice(b4).filter(m => m.to === 'wb1@x.com');
+  ok(s4.length === 1 && /Still here for you, Willa/.test(s4[0].subject), 'day 95: the second and last email', s4.map(m => m.subject).join());
+  // Her settings: trials off
+  await db.exec(`CREATE TABLE IF NOT EXISTS founder_settings (k text PRIMARY KEY, v text NOT NULL, updated_at timestamptz DEFAULT now())`);
+  await db.query(`INSERT INTO founder_settings (k, v) VALUES ('grow_winback_trials', '0') ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v`);
+  await mk('w9', 'wb9@x.com', 'Trial Nine', 'canceled', 40, false);
+  const b5 = SENT.length; await runNurture();
+  ok(SENT.slice(b5).filter(m => m.to === 'wb9@x.com').length === 0, 'her setting "trial leavers too" off: they get nothing');
+}
 
 console.log(fail ? `\n${fail} FAILED` : '\nALL PASS');
 process.exit(fail ? 1 : 0);
