@@ -58,3 +58,5 @@ Somewhere outside the conversation, keep a plain description of your app. What i
 You will paste pieces of it constantly, every time you start fresh. It is also the thing that keeps the app coherent, because you are the only continuity it has.
 
 None of this is technical. It is describing your own work clearly, which as a solo business owner you have already been doing for years. If you want to see what the rest of the process looks like, [this is what the whole build actually contained](/build/blog/build-an-app-without-coding), and there is [a free walkthrough of the first steps](/free) if you would rather start than read about starting.
+
+If you would rather start from prompts that are already worded this way, the [step by step build roadmap](/build-any-business) has one for each stage of the build.

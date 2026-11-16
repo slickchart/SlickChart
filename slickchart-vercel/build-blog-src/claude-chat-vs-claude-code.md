@@ -62,3 +62,5 @@ People who get that right stop having the experience of fighting the AI. People 
 This is also a good illustration of the wider point in [you do not need to learn to code](/build/blog/build-an-app-without-coding). Nothing in this post is a technical skill. It is knowing the order and knowing which tool does what, which is the part nobody hands you.
 
 If you want to try the thinking half of that loop with no commitment, the [free starter](/free) walks you through describing your idea until it turns into a clickable demo you can tap through on your phone. That whole first stage happens in conversation, before any code exists at all.
+
+Every prompt in the [Master Build Roadmap](/build-any-business) is marked Claude Chat or Claude Code for exactly this reason, so you always know which tool a step belongs in.
