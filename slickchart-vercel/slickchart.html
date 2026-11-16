@@ -370,7 +370,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-15b';
+const APP_BUILD='2026-11-16a';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -10045,6 +10045,7 @@ function renderHome(){
       ];
     })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${v==null?l+': loading':l+': '+v+', '+s}" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:14px;color:var(--p-mut);margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v==null?'<span class="sk sk-num"></span>':v}</div><div style="font-size:14px;color:var(--p-mut);">${s==null?'<span class="sk sk-sub"></span>':s}</div></button>`).join('')}
   </div>
+  <div id="grow-home-slot">${(function(){try{return _yearlyHomeCardHTML();}catch(e){return '';}})()}</div>
   <div id="ref-home-slot">${(function(){try{return _refHomeCardHTML();}catch(e){return '';}})()}</div>
   ${(aiEnabled&&!_dayRecapDismissedToday()&&_dayRecapHasContent())?`<div id="day-recap-card" style="margin:0 16px 10px;">${_dayRecapCardHTML()}</div>`:''}
   ${(function(){
@@ -14226,6 +14227,7 @@ function _saveWriteNote(id){
   proToast('Note saved \u2713');
   nav('notes',id);
   setTimeout(()=>{try{_maybeShowPulse();}catch(e){}},1400);   // gentle post-charting pulse (self-gated to weekly)
+  setTimeout(()=>{try{if(document.getElementById('pulse-sheet'))return;let n=0;try{n=(JSON.parse(localStorage.getItem('sc_chart_activity')||'{}').count)||0;}catch(e){}if(n>=10)_refMoment('charts');}catch(e){}},2600);
 }
 function _saveAndSendNote(id){
   const r=_commitWriteNote(id);
@@ -16526,6 +16528,9 @@ function _routeDeepLink(kind,cid,itemId){
     if(kind==='message'){if(cid&&CL[cid]){nav('chat',cid);return true;}return false;}
     if(kind==='booking'){nav('requests');return true;}
     if(kind==='news'){nav('whats-new');return true;}   // a "What's new" update she posted (api/announcements)
+    // A screen named in one of our emails (lib/nurture.js: /slickchart?n=go&i=import-clients). Allow-listed:
+    // a link can only open one of these screens, never run anything.
+    if(kind==='go'){const ok={'import-clients':1,'switch-app':1,'refer':1,'subscription-billing':1,'data-setup':1};if(ok[itemId]){nav(itemId);return true;}return false;}
     if((kind==='vc_submit'||kind==='contact')&&cid&&CL[cid]){nav('client',cid);return true;}
     if(cid&&CL[cid]){nav('client',cid);return true;}   // unknown kind but we know the client
     return false;
@@ -18411,6 +18416,7 @@ function _refHomeCardHTML(fromLoad){
     _refOwnerCheck();
     if(!_refInfo){if(!fromLoad&&!_refTried)setTimeout(function(){try{_refLoad();}catch(e){}},2500);return '';}
     if(!_refInfo.enabled||!_refInfo.showOnHome||!_refInfo.code)return '';
+    if(_yearlyHomeVisible())return '';   // one card at a time: the yearly offer only runs a few months
     const sh=_refSharerText(_refInfo);
     return `<div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:14px;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><i class="ti ti-gift" aria-hidden="true" style="font-size:20px;color:var(--accent-strong);"></i><div style="font-size:17px;font-weight:600;color:var(--p-ink);">Give a month, get a month</div></div>
@@ -18444,6 +18450,55 @@ function _refCopy(what){
   if(what==='link'){_copyToClipboard(_refInfo.link,'Link copied');_refCount('link');}
   else{_copyToClipboard(_refInfo.code,'Code copied');_refCount('copycode');}
 }
+// Ask for a referral at a happy moment (2026-11-16): a 4 or 5 on the pulse, a client signing a form,
+// a busy charting day. At most once per ref_prompt_days (her setting), only for a paying account the
+// server says is ready (promptOn), never over another sheet or in the treatment room. The "last asked"
+// stamp is device-only (no sc_ prefix), so it never syncs.
+function _refNudgeDue(){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return false;
+    _refOwnerCheck();
+    const i=_refInfo;
+    if(!i||!i.enabled||!i.promptOn||!i.code)return false;
+    const days=Math.max(1,Number(i.promptDays)||21);
+    let last=0;try{const o=JSON.parse(localStorage.getItem('slickrefnudge')||'{}');if(o&&o.o===_refTok.slice(-12))last=Number(o.at)||0;}catch(e){}
+    if(last&&Date.now()-last<days*86400000)return false;
+    if(document.getElementById('pulse-sheet')||document.getElementById('beta-fb')||document.getElementById('ref-nudge')||document.getElementById('grow-cancel'))return false;
+    if(typeof _navCur!=='undefined'&&_navCur&&(_navCur.screen==='room'||_navCur.screen==='refer'))return false;
+    return true;
+  }catch(e){return false;}
+}
+function _refMoment(why){
+  try{
+    if(!_refInfo){_refLoad().then(function(){try{if(_refNudgeDue())_refNudge(why);}catch(e){}}).catch(function(){});return;}
+    if(_refNudgeDue())_refNudge(why);
+  }catch(e){}
+}
+const _REF_NUDGE_LINES={
+  pulse:'So glad SlickChart is helping.',
+  signed:'A client just signed a form on their own.',
+  charts:'You have been busy charting.'
+};
+function _refNudge(why){
+  const i=_refInfo;if(!i||!i.code)return;
+  try{localStorage.setItem('slickrefnudge',JSON.stringify({o:_refTok.slice(-12),at:Date.now(),why:why||''}));}catch(e){}
+  const old=document.getElementById('ref-nudge');if(old)old.remove();
+  try{const t=document.getElementById('pro-toast');if(t)t.remove();}catch(e){}   // a toast would sit over Share
+  const sh=_refSharerText(i);
+  const m=document.createElement('div');m.id='ref-nudge';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:500;display:flex;flex-direction:column;justify-content:flex-end;';
+  m.innerHTML=`
+  <div onclick="_refNudgeClose()" style="flex:1;background:rgba(0,0,0,.55);"></div>
+  <div role="dialog" aria-label="Refer a friend" style="background:var(--surf1);border-radius:16px;padding:20px 16px 28px;border-top:1px solid var(--p-line);">
+    <div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 16px;"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><i class="ti ti-gift" aria-hidden="true" style="font-size:22px;color:var(--accent-strong);"></i><div style="font-size:18px;font-weight:600;color:var(--p-ink);">Know someone who would love this?</div></div>
+    <div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:14px;">${_fileEsc(_REF_NUDGE_LINES[why]||'')} Share your code <b style="color:var(--p-ink);letter-spacing:.03em;">${_fileEsc(i.code)}</b>. A friend gets ${_fileEsc(_refFriendText(i))}${sh?', and you get '+_fileEsc(sh):''}.</div>
+    <button class="btnp" style="width:100%;border-radius:10px;justify-content:center;margin-bottom:8px;" onclick="_refNudgeClose();_refShare();"><i class="ti ti-share" aria-hidden="true"></i> Share my code</button>
+    <button class="btng" style="width:100%;border-radius:10px;padding:10px;" onclick="_refNudgeClose()">Not now</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(m);
+}
+function _refNudgeClose(){const m=document.getElementById('ref-nudge');if(m)m.remove();}
 function renderRefer(){
   setNav('more');
   document.getElementById('tt').textContent='Refer a friend';
@@ -18472,6 +18527,7 @@ function renderRefer(){
       <div style="font-size:14px;color:var(--p-mut);margin-top:10px;word-break:break-all;">${_fileEsc(i.link||'')}</div>
     </div>
     <div style="font-size:15px;color:var(--p-mut);line-height:1.6;margin-bottom:16px;">Your friend can tap your link, or type your code at checkout. ${i.maxPerYear?'You can earn up to '+i.maxPerYear+' free months a year.':''}</div>
+    ${(i.sharerMonths===1&&(!i.maxPerYear||i.maxPerYear>=12))?'<div style="background:var(--accent-tint);border-radius:12px;padding:12px 14px;font-size:16px;color:var(--p-ink);line-height:1.5;margin-bottom:16px;"><b>Refer 12 friends who stay, and SlickChart is free for a whole year.</b></div>':''}
     ${i.hasBilling===false?'<div style="font-size:15px;color:var(--p-amber);line-height:1.5;margin-bottom:14px;">Your free months go on your SlickChart bill, and this account has no bill yet. Email support@slickchart.app and we’ll sort it out.</div>':''}
     <div style="display:flex;gap:8px;margin-bottom:12px;">
       ${[['Joined',i.joined||0],['Paying',i.paying||0],['You’ve earned',earned]].map(function(x){return '<div style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:600;color:var(--p-ink);">'+_fileEsc(String(x[1]))+'</div><div style="font-size:14px;color:var(--p-mut);">'+x[0]+'</div></div>';}).join('')}
@@ -28519,6 +28575,7 @@ async function _sendPulse(){
   }catch(e){}
   _dismissPulse();
   if(_pulseOk)proToast('Thanks, that really helps \ud83d\udc9b');
+  if(_pulseOk&&(_pulseAnswers.rating||0)>=4)setTimeout(function(){try{_refMoment('pulse');}catch(e){}},2600);
   else proToast('Couldn’t send just now, please try again.',0);
 }
 // Beta feedback (reachable from onboarding + settings)
@@ -33899,7 +33956,9 @@ async function syncClientEvents(){
               _captureRefPhoto(cid,payload.formId,payload.answers||{});
             }
           }catch(e){}
-          if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
+          if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);
+            // A client signed just now (not an old form a fresh device is catching up on): a good moment.
+            try{const _sa=_eventAtMs(ev)||0;if(_sa&&Date.now()-_sa<2*3600000&&!Cloud._booting)setTimeout(function(){try{_refMoment('signed');}catch(e){}},2000);}catch(e){}}
           if(flagged)_setFormFlag(c,title,flagged,formDate);
           try{saveClients();}catch(e){}
         }
@@ -38161,6 +38220,7 @@ async function _checkBillingBanner(){
     if(!r.ok){return;}                       // leave whatever is on screen; never guess she is behind
     const j=await r.json();
     const sub=(j&&j.subscription)||null;
+    try{_growSet(j,tok);}catch(e){}
     const behind=!!(sub&&(sub.status==='past_due'||sub.status==='unpaid'));
     _renderBillingBanner(behind?{payUrl:(j&&j.payUrl)||'',payLabel:(j&&j.payLabel)||''}:null);
   }catch(e){ /* offline, or the endpoint is down - say nothing rather than alarm her */ }
@@ -38173,6 +38233,7 @@ async function _loadBillingStatus(){
     const r=await fetch('/api/billing-status',{headers:{'Authorization':'Bearer '+tok}});
     const j=await r.json();
     const sub=(j&&j.subscription)||null;
+    try{_growSet(j,tok);}catch(e){}
     box.innerHTML=_billingHTML(sub);
   }catch(e){
     box.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--p-mut);font-size:16px;">Could not load billing info. Try again in a moment.</div>';
@@ -38185,7 +38246,10 @@ function _billingHTML(sub){
   // "Active \u2014 next billing date" to someone who has just cancelled is how they end up cancelling
   // twice, or writing in to ask whether it worked.
   const ending=!!(sub&&sub.cancel_at_period_end&&active);
-  const statusLabel=ending?'Ending':active?'Active':pastDue?'Payment failed':sub?'Canceled':'No subscription found';
+  const _go=_growOfferNow();
+  const paused=!!(_go&&_go.paused&&active&&!ending);
+  const pausedDate=paused?_growDay(_go.pausedUntil):'';
+  const statusLabel=ending?'Ending':paused?'Paused':active?'Active':pastDue?'Payment failed':sub?'Canceled':'No subscription found';
   const statusColor=ending?'bm':active?'bg':pastDue?'br':'bm';
   // plan_interval is 'year' on the yearly plan; missing (older rows, older server) means monthly.
   const amount=sub&&sub.plan_amount?('$'+(sub.plan_amount/100).toFixed(2)+(sub.plan_interval==='year'?'/year':'/month')):'$10.00/month';
@@ -38209,15 +38273,19 @@ function _billingHTML(sub){
     ${sub?`
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">
       <div class="fr" style="padding:10px 14px;"><span class="fl">Status</span><span class="fv">${statusLabel}</span></div>
-      <div class="fr" style="padding:10px 14px;border:none;"><span class="fl">${ending?'Access until':pastDue?'Retry date':'Next billing date'}</span><span class="fv">${nextDate}</span></div>
+      <div class="fr" style="padding:10px 14px;border:none;"><span class="fl">${ending?'Access until':paused?'Billing starts again':pastDue?'Retry date':'Next billing date'}</span><span class="fv">${paused?pausedDate:nextDate}</span></div>
     </div>
     <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal()"><i class="ti ti-credit-card" style="color:var(--accent-strong);"></i> Payment method &amp; invoices</button>
     ${ending?`
     <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal('resume')"><i class="ti ti-rotate" style="color:var(--accent-strong);"></i> Keep my subscription</button>
     <div style="font-size:14px;color:var(--p-mut);line-height:1.6;text-align:center;padding:0 6px;">You\u2019ve cancelled. Nothing more will be charged, and you keep everything until ${nextDate}. Change your mind before then and this puts it back.</div>
+    `:paused?`
+    <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_growUnpause()"><i class="ti ti-player-play" style="color:var(--accent-strong);"></i> Resume billing now</button>
+    <div style="font-size:14px;color:var(--p-mut);line-height:1.6;text-align:center;padding:0 6px;margin-bottom:14px;">Your plan is paused. You keep using SlickChart as normal, nothing is charged, and billing starts again on its own on ${pausedDate}.</div>
+    <button onclick="_openBillingPortal('cancel')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;">Cancel subscription</button>
     `:`
     ${(active&&sub.plan_interval!=='year'&&!_isNativeApp())?`<button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal('yearly')"><i class="ti ti-calendar-check" style="color:var(--accent-strong);"></i> Switch to yearly &middot; $${_yearlyFor(sub)}/year, 2 months free</button>`:''}
-    <button onclick="_openBillingPortal('cancel')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;">Cancel subscription</button>
+    <button onclick="_growCancel()" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;">Cancel subscription</button>
     <div style="font-size:14px;color:var(--p-mut);line-height:1.6;padding:0 2px;">
       Cancelling takes one confirmation and stops any further charges. You keep full access until ${nextDate}, the end of the time you\u2019ve already paid for \u2014 and your clients, notes and photos stay exactly where they are.
       Nothing is deleted by cancelling; if you want your data gone as well, that\u2019s <b>Delete my account</b> below.
@@ -38251,6 +38319,112 @@ async function _openBillingPortal(intent){
   }
 }
 function _supportEmail(){try{return (window.SLICKCHART_SUPPORT_EMAIL||'support@slickchart.app');}catch(e){return 'support@slickchart.app';}}
+
+// ── Keeping providers: the yearly card and a pause instead of cancelling (2026-11-16, lib/growth.js) ──
+// Ashley: "ask monthly payers to switch to yearly in months 2 to 5, and offer a pause when someone
+// cancels". /api/billing-status says what THIS account may be offered (`offer`); every number in it is
+// her setting (Admin tools, Referrals). Payment-silent in the native app: neither shows there.
+// Device-only memory uses non-sc_ keys (never synced): slickyearlyskip = the month she said "Not now".
+let _growOffer=null,_growSub=null,_growTok='';
+function _growSet(j,tok){
+  _growOffer=(j&&j.offer)||null;_growSub=(j&&j.subscription)||null;_growTok=tok||'';
+  try{const sl=document.getElementById('grow-home-slot');if(sl)sl.innerHTML=_yearlyHomeCardHTML();}catch(e){}
+  try{const r=document.getElementById('ref-home-slot');if(r&&typeof _refHomeCardHTML==='function')r.innerHTML=_refHomeCardHTML(true);}catch(e){}
+}
+// The offer only for the account it was read for; a different sign-in on this page sees nothing until re-read.
+function _growOfferNow(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  return (_growOffer&&tok&&tok===_growTok)?_growOffer:null;
+}
+function _growDay(v){
+  try{const t=typeof v==='number'?(v<1e12?v*1000:v):Date.parse(v);if(!t)return '';return new Date(t).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});}catch(e){return '';}
+}
+function _growPeriodEndMs(sub){
+  const v=sub&&sub.current_period_end;if(!v)return 0;
+  if(typeof v==='number')return v<1e12?v*1000:v;
+  const n=Number(v);if(Number.isFinite(n)&&n>0)return n<1e12?n*1000:n;
+  return Date.parse(v)||0;
+}
+// Same calendar-month math as lib/growth.js addMonths (Jan 31 + 1 month = Feb 28).
+function _growAddMonths(ms,n){const d=new Date(ms);const day=d.getUTCDate();d.setUTCDate(1);d.setUTCMonth(d.getUTCMonth()+n);const last=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();d.setUTCDate(Math.min(day,last));return d.getTime();}
+function _yearlySkipKey(){try{return String(_tokenOwner()||'');}catch(e){return '';}}
+function _yearlyHomeVisible(){
+  try{
+    if(_isNativeApp())return false;
+    const o=_growOfferNow();if(!o||!o.showYearly||!_growSub)return false;
+    const sk=JSON.parse(localStorage.getItem('slickyearlyskip')||'null');
+    if(sk&&sk.o===_yearlySkipKey()&&sk.m===o.monthOfPaying)return false;   // "Not now" this month of paying
+    return true;
+  }catch(e){return false;}
+}
+function _yearlyHomeCardHTML(){
+  try{
+    if(!_yearlyHomeVisible())return '';
+    const yr=_yearlyFor(_growSub);
+    const mo=_growSub&&_growSub.plan_amount?(_growSub.plan_amount/100).toFixed(_growSub.plan_amount%100?2:0):'';
+    return `<div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:14px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><i class="ti ti-calendar-check" aria-hidden="true" style="font-size:20px;color:var(--accent-strong);"></i><div style="font-size:17px;font-weight:600;color:var(--p-ink);">2 months free with yearly</div></div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:10px;">Pay $${_fileEsc(String(yr))} once a year${mo?' instead of $'+_fileEsc(mo)+' a month':''}. Same everything, two months on us, and one less bill to think about.</div>
+      <div style="display:flex;gap:8px;"><button class="btnp" style="flex:1;border-radius:10px;justify-content:center;" onclick="_openBillingPortal('yearly')"><i class="ti ti-calendar-check" aria-hidden="true"></i> Switch to yearly</button><button class="btng" style="border-radius:10px;padding:10px 14px;" onclick="_yearlySkip()">Not now</button></div>
+    </div>`;
+  }catch(e){return '';}
+}
+function _yearlySkip(){
+  try{const o=_growOfferNow();localStorage.setItem('slickyearlyskip',JSON.stringify({o:_yearlySkipKey(),m:o?o.monthOfPaying:0}));}catch(e){}
+  try{const sl=document.getElementById('grow-home-slot');if(sl)sl.innerHTML='';}catch(e){}
+  try{const r=document.getElementById('ref-home-slot');if(r)r.innerHTML=_refHomeCardHTML(true);}catch(e){}
+  try{proToast('Yearly is always under Settings, Subscription & Billing');}catch(e){}
+}
+// Cancel: a pause (and yearly) first, when she has them; "Cancel anyway" is always one tap away.
+function _growCancel(){
+  const o=_growOfferNow(),sub=_growSub;
+  const canYearly=!!(sub&&sub.status==='active'&&sub.plan_interval!=='year'&&!_isNativeApp());
+  if(!o||(!o.canPause&&!canYearly)){_openBillingPortal('cancel');return;}
+  const old=document.getElementById('grow-cancel');if(old)old.remove();
+  const m=document.createElement('div');m.id='grow-cancel';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:600;display:flex;flex-direction:column;justify-content:flex-end;';
+  const pe=_growPeriodEndMs(sub);
+  const opts=[];if(o.canPause)for(let n=1;n<=(o.pauseMax||1);n++)opts.push(n);
+  const pauseBtns=opts.map(function(n){
+    const back=pe?_growDay(_growAddMonths(pe,n)):'';
+    return `<button class="btng" id="grow-pause-${n}" style="width:100%;margin-bottom:8px;display:flex;align-items:center;justify-content:flex-start;gap:10px;text-align:left;" onclick="_growPause(${n})"><i class="ti ti-player-pause" aria-hidden="true" style="color:var(--accent-strong);"></i><span style="display:flex;flex-direction:column;gap:2px;"><span>Pause for ${n} month${n===1?'':'s'}</span>${back?`<span style="font-size:14px;font-weight:400;color:var(--p-mut);">billing again ${_fileEsc(back)}</span>`:''}</span></button>`;
+  }).join('');
+  m.innerHTML=`<div onclick="document.getElementById('grow-cancel').remove()" style="flex:1;background:rgba(0,0,0,.55);"></div>
+  <div role="dialog" aria-modal="true" aria-label="Before you cancel" style="background:var(--surf1);border-radius:16px 16px 0 0;padding:20px 16px 28px;border-top:1px solid var(--p-line);max-height:90%;overflow:auto;">
+    <div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 16px;"></div>
+    <div style="font-size:19px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">${o.canPause?'Need a break instead?':'Before you go'}</div>
+    ${o.canPause?`<div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:14px;">Pause and nothing is charged. You keep using SlickChart and everything stays put. Billing starts again on its own, and you can resume any time.</div>${pauseBtns}`:''}
+    ${canYearly?`<button class="btng" style="width:100%;margin:${o.canPause?'6px':'0'} 0 8px;" onclick="document.getElementById('grow-cancel').remove();_openBillingPortal('yearly')"><i class="ti ti-calendar-check" style="color:var(--accent-strong);"></i> Switch to yearly &middot; $${_fileEsc(String(_yearlyFor(sub)))}/year, 2 months free</button>`:''}
+    <div id="grow-cancel-msg" style="font-size:15px;color:var(--p-mut);min-height:4px;margin:4px 0 6px;"></div>
+    <button onclick="document.getElementById('grow-cancel').remove();_openBillingPortal('cancel')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:6px;">Cancel anyway</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(m);
+}
+async function _growPause(n){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+  const msg=document.getElementById('grow-cancel-msg');if(msg)msg.textContent='Pausing…';
+  document.querySelectorAll('[id^=grow-pause-]').forEach(function(b){b.disabled=true;});
+  try{
+    const r=await fetch('/api/create-portal-session',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({intent:'pause',months:n})});
+    const j=await r.json().catch(()=>null);
+    if(r.ok&&j&&j.ok){
+      const el=document.getElementById('grow-cancel');if(el)el.remove();
+      proToast('Paused. Billing starts again on '+_growDay(j.pausedUntil)+'.',6000);
+      _loadBillingStatus();return;
+    }
+    if(msg)msg.textContent=(j&&j.error)||'Couldn’t pause it. Try again.';
+  }catch(e){if(msg)msg.textContent='Couldn’t reach billing. Try again.';}
+  document.querySelectorAll('[id^=grow-pause-]').forEach(function(b){b.disabled=false;});
+}
+async function _growUnpause(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+  try{
+    const r=await fetch('/api/create-portal-session',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({intent:'unpause'})});
+    const j=await r.json().catch(()=>null);
+    if(r.ok&&j&&j.ok){proToast('Welcome back. Billing resumes on your next billing date.');_loadBillingStatus();return;}
+    proToast((j&&j.error)||'Couldn’t resume it. Try again.',0);
+  }catch(e){proToast('Couldn’t reach billing. Try again.',0);}
+}
 
 // ── ADD PARTNER ──
 function renderAddPartner(){

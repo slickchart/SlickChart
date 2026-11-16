@@ -47,6 +47,10 @@ export default async function handler(req, res) {
       rewardOnPayment: !!s.ref_reward_on_payment,
       maxPerYear: s.ref_max_per_year,
       showOnHome: days >= s.ref_home_days && !!(sub && sub.status === 'active'),
+      // The "share your code" ask at a good moment (a form back signed, a happy rating). Same who-sees-it
+      // rule as the Home card, plus her on/off and the least days between asks (founder settings).
+      promptOn: !!s.ref_prompt_on && days >= s.ref_home_days && !!(sub && sub.status === 'active'),
+      promptDays: s.ref_prompt_days,
       hasBilling: !!sub,
       ...summary
     });

@@ -78,6 +78,7 @@ saved anywhere", not "does this always call that".
 | `_biPreview` | `/api/square/tax-rate` | via `_fetchSquareTaxRate` |
 | `_biSend` | `/api/square/invoice` | direct |
 | `_biTextLink` | `/api/square/payment-link` | direct |
+| `_billingHTML` | `/api/billing-status` | via `_loadBillingStatus` |
 | `_billingHTML` | `/api/create-portal-session` | via `_openBillingPortal` |
 | `_bookCheckSquare` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_bookCheckSquare` | `/api/square/connection` | via `_sqConnState` |
@@ -138,6 +139,8 @@ saved anywhere", not "does this always call that".
 | `_chatShareSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_chatShareSheet` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_checkBillingBanner` | `/api/billing-status` | direct |
+| `_checkBillingBanner` | `/api/create-portal-session` | via `_openBillingPortal` |
+| `_checkBillingBanner` | `/api/referral` | via `_refLoad` |
 | `_checkDepositOnboarding` | `/api/client-invite` | via `_sendDepositForms` |
 | `_checkDepositOnboarding` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_checkForNewBuild` | `/api/build-id` | direct |
@@ -281,6 +284,14 @@ saved anywhere", not "does this always call that".
 | `_gcalStatus` | `/api/google-cal` | direct |
 | `_gcalStatusCached` | `/api/google-cal` | via `_gcalStatus` |
 | `_getGuideFile` | `/api/guide-file` | direct |
+| `_growCancel` | `/api/billing-status` | via `_loadBillingStatus` |
+| `_growCancel` | `/api/create-portal-session` | via `_openBillingPortal` |
+| `_growPause` | `/api/billing-status` | via `_loadBillingStatus` |
+| `_growPause` | `/api/create-portal-session` | direct |
+| `_growSet` | `/api/create-portal-session` | via `_openBillingPortal` |
+| `_growSet` | `/api/referral` | via `_refLoad` |
+| `_growUnpause` | `/api/billing-status` | via `_loadBillingStatus` |
+| `_growUnpause` | `/api/create-portal-session` | direct |
 | `_handleAuthParams` | `/api/app-launch` | via `_alSend` |
 | `_handleAuthParams` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_handleAuthParams` | `/api/change-email` | via `_confirmEmailChange` |
@@ -343,6 +354,7 @@ saved anywhere", not "does this always call that".
 | `_loadBetaStats` | `/api/waitlist` | via `_downloadWaitlistCSV` |
 | `_loadBillingStatus` | `/api/billing-status` | direct |
 | `_loadBillingStatus` | `/api/create-portal-session` | via `_openBillingPortal` |
+| `_loadBillingStatus` | `/api/referral` | via `_refLoad` |
 | `_loadBookingSlug` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `_loadBookingSlug` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_loadBookingSlug` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -428,6 +440,7 @@ saved anywhere", not "does this always call that".
 | `_openPracticeDoc` | `/api/collection-pdf` | via `_plDocUrl` |
 | `_openPulse` | `/api/beta-event` | direct |
 | `_openPulse` | `/api/feedback` | via `_sendPulse` |
+| `_openPulse` | `/api/referral` | via `_refLoad` |
 | `_openReviewCard` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_openSendSheet` | `/api/automation-claim` | via `_ssSend` |
 | `_openSendSheet` | `/api/provider-message` | via `_sendProviderMessageToClient` |
@@ -498,11 +511,6 @@ saved anywhere", not "does this always call that".
 | `_pushVcSubsSlim` | `/api/guide-file` | via `_putFileBody` |
 | `_putFileBody` | `/api/guide-file` | direct |
 | `_putFileWithRetry` | `/api/guide-file` | via `_putFileBody` |
-| `_reRenderAttn` | `/api/clients` | via `_wholeSlimEvents` |
-| `_reRenderAttn` | `/api/provider-form` | via `_flushInPersonForms` |
-| `_reRenderAttn` | `/api/referral` | via `_refLoad` |
-| `_reRenderAttn` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `_reRenderAttn` | `/api/square/connect` | via `_sqConnect` |
 | `_recSearch` | `/api/admin/client-recover` | via `_recoverConsolidateAll` |
 | `_recSearch` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recSearch` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
@@ -555,6 +563,8 @@ saved anywhere", not "does this always call that".
 | `_refCount` | `/api/referral` | direct |
 | `_refHomeCardHTML` | `/api/referral` | via `_refLoad` |
 | `_refLoad` | `/api/referral` | direct |
+| `_refMoment` | `/api/referral` | via `_refLoad` |
+| `_refNudge` | `/api/referral` | via `_refLoad` |
 | `_refShare` | `/api/referral` | via `_refLoad` |
 | `_reloadAfterHydrate` | `/api/announcements` | via `_checkNews` |
 | `_reloadAfterHydrate` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -621,6 +631,7 @@ saved anywhere", not "does this always call that".
 | `_saveSummaryDate` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveWriteNote` | `/api/beta-event` | via `_pingChart` |
 | `_saveWriteNote` | `/api/feedback` | via `_sendPulse` |
+| `_saveWriteNote` | `/api/referral` | via `_refLoad` |
 | `_scanInkLabel` | `/api/ai` | via `_aiComplete` |
 | `_scheduleSpecificClientSync` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendAdHocBundle` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -642,6 +653,7 @@ saved anywhere", not "does this always call that".
 | `_sendFormClientRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendProviderMessageToClient` | `/api/provider-message` | direct |
 | `_sendPulse` | `/api/feedback` | direct |
+| `_sendPulse` | `/api/referral` | via `_refLoad` |
 | `_sendRebookInvite` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendRebookInvite` | `/api/logout` | via `_doLogout` |
 | `_sendRebookInvite` | `/api/native-push` | via `_doLogout` |
@@ -807,6 +819,9 @@ saved anywhere", not "does this always call that".
 | `_withClientToken` | `/api/logout` | via `_doLogout` |
 | `_withClientToken` | `/api/native-push` | via `_doLogout` |
 | `_withClientToken` | `/api/provider-push` | via `_doLogout` |
+| `_yearlyHomeCardHTML` | `/api/create-portal-session` | via `_openBillingPortal` |
+| `_yearlyHomeCardHTML` | `/api/referral` | via `_refLoad` |
+| `_yearlySkip` | `/api/referral` | via `_refLoad` |
 | `addClientProd` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `addSummaryGuide` | `/api/ai` | via `_aiComplete` |
 | `addSummaryGuide` | `/api/provider-message` | via `_sendProviderMessageToClient` |
@@ -989,6 +1004,7 @@ saved anywhere", not "does this always call that".
 | `renderForms` | `/api/course-versions` | via `_cvMarkDeleted` |
 | `renderGuidePreview` | `/api/guide-file` | via `_getGuideFile` |
 | `renderHome` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `renderHome` | `/api/create-portal-session` | via `_openBillingPortal` |
 | `renderHome` | `/api/referral` | via `_refLoad` |
 | `renderHome` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `renderHome` | `/api/square/connect` | via `_sqConnect` |
@@ -1062,6 +1078,7 @@ saved anywhere", not "does this always call that".
 | `renderWeekClients` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `renderWhatsNew` | `/api/announcements` | via `_sendAnnouncement` |
 | `renderWriteNote` | `/api/beta-event` | via `_pingChart` |
+| `renderWriteNote` | `/api/referral` | via `_refLoad` |
 | `renderWriteNote` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `requestCard` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `requestCard` | `/api/provider-message` | via `_sendProviderMessageToClient` |
@@ -1276,7 +1293,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcement_emails`, `announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_sources`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
+`announcement_emails`, `announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_sources`, `square_connections`, `square_create_log`, `subscription_pauses`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.

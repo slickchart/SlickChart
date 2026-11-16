@@ -3,6 +3,8 @@
 import { verifyToken, sessionOk } from '../lib/auth.js';
 import { dbEnabled, getSubscription, accountEmail } from '../lib/db.js';
 import { pastDueForEmail } from '../lib/stripe-subs.js';
+import { sql } from '../lib/db.js';
+import { subscriptionOffer } from '../lib/growth.js';
 
 function claims(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -34,6 +36,10 @@ export default async function handler(req, res) {
         if (behind && behind.url) { payUrl = behind.url; payLabel = behind.label; }
       } catch (e) { /* the banner still shows, it just points at the billing screen */ }
     }
-    res.status(200).json({ ok: true, subscription: sub, payUrl, payLabel });
+    // What this provider may be offered: the yearly card on Home (monthly payers in her chosen months)
+    // and a pause in place of cancelling (lib/growth.js). Added field; never fails the request.
+    let offer = null;
+    try { offer = await subscriptionOffer(sql(), email, sub); } catch (e) { offer = null; }
+    res.status(200).json({ ok: true, subscription: sub, payUrl, payLabel, offer });
   } catch (e) { console.error('[billing-status] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }
