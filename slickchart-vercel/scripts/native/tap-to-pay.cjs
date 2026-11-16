@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Switches Tap to Pay (Square Mobile Payments SDK 2.7.0) ON in the native projects.
+// Switches Tap to Pay (Square Mobile Payments SDK 2.7.0 iOS / 2.6.1 Android) ON in the native projects.
 //
 //   node scripts/native/tap-to-pay.cjs enable   [--ios] [--android]   (both when neither is given)
 //   node scripts/native/tap-to-pay.cjs check                          (prints what is/isn't applied)
@@ -22,6 +22,10 @@ const STAGE = path.join(ROOT, 'native-staging', 'tap-to-pay');
 const IOS = path.join(ROOT, 'ios', 'App');
 const AND = path.join(ROOT, 'android');
 const SDK_VERSION = '2.7.0';
+// Android stays on 2.6.1: 2.7.0 pulls Jetpack Compose 1.12.1, which needs compileSdk 37 and Android
+// Gradle plugin 9.1 (this project is on AGP 8.13 / compileSdk 36). 2.6.1 uses Compose 1.7.8 and builds.
+// Checked 2026-11-16 with a real gradle assembleDebug. Raise it together with AGP/compileSdk.
+const ANDROID_SDK_VERSION = '2.6.1';
 
 const args = process.argv.slice(2);
 const mode = args[0] || 'check';
@@ -150,8 +154,8 @@ function android() {
   const BG = path.join(AND, 'app', 'build.gradle');
   edit(BG, 'Android: Square maven repository', s => s.includes('sdk.squareup.com/public/android'),
     s => s.replace(/repositories \{\n/, "repositories {\n    maven { url 'https://sdk.squareup.com/public/android/' }\n"));
-  edit(BG, 'Android: Square SDK ' + SDK_VERSION, s => s.includes('com.squareup.sdk:mobile-payments-sdk'),
-    s => s.replace(/dependencies \{\n/, `dependencies {\n    implementation "com.squareup.sdk:mobile-payments-sdk:${SDK_VERSION}"\n`));
+  edit(BG, 'Android: Square SDK ' + ANDROID_SDK_VERSION, s => s.includes('com.squareup.sdk:mobile-payments-sdk'),
+    s => s.replace(/dependencies \{\n/, `dependencies {\n    implementation "com.squareup.sdk:mobile-payments-sdk:${ANDROID_SDK_VERSION}"\n`));
   const MF = path.join(AND, 'app', 'src', 'main', 'AndroidManifest.xml');
   edit(MF, 'Android: application class in the manifest', s => s.includes('android:name=".SlickChartApplication"'),
     s => s.replace('<application', '<application\n        android:name=".SlickChartApplication"'));

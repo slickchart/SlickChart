@@ -23,6 +23,16 @@ Every session: check this list whenever a change turns out to need a store build
   "needs the next Play build" / "needs the next App Store build" and fold them into the same build.
 
 ### Tap to Pay on the phone (Square Mobile Payments SDK 2.7.0) — ready, switched OFF until Apple's second yes
+- **2026-11-16 decision: ANDROID FIRST.** Ashley does not have an iPhone (her words: "i dont have an
+  iphone"), so Apple's review videos cannot be recorded yet; a simulator cannot do Tap to Pay. She chose
+  "Do Android Tap to Pay first". iPhone resumes when she can borrow an iPhone XS or newer for an hour
+  (dev build steps: `tap-to-pay.cjs enable --ios`, automatic Development signing, xcodebuild + devicectl).
+- **Android uses Square SDK 2.6.1, not 2.7.0** (`ANDROID_SDK_VERSION` in tap-to-pay.cjs): 2.7.0 pulls
+  Jetpack Compose 1.12.1, which needs compileSdk 37 + AGP 9.1 and fails this project's build. With 2.6.1,
+  `enable --android` + `cap sync android` + `gradlew assembleDebug` AND `assembleRelease` both compile
+  (checked 2026-11-16 with a real Android SDK in the cloud session).
+- **iOS fix 2026-11-16:** SDK 2.7.0 renamed `authorize(accessToken:` to `authorize(withAccessToken:`;
+  the staged Swift plugin is fixed (commit 674f05b).
 - **Ashley's choice (2026-11-16):** in-app Tap to Pay, not opening the Square app. Apple granted the
   Tap to Pay entitlement on 2026-11-16, but **for Development only**. An App Store or TestFlight archive
   with it fails until Apple approves distribution; she was given a reply to Apple's confirmation email
