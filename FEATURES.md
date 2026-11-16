@@ -1248,7 +1248,6 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/login` | POST | founder | POST /api/login  { email, password, totpCode? }  (email omitted => legacy APP_PASSWORD owner) |
 | `/api/logout` | POST | provider session | POST /api/logout  (provider session Bearer token) |
 | `/api/native-push` | DELETE, POST | provider session, client link token | POST/DELETE /api/native-push  — stores (or removes) a native device's push token from the Capacitor |
-| `/api/provider-count` | — | **public** | PUBLIC, no auth: how many providers are paying for SlickChart right now, for the landing page line |
 | `/api/provider-form` | POST | provider session | Provider-authed: record a form the provider captured IN PERSON (the "Sign on this device" flow) as a |
 | `/api/provider-message` | POST | provider session | Provider-authed: send a message to one specific real client. Stored as a |
 | `/api/provider-push` | GET, POST, DELETE | provider session | POST   /api/provider-push  { subscription }  → store this device's web-push subscription |

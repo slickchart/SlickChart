@@ -24,7 +24,6 @@ const ALLOW={
   'client-code.js':'passwordless: same',
   'build-id.js':'returns the build string only',
   'cloud-status.js':'returns whether sync is enabled',
-  'provider-count.js':'one aggregate count of paying providers, rounded down; no rows, no identities',
   // Login-email change. Its only owner-less statements are "is this address already some account's
   // login" (the same uniqueness check signup makes); no row is returned, the request answers the same
   // either way, and every read or write of an account is by the session's id or the one-time token's.

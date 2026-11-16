@@ -9520,3 +9520,5 @@ Ashley picked "landing page proof + yearly first" from the growth plan, and said
   free) and its button first; monthly is the second button. Hero, banner and quotes unchanged.
 
 Tests: `scratchpad/test-growth-ui.mjs` 77/77 in Chromium and WebKit (section 5b is the quote ask).
+
+**Later the same evening:** Ashley: "lets just remove that line". The provider count line, `/api/provider-count` and the `grow_count_*` settings are gone. The yearly-first pricing and the quote ask stay.
