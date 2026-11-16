@@ -659,6 +659,28 @@ always."* It came after a recovery that made her tap, screenshot and come back s
   provider. Ask a provider only for what no device can know (what they saw, what they expected), and
   in one short question.
 
+## 4f. Anything for Etsy: check Etsy's OWN policy pages first (her rule, 2026-11-15)
+
+On 2026-11-15 two AI prompt packs were built for her Etsy shop and listed. Etsy removed them within the
+hour and gave the shop a policy violation: **lists of prompts for AI text or image generators are not
+allowed on Etsy at all** (Creativity Standards). The rule was findable; it was not checked. Her words:
+*"that got me a violation so you need to double check yourself."* Repeat violations can cost the Star
+Seller badge or suspend the shop that sells her form collections, so before proposing, building or
+listing anything for Etsy:
+
+1. **Read Etsy's own pages, not a blog about them:** the Creativity Standards, the Prohibited Items
+   policy, the Off-Platform Transactions policy (etsy.com/legal/policy/off-platform-transactions/1254654515806)
+   and the Seller Policy. Quote the line that allows the item in the reply to her.
+2. **Not allowed:** AI prompt lists or prompt packs, services, and anything that sends a buyer off Etsy:
+   no web address, link or **QR code** to slickchart.app or any outside site in the title, description,
+   photos or the downloaded files. (The Open Your Own Suite Kit was cleaned of these the same night.)
+   Links INTO Etsy from her own site are fine.
+3. **Never suggest a way around a removal** (renaming, unticking the AI disclosure, relisting). The AI
+   disclosure must stay truthful.
+4. **Her Etsy listing links (Share & Save):** Full Suite Kit https://slickchart.etsy.com/listing/4618269102,
+   Starter https://slickchart.etsy.com/listing/4618263805. Use them exactly as given anywhere outside
+   Etsy; do not add tracking parameters.
+
 ## 5. Tone with the owner
 
 The owner (Ashley, a solo esthetician) runs her real business on this and has been through a stressful data
