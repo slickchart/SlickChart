@@ -4,7 +4,6 @@ h1: Moving your clients onto your own app without losing anyone
 description: Your clients do not migrate, they get invited. What to bring over, what to tell them, and how to make moving to your own app easy for clients.
 date: 2026-11-16
 keywords: move clients to new booking app, switch booking app clients, own booking app, client app launch, build your own app, beauty business app, build an app with ai
-draft: true
 ---
 
 Once your own app works, a new worry arrives. Your clients already know how to book you. They have a link saved, a habit, maybe an app on their phone. What happens to them when you change?
@@ -37,7 +36,7 @@ Two things are worth extra care:
 The best client experience is one where very little changes for them.
 
 - **Keep the old way working for a while.** If you can, let the old booking link keep working, or point it at your new one, rather than leaving clients with a dead end.
-- **Do not make installing anything a requirement.** A link that opens in their browser, which they can add to their home screen if they like, asks far less of a client than "download this app first." I wrote about why in [you might not need the app stores](/build/blog/do-you-need-the-app-stores).
+- **Do not make installing anything a requirement.** When I moved my own clients onto my app, the feedback was great, and the one concern I heard was from clients who did not want to be forced to download another app. So I made sure everything works from a link, with no download needed. A link that opens in their browser, which they can add to their home screen if they like, asks far less of a client than "download this app first." I wrote about why in [you might not need the app stores](/build/blog/do-you-need-the-app-stores).
 - **One link, everywhere.** Your Instagram bio, your website, your text signature, your appointment reminders. Change them all on the same day, so clients only ever see one answer.
 
 ## Tell your regulars yourself
