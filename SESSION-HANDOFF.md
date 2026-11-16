@@ -9513,7 +9513,7 @@ Ashley picked "landing page proof + yearly first" from the growth plan, and said
   prompt that time; a 4 still gets the referral prompt. Settings `grow_quote_on`, `grow_quote_days`
   reach the app through `/api/referral` (`quoteOn`, `quoteDays`, added fields).
 - **`/api/provider-count`** (public, no auth, in the tenant-isolation ALLOW list): one number, providers
-  paying now (active/past_due, not on a trial), rounded DOWN to 5, 0 until `grow_count_min` (20) or when
+  paying now (active/past_due, not on a trial), rounded DOWN to 5, 0 until `grow_count_min` (100, was 20: Ashley found 45 too small to show) or when
   `grow_count_on` is off. Cached an hour at the edge. The landing page shows "Join N+ beauty pros" only
   when it answers above 0, so the page goes out first and the line appears once this deploys.
 - **index.html (main):** the pricing card leads with yearly ($170/year, about $14.17 a month, 2 months

@@ -48,9 +48,11 @@ export const REFERRAL_SETTINGS = {
   grow_import_below:    { def: 5,   min: 1, max: 1000, label: '"Few clients" means fewer than', unit: 'clients' },
   // The landing page line "Join 45+ beauty pros already using SlickChart" (api/provider-count.js): the
   // number is the providers paying right now, rounded DOWN to a step of 5, and the line only shows once
-  // it is at least this many. Off = the line never shows.
+  // it is at least this many (starts at 100). Off = the line never shows.
   grow_count_on:        { def: 1,   min: 0, max: 1,    label: 'Show "Join N+ beauty pros" on the landing page (1) or not (0)', unit: '' },
-  grow_count_min:       { def: 20,  min: 1, max: 100000, label: 'Show that line once at least this many are paying', unit: 'providers' },
+  // Starts at 100 (Ashley, 2026-11-15: "is this part really valuable with such a low number? that scare
+  // me"). A small number reads as "nobody uses this", so the line stays hidden until it is big enough.
+  grow_count_min:       { def: 100, min: 1, max: 100000, label: 'Show that line once at least this many are paying', unit: 'providers' },
   grow_quote_on:        { def: 1,   min: 0, max: 1,    label: 'Ask providers who give a 5 for a quote for the website (1) or not (0)', unit: '' },
   grow_quote_days:      { def: 120, min: 7, max: 3650, label: 'Ask the same provider for a quote at most once every', unit: 'days' },
 };
