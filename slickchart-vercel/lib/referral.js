@@ -48,6 +48,13 @@ export const REFERRAL_SETTINGS = {
   grow_import_below:    { def: 5,   min: 1, max: 1000, label: '"Few clients" means fewer than', unit: 'clients' },
   grow_quote_on:        { def: 1,   min: 0, max: 1,    label: 'Ask providers who give a 5 for a quote for the website (1) or not (0)', unit: '' },
   grow_quote_days:      { def: 120, min: 7, max: 3650, label: 'Ask the same provider for a quote at most once every', unit: 'days' },
+  // Win-back emails to providers who left (lib/nurture.js runWinback). Each lists what is new in
+  // SlickChart since they left (What's new posts); with nothing new, that email is not sent.
+  grow_winback_on:      { def: 1,   min: 0, max: 1,    label: 'Win-back emails to providers who left (1 on, 0 off)', unit: '' },
+  grow_winback_days1:   { def: 30,  min: 7, max: 365,  label: 'First win-back email, this long after they left', unit: 'days' },
+  grow_winback_days2:   { def: 90,  min: 14, max: 730, label: 'Second (last) win-back email, this long after they left', unit: 'days' },
+  grow_winback_trials:  { def: 1,   min: 0, max: 1,    label: 'Also send them to people who left during the free trial, never paid (1 on, 0 off)', unit: '' },
+  grow_winback_max_days:{ def: 180, min: 30, max: 1095, label: 'Never email someone who left longer ago than', unit: 'days' },
 };
 export const DEFAULT_SHARE_MESSAGE = 'I use SlickChart for my charts, forms and client photos. Use my code {code} for your first month free: {link}';
 const MESSAGE_KEY = 'ref_share_message';
@@ -76,6 +83,7 @@ export async function getReferralSettings(q) {
   } catch (e) {}
   // The yearly window can never run backwards.
   if (out.grow_yearly_to < out.grow_yearly_from) out.grow_yearly_to = out.grow_yearly_from;
+  if (out.grow_winback_days2 <= out.grow_winback_days1) out.grow_winback_days2 = out.grow_winback_days1 + 7;
   return out;
 }
 

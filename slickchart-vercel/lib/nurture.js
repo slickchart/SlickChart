@@ -358,7 +358,7 @@ export async function runNurture() {
   // Her growth settings (lib/referral.js): the "few clients" line and the trial-ending email's timing.
   let gs = null;
   try { gs = await getReferralSettings(q); } catch (e) { gs = null; }
-  const settings = gs || { grow_import_below: 5, grow_trial_end_days: 3, grow_import_offer: 1 };
+  const settings = gs || { grow_import_below: 5, grow_trial_end_days: 3, grow_import_offer: 1, grow_winback_on: 0 };
   for (const row of providers) {
     if (unsub.has(String(row.email || '').toLowerCase())) continue;
     // What she has done, read only if a step that needs it is due (lib/nurture.js providerFacts).
@@ -371,7 +371,115 @@ export async function runNurture() {
   summary.trialend = 0;
   try { await runTrialEnding(q, unsub, settings, summary); } catch (e) { summary.errors++; console.error('[nurture] trial-ending failed', e && e.message || e); }
 
+  // Providers who left: a short "what's new since you left" note, at most twice (her settings).
+  summary.winback = 0;
+  try { if (settings.grow_winback_on) await runWinback(q, unsub, settings, summary); } catch (e) { summary.errors++; console.error('[nurture] win-back failed', e && e.message || e); }
+
   return summary;
+}
+
+// ─── WIN-BACK ────────────────────────────────────────────────────────────────────
+// Ashley, 2026-11-16: "do build in the win back emails". A provider who left (cancelled after paying,
+// or, if she allows it, left during the free trial) gets at most TWO emails: N1 and N2 days after
+// leaving (her settings). Each lists the What's new posts made SINCE THEY LEFT; with nothing new the
+// email is not sent. Coming back is "sign in": the app's own renew screen shows her right price (an
+// early provider keeps hers) and the right checkout, so nothing here builds a payment link.
+// Never: someone paying again, someone who deleted their account (no providers row), someone who
+// unsubscribed, someone who left longer ago than grow_winback_max_days, or two of our emails in a day.
+export function winbackEmail(c) {
+  const items = (c.updates || []).slice(0, 5);
+  const second = c.step === 1;
+  const subject = second ? 'Still here for you, ' + c.first + '. A few new things in SlickChart' : 'What’s new in SlickChart since you left';
+  const li = items.map(u => `<li style="margin:0 0 10px;"><strong>${esc(u.title)}</strong>${u.body ? '<br><span style="color:#555;">' + esc(_short(u.body)) + '</span>' : ''}</li>`).join('');
+  const lt = items.map(u => '- ' + u.title + (u.body ? ': ' + _short(u.body) : '')).join('\n');
+  const intro = second
+    ? 'It’s Ashley again. I keep building SlickChart with the providers who use it every day, and a lot has changed since you left:'
+    : 'It’s Ashley from SlickChart. I wanted to share what we’ve added since you left. Many of these came straight from provider feedback:';
+  const introT = intro.replace(/’/g, "'");
+  const kept = 'Your account and everything in it are still there, so if you come back, it’s all where you left it.';
+  return {
+    subject,
+    html: wrap(`
+      <p>Hi ${esc(c.first)},</p>
+      <p>${intro}</p>
+      <ul style="padding-left:20px;margin:0 0 14px;">${li}</ul>
+      <p>${kept}</p>
+      ${btn(SITE + '/slickchart', 'Come back to SlickChart')}
+      <p style="font-size:14px;color:#777;">Sign in with your usual email and password. If something made SlickChart hard to use, just reply and tell me. I read every one.</p>`, c.email),
+    text: `Hi ${c.first},\n\n${introT}\n\n${lt}\n\n${kept.replace(/’/g, "'")}\n\nCome back to SlickChart: ${SITE}/slickchart\nSign in with your usual email and password. If something made SlickChart hard to use, just reply and tell me. I read every one.\n\nWith love,\nAshley${footerText(c.email)}`,
+  };
+}
+function _short(t) {
+  const s = String(t || '').replace(/\s+/g, ' ').trim();
+  return s.length > 160 ? s.slice(0, 157).replace(/\s+\S*$/, '') + '…' : s;
+}
+
+async function runWinback(q, unsub, settings, summary) {
+  const d1 = settings.grow_winback_days1, d2 = settings.grow_winback_days2, maxD = settings.grow_winback_max_days;
+  let rows = [];
+  try {
+    // One row per email (subscriptions is keyed by email). Left = the subscription ended, never a pause.
+    // When they left: the trial record's end/cancel time when there is one, else the row's last update.
+    rows = await q`SELECT s.email, s.paid_notified_at, p.name,
+        extract(epoch from COALESCE(t.ended_at, t.canceled_at, s.updated_at)) * 1000 AS left_ms,
+        t.outcome
+      FROM subscriptions s
+      JOIN providers p ON lower(p.email) = s.email
+      LEFT JOIN LATERAL (SELECT outcome, ended_at, canceled_at FROM trial_outcomes tt WHERE tt.email = s.email
+        ORDER BY trial_start DESC NULLS LAST LIMIT 1) t ON true
+      WHERE s.status IN ('canceled', 'unpaid', 'incomplete_expired')
+        AND s.email NOT IN (SELECT email FROM nurture_optout)`;
+  } catch (e) {
+    try {
+      rows = await q`SELECT s.email, s.paid_notified_at, p.name, extract(epoch from s.updated_at) * 1000 AS left_ms, NULL AS outcome
+        FROM subscriptions s JOIN providers p ON lower(p.email) = s.email
+        WHERE s.status IN ('canceled', 'unpaid', 'incomplete_expired') AND s.email NOT IN (SELECT email FROM nurture_optout)`;
+    } catch (e2) { return; }
+  }
+  const now = Date.now();
+  const updatesCache = {};
+  for (const r of rows) {
+    const email = String(r.email || '').trim().toLowerCase();
+    if (!email || unsub.has(email)) continue;
+    const leftMs = Number(r.left_ms) || 0;
+    if (!leftMs) continue;
+    const days = (now - leftMs) / 86400000;
+    if (days < d1 || days > maxD) continue;
+    const paid = !!r.paid_notified_at || r.outcome === 'canceled_after_paying';
+    if (!paid && !settings.grow_winback_trials) continue;
+    // The latest step that is due. A provider first seen past day N2 gets only the last email, never two
+    // in a row; the earlier one is marked done without sending.
+    const step = days >= d2 ? 1 : 0;
+    const have = await q`SELECT step FROM nurture_sends WHERE email = ${email} AND seq = 'winback'`;
+    const done = new Set(have.map(h => Number(h.step)));
+    if (done.has(step)) continue;
+    // The two win-back emails are never close together, even when the first went late (it waits for news).
+    const lastWb = await q`SELECT 1 FROM nurture_sends WHERE email = ${email} AND seq = 'winback' AND sent_at > now() - interval '21 days' LIMIT 1`;
+    if (lastWb.length) continue;
+    const recent = await q`SELECT 1 FROM nurture_sends WHERE email = ${email} AND seq <> 'winback' AND sent_at > now() - interval '20 hours' LIMIT 1`;
+    if (recent.length) continue;
+    const key = String(Math.floor(leftMs / 3600000));
+    let updates = updatesCache[key];
+    if (!updates) {
+      try { updates = updatesCache[key] = await q`SELECT title, body FROM announcements WHERE ts > to_timestamp(${leftMs / 1000}) ORDER BY ts DESC LIMIT 5`; }
+      catch (e) { updates = updatesCache[key] = []; }
+    }
+    if (!updates.length) continue;   // nothing new to tell her: wait (a later post may make it worth sending)
+    const claimed = await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, 'winback', ${step})
+      ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`;
+    if (!claimed.length) continue;
+    if (step === 1 && !done.has(0)) { try { await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, 'winback', 0) ON CONFLICT DO NOTHING`; } catch (e) {} }
+    const first = String(r.name || '').trim().split(/\s+/)[0] || 'there';
+    const m = winbackEmail({ first, email, step, updates });
+    try {
+      await sendEmail({ to: email, from: FROM, replyTo: REPLY_TO, subject: m.subject, html: m.html, text: m.text });
+      summary.winback++;
+    } catch (e) {
+      await q`DELETE FROM nurture_sends WHERE email=${email} AND seq='winback' AND step=${step}`;
+      summary.errors++;
+      console.error('[nurture] win-back send failed', email, e && e.message || e);
+    }
+  }
 }
 
 async function runTrialEnding(q, unsub, settings, summary) {

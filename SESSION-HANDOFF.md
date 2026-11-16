@@ -9524,3 +9524,19 @@ Ashley picked "landing page proof + yearly first" from the growth plan, and said
 Tests: `scratchpad/test-growth-ui.mjs` 77/77 in Chromium and WebKit (section 5b is the quote ask).
 
 **Later the same evening:** Ashley: "lets just remove that line". The provider count line, `/api/provider-count` and the `grow_count_*` settings are gone. The yearly-first pricing and the quote ask stay.
+
+## 2026-11-16 — Win-back emails to providers who left (PREVIEW, server only)
+
+Ashley: *"also do build in the win back emails you mentioned yesterday"*, fully automated. `lib/nurture.js`
+`runWinback` (hourly, inside `/api/cron-nurture`): a provider whose subscription ended (canceled /
+unpaid / incomplete_expired; a pause is NOT leaving) gets at most TWO emails, `grow_winback_days1` (30)
+and `grow_winback_days2` (90) days after leaving. Each lists the What's new posts (`announcements`)
+made SINCE they left; nothing new = not sent (it waits for a post). First seen past day N2 = only the
+last email. Never two win-backs within 21 days, never within 20 h of another nurture email, never to
+anyone unsubscribed, paying again, with no providers row (deleted account), or who left more than
+`grow_winback_max_days` (180) ago. Trial leavers who never paid only when `grow_winback_trials` is on.
+Coming back = "sign in": the app's renew screen gives her right price (early providers keep theirs), so
+the email carries no payment link. Claims: `nurture_sends` seq `winback`, steps 0/1. Settings in Admin
+tools, Referrals. Tests: `scratchpad/test-growth-nurture.mjs` (win-back block). The "feature they asked
+for shipped" idea is NOT matched per person (feedback cannot be reliably paired with a post); the email
+lists everything new instead.
