@@ -76,7 +76,20 @@ jobs:
 
       - name: Build the installer
         working-directory: slickchart-vercel/desktop
-        run: npm run ${{ matrix.script }}
+        shell: bash
+        # An EMPTY CSC_LINK is read as a path (the folder itself) and fails "not a file", so drop the
+        # signing variables when no certificate secret exists. An unsigned Mac app will not open at
+        # all on Apple-chip Macs, so without a certificate the Mac build is signed ad hoc ("-"):
+        # it opens after System Settings > Privacy & Security > Open Anyway. A Developer ID
+        # certificate (secrets above) removes that step.
+        run: |
+          EXTRA=""
+          if [ -z "$CSC_LINK" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            if [ "${{ matrix.name }}" = "mac" ]; then EXTRA="-c.mac.identity=- -c.mac.notarize=false"; fi
+          fi
+          if [ -z "$APPLE_ID" ]; then unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; fi
+          npm run ${{ matrix.script }} -- $EXTRA
         env:
           # Mac signing + notarization (only used if the secrets exist; otherwise unsigned).
           CSC_LINK: ${{ (matrix.name == 'mac' && secrets.MAC_CSC_LINK) || (matrix.name == 'windows' && secrets.WIN_CSC_LINK) || '' }}
