@@ -1,3 +1,6 @@
+# (Moved 2026-11-16 from slickchart-vercel/.github/, where GitHub never saw it: workflows only run
+# from the repo root's .github/workflows.)
+#
 # Builds the downloadable SlickChart desktop installers in the cloud — no Mac/Windows machine
 # needed. GitHub runs the Mac build on a Mac and the Windows build on Windows, then hands you the
 # finished .dmg and .exe.
@@ -26,6 +29,15 @@ on:
   push:
     tags:
       - 'desktop-v*'
+    # Also build whenever the desktop shell itself changes on a branch, so a broken shell shows up
+    # as a red check before anyone tries to install it. (Web-app changes don't need a desktop
+    # rebuild: the shell loads the live site.)
+    branches-ignore:
+      - main
+      - release
+    paths:
+      - 'slickchart-vercel/desktop/**'
+      - '.github/workflows/desktop-build.yml'
 
 permissions:
   contents: write
@@ -43,11 +55,11 @@ jobs:
           - os: macos-latest
             name: mac
             script: build:mac
-            pattern: desktop/dist/*.dmg
+            pattern: slickchart-vercel/desktop/dist/*.dmg
           - os: windows-latest
             name: windows
             script: build:win
-            pattern: desktop/dist/*.exe
+            pattern: slickchart-vercel/desktop/dist/*.exe
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
@@ -60,11 +72,11 @@ jobs:
           node-version: 20
 
       - name: Install desktop dependencies
-        working-directory: desktop
+        working-directory: slickchart-vercel/desktop
         run: npm install
 
       - name: Build the installer
-        working-directory: desktop
+        working-directory: slickchart-vercel/desktop
         run: npm run ${{ matrix.script }}
         env:
           # Mac signing + notarization (only used if the secrets exist; otherwise unsigned).

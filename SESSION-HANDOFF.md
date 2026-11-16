@@ -9537,3 +9537,19 @@ Deposits toggle without Square now offers "Set up Square" -> square-guide. Test:
 (26 checks, Chromium; WebKit was not installed in that session, UI-only change, no storage/sync touched).
 Payments strategy write-up (Square app fee via `app_fee_money`, Square App Marketplace processing rev share,
 Stripe Connect as a later fallback): Claude Doc "Taking payments in SlickChart: options and recommendation".
+
+### 2026-11-16: desktop and tablet apps (thread "Build desktop and tablet apps")
+Ashley asked for the builds not done yet: desktop and tablets, Apple and Android.
+- **App side (preview, out overnight):** `:root.sc-app-full` (set before first paint when
+  `window.slickchartDesktop` or Capacitor native) makes the app fill its window in the Mac/Windows
+  app and in any store app, incl. the iPad app on a Mac. A desktop BROWSER keeps the 390px frame.
+  The "download the app" banner no longer shows inside the desktop app.
+  `scratchpad/test-desktop-shell-layout.mjs` 6/6 Chromium AND WebKit; `sweep-android-layout all` 13/13.
+- **The desktop build workflow never ran:** it lived in `slickchart-vercel/.github/workflows/`, and
+  GitHub only reads the repo root's `.github/workflows/`. Moved to `.github/workflows/desktop-build.yml`
+  (paths fixed) and it now also runs on a branch push that touches `slickchart-vercel/desktop/**`.
+- **Electron 32 -> 45, electron-builder 25 -> 26** (32 was out of security support for a shell that
+  shows client PII). Desktop app version 1.0.0.
+- **iPad:** see NEXT-STORE-BUILD.md (1.0.5 (8), device family 1,2).
+- Desktop app gets no push notifications (web push does not work inside Electron); founder alerts
+  (§0b) still reach her phones. Noted, not built.

@@ -21,3 +21,18 @@ Every session: check this list whenever a change turns out to need a store build
   build), then 1-3 days of store review.
 - **Also still waiting (from SESSION-HANDOFF):** check the earlier native items noted there as
   "needs the next Play build" / "needs the next App Store build" and fold them into the same build.
+
+## Already in the repo for the next iPhone build (2026-11-16)
+
+### iPad (and Macs with Apple chips) — Ashley asked for this build on 2026-11-16
+- `TARGETED_DEVICE_FAMILY = "1,2"` in `ios/App/App.xcodeproj/project.pbxproj`, version **1.0.5 (8)**.
+  Info.plist already allowed every iPad orientation (needed for iPad multitasking) and the app
+  already fills an iPad's screen (`pointer:coarse` rule, 2026-10-21) — and now `.sc-app-full`
+  fills the window in any store app, so the iPad app running on a Mac is not a phone card either.
+- Platform checks use `Capacitor.getPlatform()`, which says `ios` on an iPad (iPad WebKit reports
+  "Macintosh" in its user agent, so never add a `/iPhone|iPad/` check for the native app).
+- App Store Connect then needs **13-inch iPad screenshots (2064 x 2752)** — made in
+  `/mnt/project-files/store-screenshots/ipad-13/` — and Mac availability is a tick in
+  Pricing and Availability ("Make this app available on Mac"), no separate build.
+- Android tablets need **no new build**: the same Play app already installs and fills tablets. Play
+  only wants 7-inch and 10-inch tablet screenshots on the listing (`store-screenshots/android-*`).
