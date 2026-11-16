@@ -187,14 +187,16 @@ export const PROVIDER_SEQUENCE = [
       <p>SlickChart feels like home once your clients are in it. There are two quick ways:</p>
       <p style="margin:0 0 4px;">1. <strong>Use Square?</strong> Connect it and your clients and bookings come in on their own.<br>2. <strong>Coming from another app or a spreadsheet?</strong> Tap Import clients and pick the file. It reads the columns for you.</p>
       ${btn(SITE + '/slickchart?n=go&i=import-clients', 'Import my clients')}
-      <p>Stuck on an export from your old app? Reply to this email and tell me which app. I’ll point you to the right button.</p>`, c.email),
-    text: (c) => `Hi ${c.first},\n\nSlickChart feels like home once your clients are in it. Two quick ways:\n1. Use Square? Connect it and your clients and bookings come in on their own.\n2. Coming from another app or a spreadsheet? Tap Import clients and pick the file. It reads the columns for you.\n\nImport my clients: ${SITE}/slickchart?n=go&i=import-clients\n\nStuck on an export from your old app? Reply and tell me which app. I'll point you to the right button.\n\nWith love,\nAshley${footerText(c.email)}`,
+      <p>No file yet? In your old app, look for <strong>Export clients</strong> or <strong>Download clients</strong>. That gives you the file to pick.</p>`, c.email),
+    text: (c) => `Hi ${c.first},\n\nSlickChart feels like home once your clients are in it. Two quick ways:\n1. Use Square? Connect it and your clients and bookings come in on their own.\n2. Coming from another app or a spreadsheet? Tap Import clients and pick the file. It reads the columns for you.\n\nImport my clients: ${SITE}/slickchart?n=go&i=import-clients\n\nNo file yet? In your old app, look for Export clients or Download clients. That gives you the file to pick.\n\nWith love,\nAshley${footerText(c.email)}`,
   },
 ];
 
 // ─── TRIAL ENDING ───────────────────────────────────────────────────────────────
 // One email, a few days before a free trial ends (her setting grow_trial_end_days). Few clients and no
-// Square: the "we'll bring your clients in" offer (her setting grow_import_offer; replies come to her).
+// Square: how to bring her clients in herself with the importer (her setting grow_import_offer). It is
+// SELF-SERVE on purpose (Ashley, 2026-11-15: "make sure this is something you are able to do in an
+// automated manner so its not me doing more work"): no "send us your file" offer, nothing lands on her.
 // Otherwise: what she has set up so far, and what happens next. Always says plainly how to cancel.
 function _fmtDay(ts) {
   try { return new Date(ts).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' }); } catch (e) { return ''; }
@@ -215,14 +217,15 @@ export function trialEndEmail(c) {
   const cancelText = "Not for you? Cancel any time before then in Settings, Subscription & Billing, and you won't be charged.";
   if (fewClients && c.importOffer) {
     return {
-      subject: 'Your free trial ends ' + (when || 'soon') + '. Want help bringing your clients in?',
+      subject: 'Your free trial ends ' + (when || 'soon') + '. Bring your clients in first?',
       html: wrap(`
         <p>Hi ${esc(c.first)},</p>
         <p>Your free trial ends on <strong>${esc(when)}</strong>. Most providers fall in love with SlickChart once their own clients are in it, so let’s get yours in.</p>
-        <p style="margin:0 0 4px;">1. <strong>Do it yourself in about 2 minutes:</strong> tap Import clients and pick a spreadsheet or the export from your old app.<br>2. <strong>Or let us do it:</strong> reply to this email with that file attached and we’ll bring your clients in for you.</p>
+        <p style="margin:0 0 4px;"><strong>It takes about 2 minutes:</strong> tap Import clients and pick a spreadsheet or the export from your old app. You see how every column matches before anything saves, and you can undo it.</p>
         ${btn(SITE + '/slickchart?n=go&i=import-clients', 'Import my clients')}
+        <p>No file yet? In your old app, look for <strong>Export clients</strong> or <strong>Download clients</strong>. That gives you the file to pick.</p>
         <p style="font-size:14px;color:#777;">${cancelLine}</p>`, c.email),
-      text: `Hi ${c.first},\n\nYour free trial ends on ${when}. Most providers fall in love with SlickChart once their own clients are in it, so let's get yours in.\n\n1. Do it yourself in about 2 minutes: tap Import clients and pick a spreadsheet or the export from your old app.\n${SITE}/slickchart?n=go&i=import-clients\n2. Or let us do it: reply to this email with that file attached and we'll bring your clients in for you.\n\n${cancelText}\n\nWith love,\nAshley${footerText(c.email)}`,
+      text: `Hi ${c.first},\n\nYour free trial ends on ${when}. Most providers fall in love with SlickChart once their own clients are in it, so let's get yours in.\n\nIt takes about 2 minutes: tap Import clients and pick a spreadsheet or the export from your old app. You see how every column matches before anything saves, and you can undo it.\n${SITE}/slickchart?n=go&i=import-clients\n\nNo file yet? In your old app, look for Export clients or Download clients. That gives you the file to pick.\n\n${cancelText}\n\nWith love,\nAshley${footerText(c.email)}`,
     };
   }
   const done = [];

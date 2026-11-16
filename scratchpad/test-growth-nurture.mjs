@@ -84,7 +84,7 @@ await db.query(`INSERT INTO trial_outcomes VALUES ('s1','few@x.com',$1,$2,'trial
   [ago(12), new Date(now + 2 * DAY).toISOString(), new Date(now + 9 * DAY).toISOString()]);
 SENT.length = 0; sum = await runNurture();
 const few = to('few@x.com')[0] || {}, set = to('set@x.com')[0] || {}, yr = to('yr@x.com')[0] || {};
-ok(/Want help bringing your clients in/.test(few.subject || '') && /reply to this email with that file/.test(few.html || ''), 'few clients: trial-ending email offers to bring them in', few.subject);
+ok(/Bring your clients in first/.test(few.subject || '') && /Import my clients/.test(few.html || '') && !/reply to this email with that file|we.ll bring|send us/i.test(few.html + few.text), 'few clients: trial-ending email shows the self-serve import, never a "send us your file" offer', few.subject);
 ok(/Cancel any time before then/.test(few.html || ''), 'it always says plainly how to cancel');
 ok(/Your free trial ends/.test(set.subject || '') && /30 clients/.test(set.html) && /2 forms and check-ins/.test(set.html) && /Square connected/.test(set.html), 'set up: shows what she has done', set.html && set.html.slice(0, 0));
 ok(/\$17 a month/.test(set.html || '') && /\$170/.test(set.html || ''), 'set up, monthly: says the price and offers yearly');

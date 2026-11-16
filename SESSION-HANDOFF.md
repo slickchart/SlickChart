@@ -9426,8 +9426,10 @@ email days before (3), import offer on/off and the client count below which it i
   `since: 2026-11-16` so providers who signed up earlier never get it. Steps now run in day order.
   `runTrialEnding` sends ONE trial-ending email per trial (`nurture_sends` seq `trialend`), N days
   before `trial_end`, never within 20 h of another nurture email, respecting opt-out. With few
-  clients and no Square it offers "reply with your export file and we'll bring them in" — **those
-  replies come to Ashley's support inbox**. Otherwise it lists what she set up, the price, and the
+  clients and no Square it points her at the SELF-SERVE importer (`?n=go&i=import-clients`). **Changed
+  the same night:** it first offered "reply with your file and we'll bring them in", which would have
+  meant Ashley importing by hand; she asked for it to be automated, so every email now says import it
+  yourself and no email offers to do it for them (the day-1 email's "reply and tell me which app" too). Otherwise it lists what she set up, the price, and the
   yearly option. `providerFacts` counts only (clients from kv `sc_clients`, Square connected,
   forms/check-ins back); unknown facts never skip a step.
 - **Yearly card** (`lib/growth.js` `offerFor`, Home `#grow-home-slot`): monthly payers whose month
