@@ -71,3 +71,5 @@ I want to be straight about the limit. Using your app like a person tells you wh
 Everything else you can check yourself, today, with no code and no tools. Being non-technical is not the obstacle. Knowing what the app is supposed to do is the rare part, and you already have it. If you want the ordered version, [the free walkthrough of the first steps is here](/free).
 
 I wrote about [describing what you want clearly enough to get it back](/build/blog/describing-what-you-want-built) separately, because a good description stops half of these bugs getting built at all.
+
+The [Master Build Roadmap](/build-any-business) has a ready made testing prompt that runs through these checks screen by screen, along with the rest of the build in order.
