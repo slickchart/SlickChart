@@ -370,7 +370,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-16a';
+const APP_BUILD='2026-11-16b';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -38249,6 +38249,8 @@ function _billingHTML(sub){
   const _go=_growOfferNow();
   const paused=!!(_go&&_go.paused&&active&&!ending);
   const pausedDate=paused?_growDay(_go.pausedUntil):'';
+  const pauseLocked=paused&&_growLockedNow();
+  const pauseStartDate=paused&&_go.pauseStartsAt?_growDay(_go.pauseStartsAt):'';
   const statusLabel=ending?'Ending':paused?'Paused':active?'Active':pastDue?'Payment failed':sub?'Canceled':'No subscription found';
   const statusColor=ending?'bm':active?'bg':pastDue?'br':'bm';
   // plan_interval is 'year' on the yearly plan; missing (older rows, older server) means monthly.
@@ -38280,8 +38282,8 @@ function _billingHTML(sub){
     <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal('resume')"><i class="ti ti-rotate" style="color:var(--accent-strong);"></i> Keep my subscription</button>
     <div style="font-size:14px;color:var(--p-mut);line-height:1.6;text-align:center;padding:0 6px;">You\u2019ve cancelled. Nothing more will be charged, and you keep everything until ${nextDate}. Change your mind before then and this puts it back.</div>
     `:paused?`
-    <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_growUnpause()"><i class="ti ti-player-play" style="color:var(--accent-strong);"></i> Resume billing now</button>
-    <div style="font-size:14px;color:var(--p-mut);line-height:1.6;text-align:center;padding:0 6px;margin-bottom:14px;">Your plan is paused. You keep using SlickChart as normal, nothing is charged, and billing starts again on its own on ${pausedDate}.</div>
+    <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_growUnpause()"><i class="ti ti-player-play" style="color:var(--accent-strong);"></i> ${pauseLocked?'Resume now':'Cancel the pause'}</button>
+    <div style="font-size:14px;color:var(--p-mut);line-height:1.6;text-align:center;padding:0 6px;margin-bottom:14px;">${pauseLocked?`Your plan is paused until ${pausedDate}. Resuming now charges your card today.`:`You have SlickChart as normal until ${pauseStartDate||'the end of the time you’ve paid for'}. Then it is locked while paused, with everything kept safe, until billing starts again on ${pausedDate}. Cancelling the pause now charges nothing.`}</div>
     <button onclick="_openBillingPortal('cancel')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;">Cancel subscription</button>
     `:`
     ${(active&&sub.plan_interval!=='year'&&!_isNativeApp())?`<button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal('yearly')"><i class="ti ti-calendar-check" style="color:var(--accent-strong);"></i> Switch to yearly &middot; $${_yearlyFor(sub)}/year, 2 months free</button>`:''}
@@ -38328,6 +38330,7 @@ function _supportEmail(){try{return (window.SLICKCHART_SUPPORT_EMAIL||'support@s
 let _growOffer=null,_growSub=null,_growTok='';
 function _growSet(j,tok){
   _growOffer=(j&&j.offer)||null;_growSub=(j&&j.subscription)||null;_growTok=tok||'';
+  try{_growApplyLock();}catch(e){}
   try{const sl=document.getElementById('grow-home-slot');if(sl)sl.innerHTML=_yearlyHomeCardHTML();}catch(e){}
   try{const r=document.getElementById('ref-home-slot');if(r&&typeof _refHomeCardHTML==='function')r.innerHTML=_refHomeCardHTML(true);}catch(e){}
 }
@@ -38393,7 +38396,7 @@ function _growCancel(){
   <div role="dialog" aria-modal="true" aria-label="Before you cancel" style="background:var(--surf1);border-radius:16px 16px 0 0;padding:20px 16px 28px;border-top:1px solid var(--p-line);max-height:90%;overflow:auto;">
     <div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 16px;"></div>
     <div style="font-size:19px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">${o.canPause?'Need a break instead?':'Before you go'}</div>
-    ${o.canPause?`<div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:14px;">Pause and nothing is charged. You keep using SlickChart and everything stays put. Billing starts again on its own, and you can resume any time.</div>${pauseBtns}`:''}
+    ${o.canPause?`<div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:14px;">Skip your next bills and nothing is charged. You keep SlickChart until ${pe?_fileEsc(_growDay(pe)):'the end of the time you’ve paid for'}, then it is locked while paused, with your clients, notes and photos kept safe. It opens again when billing starts again, or any time you resume.</div>${pauseBtns}`:''}
     ${canYearly?`<button class="btng" style="width:100%;margin:${o.canPause?'6px':'0'} 0 8px;" onclick="document.getElementById('grow-cancel').remove();_openBillingPortal('yearly')"><i class="ti ti-calendar-check" style="color:var(--accent-strong);"></i> Switch to yearly &middot; $${_fileEsc(String(_yearlyFor(sub)))}/year, 2 months free</button>`:''}
     <div id="grow-cancel-msg" style="font-size:15px;color:var(--p-mut);min-height:4px;margin:4px 0 6px;"></div>
     <button onclick="document.getElementById('grow-cancel').remove();_openBillingPortal('cancel')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:6px;">Cancel anyway</button>
@@ -38409,7 +38412,7 @@ async function _growPause(n){
     const j=await r.json().catch(()=>null);
     if(r.ok&&j&&j.ok){
       const el=document.getElementById('grow-cancel');if(el)el.remove();
-      proToast('Paused. Billing starts again on '+_growDay(j.pausedUntil)+'.',6000);
+      proToast('Paused. You have SlickChart until '+_growDay(j.pauseStartsAt||_growPeriodEndMs(_growSub))+', and billing starts again on '+_growDay(j.pausedUntil)+'.',7000);
       _loadBillingStatus();return;
     }
     if(msg)msg.textContent=(j&&j.error)||'Couldn’t pause it. Try again.';
@@ -38421,10 +38424,74 @@ async function _growUnpause(){
   try{
     const r=await fetch('/api/create-portal-session',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({intent:'unpause'})});
     const j=await r.json().catch(()=>null);
-    if(r.ok&&j&&j.ok){proToast('Welcome back. Billing resumes on your next billing date.');_loadBillingStatus();return;}
-    proToast((j&&j.error)||'Couldn’t resume it. Try again.',0);
-  }catch(e){proToast('Couldn’t reach billing. Try again.',0);}
+    if(r.ok&&j&&j.ok){
+      const lk=document.getElementById('grow-locked');if(lk)lk.remove();
+      if(_growOffer){_growOffer.paused=false;_growOffer.locked=false;}
+      proToast(j.charged?'Welcome back. You’re all set.':'Your pause is cancelled. Nothing was charged.');
+      _loadBillingStatus();try{_checkBillingBanner();}catch(e){}return;
+    }
+    _growUnpauseFail((j&&j.error)||'Couldn’t resume it. Try again.');
+  }catch(e){_growUnpauseFail('Couldn’t reach billing. Try again.');}
 }
+// The lock screen sits above toasts, so a failure there is written on the lock screen itself.
+function _growUnpauseFail(t){const m=document.getElementById('grow-locked-msg');if(m)m.textContent=t;else proToast(t,0);}
+
+// Paused = locked (Ashley, 2026-11-15: "i dont like that if people pause they can keep using the app -
+// that means they are using it for free"). From the end of the time she paid for until billing starts
+// again, the whole app sits behind this screen. Her data is untouched; Resume charges today and opens it.
+function _growLockedNow(){
+  const o=_growOfferNow();if(!o||!o.paused||!o.pausedUntil)return false;
+  const now=Date.now(),until=Date.parse(o.pausedUntil)||0;if(!until||now>=until)return false;
+  const st=o.pauseStartsAt?Date.parse(o.pauseStartsAt)||0:0;
+  return st?now>=st:!!o.locked;
+}
+function _growApplyLock(){
+  try{
+    const on=_growLockedNow();
+    const old=document.getElementById('grow-locked');
+    if(!on){if(old)old.remove();return;}
+    if(old)return;
+    const o=_growOfferNow(),sub=_growSub;
+    const amt=sub&&sub.plan_amount?'$'+(sub.plan_amount/100).toFixed(sub.plan_amount%100?2:0):'';
+    const native=_isNativeApp();
+    const m=document.createElement('div');m.id='grow-locked';
+    m.setAttribute('role','dialog');m.setAttribute('aria-modal','true');m.setAttribute('aria-label','SlickChart is paused');
+    m.style.cssText='position:fixed;inset:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:900;background:var(--p-bg);display:flex;flex-direction:column;justify-content:center;padding:28px 22px;overflow:auto;';
+    m.innerHTML=`<div style="text-align:center;">
+      <i class="ti ti-player-pause" aria-hidden="true" style="font-size:40px;color:var(--accent-strong);"></i>
+      <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin:10px 0 8px;">SlickChart is paused</div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:20px;">Your clients, notes and photos are all safe. Everything opens again on <b style="color:var(--p-ink);">${_fileEsc(_growDay(o.pausedUntil))}</b>, when billing starts again.</div>
+      ${native?`<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:16px;">To come back sooner, sign in at <b style="color:var(--p-ink);">slickchart.app</b>.</div>`:`
+      <button class="btnp" id="grow-resume" style="width:100%;border-radius:12px;justify-content:center;margin-bottom:8px;" onclick="this.disabled=true;_growUnpause().finally(()=>{const b=document.getElementById('grow-resume');if(b)b.disabled=false;})"><i class="ti ti-player-play" aria-hidden="true"></i> Resume now${amt?' &middot; '+amt+' today':''}</button>
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:16px;">Your card on file is charged today and your billing date moves to today.</div>`}
+      <div id="grow-locked-msg" style="font-size:15px;color:var(--p-amber);min-height:4px;margin-bottom:8px;"></div>
+      <button class="btng" style="width:100%;border-radius:12px;padding:11px;" onclick="_growLockedSignOut()">Sign out</button>
+      <div style="font-size:14px;color:var(--p-mut);margin-top:16px;">Questions? ${_fileEsc(_supportEmail())}</div>
+    </div>`;
+    document.body.appendChild(m);
+  }catch(e){}
+}
+let _growSignOutTried=false;
+async function _growLockedSignOut(){
+  const msg=document.getElementById('grow-locked-msg');
+  if(!_growSignOutTried){
+    _growSignOutTried=true;
+    if(msg)msg.textContent='Saving your latest changes…';
+    let ok=false;try{ok=await _flushBeforeSignOut();}catch(e){}
+    if(!ok){if(msg)msg.textContent='Your newest changes are only on this device. Tap Sign out again to sign out anyway, or stay signed in and they save when you have signal.';return;}
+  }
+  _doLogout();
+}
+// The lock date can pass while the app sits open or in the background, and the pause can end: re-check.
+try{document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState!=='visible')return;
+  try{
+    const o=_growOfferNow();if(!o||!o.paused)return;
+    _growApplyLock();
+    if(o.pausedUntil&&Date.now()>=Date.parse(o.pausedUntil))_checkBillingBanner();
+  }catch(e){}
+});}catch(e){}
+try{setInterval(function(){try{if(_growOffer&&_growOffer.paused)_growApplyLock();}catch(e){}},15*60000);}catch(e){}
 
 // ── ADD PARTNER ──
 function renderAddPartner(){

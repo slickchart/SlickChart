@@ -139,7 +139,7 @@ saved anywhere", not "does this always call that".
 | `_chatShareSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_chatShareSheet` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_checkBillingBanner` | `/api/billing-status` | direct |
-| `_checkBillingBanner` | `/api/create-portal-session` | via `_openBillingPortal` |
+| `_checkBillingBanner` | `/api/create-portal-session` | via `_growUnpause` |
 | `_checkBillingBanner` | `/api/referral` | via `_refLoad` |
 | `_checkDepositOnboarding` | `/api/client-invite` | via `_sendDepositForms` |
 | `_checkDepositOnboarding` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -288,8 +288,6 @@ saved anywhere", not "does this always call that".
 | `_growCancel` | `/api/create-portal-session` | via `_openBillingPortal` |
 | `_growPause` | `/api/billing-status` | via `_loadBillingStatus` |
 | `_growPause` | `/api/create-portal-session` | direct |
-| `_growSet` | `/api/create-portal-session` | via `_openBillingPortal` |
-| `_growSet` | `/api/referral` | via `_refLoad` |
 | `_growUnpause` | `/api/billing-status` | via `_loadBillingStatus` |
 | `_growUnpause` | `/api/create-portal-session` | direct |
 | `_handleAuthParams` | `/api/app-launch` | via `_alSend` |

@@ -21,7 +21,7 @@ CREATE TABLE kv (owner text, k text, v text, updated_at timestamptz DEFAULT now(
 CREATE TABLE square_connections (provider_id text PRIMARY KEY, access_token text);
 CREATE TABLE client_events (id text PRIMARY KEY, client_id text, provider_id text, kind text, payload jsonb, created_at bigint);
 CREATE TABLE trial_outcomes (sub_id text PRIMARY KEY, email text, trial_start timestamptz, trial_end timestamptz, outcome text, first_paid_at timestamptz, plan_amount int, plan_interval text);
-CREATE TABLE subscriptions (email text PRIMARY KEY, stripe_customer_id text, stripe_subscription_id text, status text, plan_amount int, plan_interval text, cancel_at_period_end boolean DEFAULT false, paused_until timestamptz, paid_notified_at timestamptz, current_period_end timestamptz, updated_at timestamptz);`);
+CREATE TABLE subscriptions (email text PRIMARY KEY, stripe_customer_id text, stripe_subscription_id text, status text, plan_amount int, plan_interval text, cancel_at_period_end boolean DEFAULT false, paused_until timestamptz, pause_starts_at timestamptz, paid_notified_at timestamptz, current_period_end timestamptz, updated_at timestamptz);`);
 const clients = n => JSON.stringify(Object.fromEntries(Array.from({ length: n }, (_, i) => ['c' + i, { id: 'c' + i, name: 'C' + i }])));
 // new1: joined 1.5 days ago, no clients -> gets "Bring your clients in"
 // new2: joined 1.5 days ago, 12 clients -> step skipped, nothing sent
@@ -116,11 +116,16 @@ ok(offerFor(base, S, { firstPaidMs: now - 45 * DAY, pausesThisYear: 1, nowMs: no
 ok(!offerFor(base, Object.assign({}, S, { grow_pause_on: 0 }), { firstPaidMs: now - 45 * DAY, nowMs: now }).canPause, 'pauses off: none offered');
 const pz = offerFor(Object.assign({}, base, { paused_until: new Date(now + 20 * DAY).toISOString() }), S, { firstPaidMs: now - 45 * DAY, nowMs: now });
 ok(pz.paused && !pz.canPause && !pz.showYearly, 'while paused: says so, no second pause, no yearly card');
+const pend = (st) => offerFor(Object.assign({}, base, { paused_until: new Date(now + 40 * DAY).toISOString(), pause_starts_at: st }), S, { firstPaidMs: now - 45 * DAY, nowMs: now });
+ok(!pend(new Date(now + 5 * DAY).toISOString()).locked, 'paused, still inside the time she paid for: not locked yet');
+ok(pend(new Date(now - 1 * DAY).toISOString()).locked, 'paused months have begun: LOCKED (no free use)');
+ok(pend(null).locked, 'paused with no start on record: locked, never free');
+ok(!offerFor(Object.assign({}, base, { paused_until: new Date(now - DAY).toISOString(), pause_starts_at: new Date(now - 40 * DAY).toISOString() }), S, { firstPaidMs: now - 45 * DAY, nowMs: now }).locked, 'pause over: open again');
 ok(new Date(addMonths(Date.parse('2027-01-31T00:00:00Z'), 1)).toISOString().slice(0, 10) === '2027-02-28', 'month math: Jan 31 + 1 month = Feb 28');
 
 // ── Pause through Stripe ──
 const { pauseSubscription } = await import(pathToFileURL(dir + '/lib/growth.js'));
-await db.query(`INSERT INTO subscriptions VALUES ('pay@x.com','cus1','sub_pay','active',1700,'month',false,NULL,$1,NULL,now())`, [ago(50)]);
+await db.query(`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, plan_amount, plan_interval, cancel_at_period_end, paid_notified_at, updated_at) VALUES ('pay@x.com','cus1','sub_pay','active',1700,'month',false,$1,now())`, [ago(50)]);
 const calls = [];
 const pe = Math.floor((now + 10 * DAY) / 1000);
 globalThis.fetch = async (url, opt) => { calls.push({ url: String(url), body: opt && opt.body, method: opt && opt.method });
@@ -138,6 +143,21 @@ ok(row.paused_until && Math.abs(new Date(row.paused_until).getTime() - want * 10
 const sub2 = (await db.query(`SELECT * FROM subscriptions WHERE email='pay@x.com'`)).rows[0];
 r = await pauseSubscription(q, 'pay@x.com', Object.assign({}, sub2, { paused_until: null }), 1);
 ok(!r.ok, 'a second pause in the same year is refused', JSON.stringify(r));
+const row2 = (await db.query(`SELECT pause_starts_at FROM subscriptions WHERE email='pay@x.com'`)).rows[0];
+ok(row2.pause_starts_at && Math.abs(new Date(row2.pause_starts_at).getTime() - pe * 1000) < 1000, 'the lock starts when the paid-up time ends');
+
+// ── Resume: free before the lock, charged today once locked ──
+const { unpauseSubscription } = await import(pathToFileURL(dir + '/lib/growth.js'));
+calls.length = 0;
+r = await unpauseSubscription(q, 'pay@x.com', Object.assign({}, sub2, { paused_until: new Date(now + 40 * DAY), pause_starts_at: new Date(now + 5 * DAY) }));
+let up = calls.find(c => c.method === 'POST');
+ok(r.ok && !r.charged && !/billing_cycle_anchor/.test(decodeURIComponent(up.body)), 'cancelling the pause before it starts charges nothing', up && up.body);
+calls.length = 0;
+r = await unpauseSubscription(q, 'pay@x.com', Object.assign({}, sub2, { paused_until: new Date(now + 40 * DAY), pause_starts_at: new Date(now - 5 * DAY) }));
+up = calls.find(c => c.method === 'POST');
+ok(r.ok && r.charged && /billing_cycle_anchor=now/.test(decodeURIComponent(up.body)) && /proration_behavior=none/.test(decodeURIComponent(up.body)), 'resuming while locked bills today', up && up.body);
+const row3 = (await db.query(`SELECT paused_until, pause_starts_at FROM subscriptions WHERE email='pay@x.com'`)).rows[0];
+ok(!row3.paused_until && !row3.pause_starts_at, 'resumed: her row is clear');
 
 console.log(fail ? `\n${fail} FAILED` : '\nALL PASS');
 process.exit(fail ? 1 : 0);

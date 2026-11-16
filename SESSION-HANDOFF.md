@@ -9437,8 +9437,18 @@ email days before (3), import offer on/off and the client count below which it i
 - **Pause** (`lib/growth.js` `pauseSubscription`, `api/create-portal-session.js` intents
   `pause`/`unpause`): Cancel subscription now opens "Need a break instead?" with 1..max month
   buttons (each shows when billing starts again), yearly, and "Cancel anyway". Stripe
-  `pause_collection {behavior:'void', resumes_at}`: invoices are voided, **she keeps using the app**
-  (status stays active), billing starts again on its own. Re-checked against the LIVE Stripe sub
+  `pause_collection {behavior:'void', resumes_at}`: invoices are voided and billing starts again on its
+  own. **CHANGED same evening (build `2026-11-16b`), Ashley: "i dont like that if people pause they can
+  keep using the app - that means they are using it for free".** She keeps the time she already paid
+  for; from `subscriptions.pause_starts_at` (= that paid-up end, kept by the webhook with COALESCE so
+  Stripe's rolling period does not move it) until `paused_until` the app is LOCKED behind
+  `#grow-locked` ("SlickChart is paused": data safe, the reopen date, Resume now, Sign out).
+  `offer.locked` / `offer.pauseStartsAt` from billing-status; the app re-checks on coming back to it and
+  every 15 min. Resume before the lock = cancel the pause, nothing charged. Resume while locked =
+  `billing_cycle_anchor: now, proration_behavior: none` (charged today, billing date = today). Native
+  app: locked too, but no price or pay button ("sign in at slickchart.app"). NOTE: the lock is in the
+  app; the server does not refuse a paused account's API calls, the same as a cancelled account whose
+  session is still open (login is the only server gate today). Clients' links keep working. Re-checked against the LIVE Stripe sub
   (active, monthly, not cancelling, not already paused); identity from the session only. Recorded in
   `subscription_pauses`; `subscriptions.paused_until` (new column) is kept by the webhook too.
   Billing screen shows "Paused", the date, and "Resume billing now". An older server with no `offer`

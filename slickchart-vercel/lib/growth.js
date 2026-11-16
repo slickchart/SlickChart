@@ -4,8 +4,12 @@
 //   subscriptionOffer  what the billing screen and Home may offer THIS provider: the yearly card (monthly
 //                      payers in her chosen months of paying) and a pause in place of cancelling.
 //   pauseSubscription  skips her next N monthly bills with Stripe's pause_collection (behavior 'void').
-//                      She keeps using the app while paused; billing starts again on its own.
-//   unpauseSubscription  "Resume now" — bills again from her next billing date.
+//                      She keeps the time she already paid for; from the end of it (pause_starts_at)
+//                      until billing starts again SlickChart is LOCKED, her data kept safe. Ashley,
+//                      2026-11-15: "i dont like that if people pause they can keep using the app - that
+//                      means they are using it for free".
+//   unpauseSubscription  "Resume now". Before the lock starts: just cancels the pause, nothing charged.
+//                      While locked: bills today (new billing date = today) and opens the app.
 //
 // Every number is a founder setting (lib/referral.js REFERRAL_SETTINGS, grow_*), CLAUDE.md §1f.
 // Identity: callers pass the email read from the verified session's own provider row (accountEmail), and
@@ -51,14 +55,20 @@ export function offerFor(sub, s, facts) {
   const out = {
     pauseOn: !!s.grow_pause_on, pauseMax: s.grow_pause_max, pausesPerYear: s.grow_pause_per_year,
     canPause: false, pauseWhy: '',
-    paused: false, pausedUntil: null,
+    paused: false, pausedUntil: null, pauseStartsAt: null, locked: false,
     yearlyFrom: s.grow_yearly_from, yearlyTo: s.grow_yearly_to,
     monthOfPaying: null, showYearly: false,
     onTrial: !!facts.onTrial
   };
   if (!sub) { out.pauseWhy = 'no subscription'; return out; }
   const pu = ms(sub.paused_until);
-  if (pu && pu > now) { out.paused = true; out.pausedUntil = new Date(pu).toISOString(); }
+  if (pu && pu > now) {
+    out.paused = true; out.pausedUntil = new Date(pu).toISOString();
+    const ps = ms(sub.pause_starts_at);
+    if (ps) out.pauseStartsAt = new Date(ps).toISOString();
+    // No start on record (paused some other way): treat it as started, never as free use.
+    out.locked = !ps || now >= ps;
+  }
   const active = sub.status === 'active';
   const monthly = sub.plan_interval !== 'year';
   const ending = !!sub.cancel_at_period_end;
@@ -131,18 +141,28 @@ export async function pauseSubscription(q, email, sub, months) {
     'pause-' + L.id + '-' + n + '-' + Math.floor(Date.now() / 600000));   // a double tap is one pause
   if (!r.ok) return { ok: false, error: 'Billing would not pause it. Try again, or email support@slickchart.app.' };
   const until = new Date(resumes).toISOString();
-  try { await q`UPDATE subscriptions SET paused_until = ${until} WHERE email = ${email}`; } catch (e) {}
+  const starts = new Date(periodEnd).toISOString();
+  try { await q`UPDATE subscriptions SET paused_until = ${until}, pause_starts_at = ${starts} WHERE email = ${email}`; } catch (e) {}
   try {
     await ensurePauseTable(q);
     await q`INSERT INTO subscription_pauses (email, sub_id, months, resumes_at) VALUES (${email}, ${L.id}, ${n}, ${until})`;
   } catch (e) {}
-  return { ok: true, pausedUntil: until, months: n };
+  return { ok: true, pausedUntil: until, pauseStartsAt: starts, months: n };
 }
 
 export async function unpauseSubscription(q, email, sub) {
   if (!sub || !sub.stripe_subscription_id) return { ok: false, error: 'No subscription found.' };
-  const r = await stripeApi('POST', '/subscriptions/' + encodeURIComponent(sub.stripe_subscription_id), { pause_collection: '' });
+  const now = Date.now();
+  const ps = ms(sub.pause_starts_at), pu = ms(sub.paused_until);
+  // Already into the paused months: coming back early means paying again from today, so the app is
+  // never open without a paid month behind it. Before the lock starts she is still in time she paid for.
+  const charge = !!(pu && pu > now && (!ps || now >= ps));
+  const body = charge
+    ? { pause_collection: '', billing_cycle_anchor: 'now', proration_behavior: 'none' }
+    : { pause_collection: '' };
+  const r = await stripeApi('POST', '/subscriptions/' + encodeURIComponent(sub.stripe_subscription_id), body,
+    'unpause-' + sub.stripe_subscription_id + '-' + Math.floor(now / 600000));
   if (!r.ok) return { ok: false, error: 'Could not resume it. Try again, or email support@slickchart.app.' };
-  try { await q`UPDATE subscriptions SET paused_until = NULL WHERE email = ${email}`; } catch (e) {}
-  return { ok: true };
+  try { await q`UPDATE subscriptions SET paused_until = NULL, pause_starts_at = NULL WHERE email = ${email}`; } catch (e) {}
+  return { ok: true, charged: charge };
 }

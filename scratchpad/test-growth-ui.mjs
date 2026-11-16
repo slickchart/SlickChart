@@ -34,10 +34,11 @@ async function page(opts) {
       if (j.intent === 'pause') {
         if (opts.pauseFails) return r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'A pause is not available on this plan right now.' }) });
         const until = new Date(Date.UTC(2027, 1, 3)).toISOString();
-        state.offer = Object.assign({}, state.offer, { paused: true, pausedUntil: until, canPause: false, showYearly: false });
-        return J({ ok: true, pausedUntil: until, months: j.months });
+        const starts = new Date(PERIOD_END * 1000).toISOString();
+        state.offer = Object.assign({}, state.offer, { paused: true, pausedUntil: until, pauseStartsAt: starts, locked: false, canPause: false, showYearly: false });
+        return J({ ok: true, pausedUntil: until, pauseStartsAt: starts, months: j.months });
       }
-      if (j.intent === 'unpause') { state.offer = Object.assign({}, state.offer, { paused: false, pausedUntil: null }); return J({ ok: true }); }
+      if (j.intent === 'unpause') { const charged = !!state.offer.locked; state.offer = Object.assign({}, state.offer, { paused: false, pausedUntil: null, pauseStartsAt: null, locked: false }); return J({ ok: true, charged }); }
       return J({ error: 'stub portal' });   // no url: the app shows its "email support" toast, never navigates
     }
     if (u.endsWith('/api/referral') || u.includes('/api/referral?')) { log.push({ u: 'referral', m, body }); return m === 'POST' ? J({ ok: true }) : J(state.ref); }
@@ -96,6 +97,7 @@ const txt = (p, id) => p.evaluate(id => (document.getElementById(id) || {}).inne
   check('Cancel opens the pause offer first', /Need a break instead\?/.test(sheet) && /Pause for 1 month/.test(sheet) && /Pause for 3 months/.test(sheet) && !/Pause for 4/.test(sheet), sheet);
   check('each pause says when billing starts again', /billing again January 3, 2027/.test(sheet) && /billing again February 3, 2027/.test(sheet) && /billing again March 3, 2027/.test(sheet), sheet);
   check('Cancel anyway is right there', /Cancel anyway/.test(sheet));
+  check('the sheet says it is locked while paused, not free', /locked while paused/.test(sheet) && /until December 3, 2026/.test(sheet) && !/keep using/i.test(sheet), sheet);
   check('no Stripe call yet', !log.some(x => x.u === 'portal'));
   await p.screenshot({ path: '/tmp/claude-0/grow-cancel-' + ENGINE + '.png' });
   await p.click('#grow-pause-2'); await p.waitForTimeout(1500);
@@ -103,11 +105,12 @@ const txt = (p, id) => p.evaluate(id => (document.getElementById(id) || {}).inne
   check('Pause for 2 months asks the server with her session, months only', call && call.j.months === 2 && call.auth === 'Bearer TESTTOKEN' && Object.keys(call.j).sort().join() === 'intent,months', JSON.stringify(call));
   check('the sheet closes', !(await p.$('#grow-cancel')));
   t = await txt(p, 'billing-body');
-  check('billing now says Paused and when it starts again', /Paused/.test(t) && /Billing starts again/.test(t) && /February 3, 2027/.test(t) && /Resume billing now/.test(t), t.slice(0, 500));
+  check('billing now says Paused, when it locks and when it starts again', /Paused/.test(t) && /Billing starts again/.test(t) && /February 3, 2027/.test(t) && /until December 3, 2026/.test(t) && /locked while paused/.test(t) && /Cancel the pause/.test(t), t.slice(0, 700));
+  check('not locked yet: she is still in the time she paid for', !(await p.$('#grow-locked')));
   check('no yearly switch while paused', !/Switch to yearly/.test(t));
   await p.screenshot({ path: '/tmp/claude-0/grow-paused-' + ENGINE + '.png', fullPage: true });
-  await p.click('text=Resume billing now'); await p.waitForTimeout(1500);
-  check('Resume asks the server to unpause', log.some(x => x.u === 'portal' && x.j.intent === 'unpause'));
+  await p.click('text=Cancel the pause'); await p.waitForTimeout(1500);
+  check('Cancel the pause asks the server to unpause', log.some(x => x.u === 'portal' && x.j.intent === 'unpause'));
   t = await txt(p, 'billing-body');
   check('and the screen is Active again', /Active/.test(t) && !/Paused/.test(t), t.slice(0, 300));
   // Cancel anyway goes to the real cancel screen
@@ -158,6 +161,49 @@ const txt = (p, id) => p.evaluate(id => (document.getElementById(id) || {}).inne
   await p.evaluate(() => { Cloud.token = 'OTHERTOKEN'; nav('home'); }); await p.waitForTimeout(600);
   check('another account never sees the first account’s offer', !(await txt(p, 'grow-home-slot')) && await p.evaluate(() => _growOfferNow() === null));
   await ctx.close();
+}
+// ── 4b. Paused months have begun: the whole app is locked; Resume charges today and opens it ─────────
+{
+  const LOCKED = Object.assign({}, OFFER, { paused: true, locked: true, canPause: false, showYearly: false,
+    pausedUntil: new Date(Date.now() + 30 * DAY).toISOString(), pauseStartsAt: new Date(Date.now() - 2 * DAY).toISOString() });
+  const { p, ctx, errs, log } = await page({ offer: LOCKED });
+  const t = await txt(p, 'grow-locked');
+  check('locked: "SlickChart is paused" covers the app', /SlickChart is paused/.test(t) && /clients, notes and photos are all safe/.test(t) && /Resume now · \$17 today/.test(t) && /charged today/.test(t), t);
+  check('the lock covers the whole screen', await p.evaluate(() => { const r = document.getElementById('grow-locked').getBoundingClientRect(); return r.top <= 0 && r.height >= window.innerHeight - 1; }));
+  check('nothing behind it can be tapped', await p.evaluate(() => { const e = document.elementFromPoint(200, 120); return !!(e && e.closest('#grow-locked')); }));
+  await p.evaluate(() => nav('clients')); await p.waitForTimeout(400);
+  check('navigating does not get round it', !!(await p.$('#grow-locked')));
+  await p.screenshot({ path: '/tmp/claude-0/grow-locked-' + ENGINE + '.png' });
+  await p.click('#grow-resume'); await p.waitForTimeout(1500);
+  check('Resume now asks the server to unpause (charged today)', log.some(x => x.u === 'portal' && x.j.intent === 'unpause'));
+  check('and the app opens again', !(await p.$('#grow-locked')));
+  check('no page errors (4b)', !errs.length, errs.join(' | '));
+  await ctx.close();
+  // A refused resume says why ON the lock screen (toasts sit under it)
+  const r0 = await page({ offer: LOCKED });
+  await r0.p.route('**/api/create-portal-session', r => r.fulfill({ status: 409, contentType: 'application/json', body: '{"ok":false,"error":"Could not resume it. Try again, or email support@slickchart.app."}' }));
+  await r0.p.click('#grow-resume'); await r0.p.waitForTimeout(1200);
+  check('a refused resume says why on the lock screen', /Could not resume it/.test(await txt(r0.p, 'grow-locked-msg')) && !!(await r0.p.$('#grow-locked')));
+  await r0.ctx.close();
+  // Native app: locked, but no payment button
+  const r1 = await page({ offer: LOCKED });
+  await r1.p.evaluate(() => { document.getElementById('grow-locked').remove(); window._isNativeApp = () => true; _growApplyLock(); }); await r1.p.waitForTimeout(300);
+  const nt = await txt(r1.p, 'grow-locked');
+  check('native app: locked, no price or pay button', /SlickChart is paused/.test(nt) && /slickchart\.app/.test(nt) && !/\$/.test(nt) && !(await r1.p.$('#grow-resume')), nt);
+  await r1.ctx.close();
+  // The lock date passes while the app is open: it locks when she comes back to it
+  const soon = Object.assign({}, LOCKED, { locked: false, pauseStartsAt: new Date(Date.now() + 12000).toISOString() });
+  const r2 = await page({ offer: soon });
+  check('before the lock date: app open', !(await r2.p.$('#grow-locked')));
+  await r2.p.waitForTimeout(4000);
+  await r2.p.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await r2.p.waitForTimeout(300);
+  check('after it, coming back to the app locks it', !!(await r2.p.$('#grow-locked')));
+  await r2.ctx.close();
+  // A different account on this page never inherits the lock
+  const r3 = await page({ offer: LOCKED });
+  await r3.p.evaluate(() => { Cloud.token = 'OTHERTOKEN'; _growApplyLock(); }); await r3.p.waitForTimeout(200);
+  check('another account signing in is not locked by the first one’s pause', !(await r3.p.$('#grow-locked')));
+  await r3.ctx.close();
 }
 // ── 5. Referral prompt at a happy moment ─────────────────────────────────────────────────────────────
 {
