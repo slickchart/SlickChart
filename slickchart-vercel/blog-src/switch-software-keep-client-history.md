@@ -4,7 +4,6 @@ h1: Switching beauty software without losing your client history: a checklist
 description: Before you move booking or charting software, know what comes with you and what stays behind. A checklist for client lists, notes, photos, forms and more.
 date: 2026-11-16
 keywords: switch salon software, migrate client data, export client list, beauty software migration, esthetician software switch, move client records
-draft: true
 ---
 
 The scariest part of changing software is not learning the new app. It is the quiet worry that something will not come with you: the notes from a client's first visit, the photo that shows how a reaction healed, the consent form a client signed two years ago.
@@ -15,7 +14,7 @@ That worry is reasonable. Moving software is the moment records get lost, and a 
 
 Most pros who start looking for new software are unhappy with one part of it, not all of it. Maybe the booking side is fine but the charting is thin. Maybe the forms are clumsy but your clients love how they book.
 
-If your booking and payments work, moving them is the riskiest, most disruptive part of any switch. Clients have to learn a new booking link, your history of past appointments may not come along, and every regular notices. It is worth asking whether you can keep the booking you have and add what is missing. I wrote more about that in [do you have to switch to get charting?](/blog/leave-booking-system-for-charting)
+If your booking and payments work, moving them is the riskiest, most disruptive part of any switch. Clients have to learn a new booking link, your history of past appointments may not come along, and every regular notices. It is worth asking whether you can keep the booking you have and add what is missing. That is how I work. My booking runs on Square and my charting connects to it, so everything is integrated and nothing about booking changed for my clients. I wrote more about that in [do you have to switch to get charting?](/blog/leave-booking-system-for-charting)
 
 If you do need to replace everything, carry on.
 
@@ -69,6 +68,6 @@ If your booking link, forms or reminder messages are changing, tell your regular
 
 ## Where SlickChart fits
 
-This is part of why I built [SlickChart](/slickchart) the way I did. It connects to the Square account you already have, so if Square is your booking system, your clients and appointments come in without moving anything. If you are coming from somewhere else, you can import your client list from a CSV, including notes and allergies columns, and check it before anything is saved.
+This is part of why I built [SlickChart](/slickchart) the way I did. It connects to the Square account you already have, so if Square is your booking system, your clients and appointments come in without moving anything. If you are coming from somewhere else, you can import your client list from a CSV with names, contact details, birthdays and notes. It shows you which column fed which field, and which columns it is leaving behind, before anything is saved, so you know to add allergies by hand.
 
 If you are weighing a full switch, the [switching guide](/switch) has more on what to plan for. Whatever you choose, the checklist above is the part that protects your clients. Software comes and goes. Their records should not.
