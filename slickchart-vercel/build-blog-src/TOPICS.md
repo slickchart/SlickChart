@@ -31,7 +31,8 @@ committed to anything, the later ones are for people mid-build.
 - [x] **Doing two trades at once: skin and lashes, hair and nails.** Drafted 2026-11-09
       (`two-trades-one-app.md`). Booking services clients take
       together, and which forms and rules belong to which service.
-- [ ] **Moving your clients onto your own app without losing anyone.** Respectful, no competitor
+- [x] **Moving your clients onto your own app without losing anyone.** Drafted 2026-11-16
+      (`moving-clients-to-your-own-app.md`). Respectful, no competitor
       claims; what to export, what to tell clients.
 - [ ] **Your board changed a rule. How fast can your software follow?** Owning the change, with the
       honest trade-off that you are the one who checks it.
