@@ -60,9 +60,12 @@ const STATIC_PAGES = [
   { loc: '/privacy', priority: '0.3', changefreq: 'yearly' },
   { loc: '/terms', priority: '0.3', changefreq: 'yearly' },
   { loc: '/support', priority: '0.4', changefreq: 'monthly' },
-  // The free starter opt-in. /build is deliberately NOT here — a sales page doesn't need to be
-  // crawled — but /free is meant to spread, and every copy of the freebie links back to it.
+  // The free starter opt-in. /free is meant to spread, and every copy of the freebie links back to it.
   { loc: '/free', priority: '0.9', changefreq: 'monthly' },
+  // The two Build sales pages (2026-11-16, Ashley wants search traffic to both): /build sells the
+  // Beauty Biz roadmap, /build-any-business the Master Build Roadmap. Both are index,follow.
+  { loc: '/build', priority: '0.8', changefreq: 'monthly' },
+  { loc: '/build-any-business', priority: '0.8', changefreq: 'monthly' },
   // Hand-written forms hubs (Ashley's collections, linking her Etsy shop and SlickChart signup).
   { loc: '/esthetician-forms', priority: '0.8', changefreq: 'monthly' },
   { loc: '/lash-brow-forms', priority: '0.8', changefreq: 'monthly' },
