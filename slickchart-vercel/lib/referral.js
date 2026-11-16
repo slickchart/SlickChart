@@ -46,6 +46,13 @@ export const REFERRAL_SETTINGS = {
   grow_trial_end_days:  { def: 3,   min: 1, max: 13,   label: 'Days before a free trial ends to send the "your trial ends soon" email', unit: 'days' },
   grow_import_offer:    { def: 1,   min: 0, max: 1,    label: 'In that email, offer to bring in her clients for her when she has few (replies come to you) (1 on, 0 off)', unit: '' },
   grow_import_below:    { def: 5,   min: 1, max: 1000, label: '"Few clients" means fewer than', unit: 'clients' },
+  // The landing page line "Join 45+ beauty pros already using SlickChart" (api/provider-count.js): the
+  // number is the providers paying right now, rounded DOWN to a step of 5, and the line only shows once
+  // it is at least this many. Off = the line never shows.
+  grow_count_on:        { def: 1,   min: 0, max: 1,    label: 'Show "Join N+ beauty pros" on the landing page (1) or not (0)', unit: '' },
+  grow_count_min:       { def: 20,  min: 1, max: 100000, label: 'Show that line once at least this many are paying', unit: 'providers' },
+  grow_quote_on:        { def: 1,   min: 0, max: 1,    label: 'Ask providers who give a 5 for a quote for the website (1) or not (0)', unit: '' },
+  grow_quote_days:      { def: 120, min: 7, max: 3650, label: 'Ask the same provider for a quote at most once every', unit: 'days' },
 };
 export const DEFAULT_SHARE_MESSAGE = 'I use SlickChart for my charts, forms and client photos. Use my code {code} for your first month free: {link}';
 const MESSAGE_KEY = 'ref_share_message';

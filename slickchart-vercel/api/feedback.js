@@ -36,7 +36,8 @@ async function notifyFounder(q, { providerId, email, rating, message, kind, time
   const who = name ? `${name} (${email || 'no email on file'})` : (email || 'a provider');
   const when = new Date().toLocaleString('en-US', { timeZone: process.env.FOUNDER_TZ || 'America/Los_Angeles' });
   const face = rating ? (FACES[rating] || '') + ' ' + rating + '/5' : '';
-  const extra = [face && 'Rating: ' + face, timeSaved && 'Time vs before: ' + (TIME_SAVED[timeSaved] || timeSaved), kind === 'pulse' && 'From the check-in survey'].filter(Boolean);
+  const extra = [face && 'Rating: ' + face, timeSaved && 'Time vs before: ' + (TIME_SAVED[timeSaved] || timeSaved), kind === 'pulse' && 'From the check-in survey',
+    kind === 'quote' && 'They gave SlickChart a 5 and said this may go on slickchart.app. Tell Claude which ones to add; they go on word for word.'].filter(Boolean);
   const first = message.replace(/\s+/g, ' ').slice(0, 60) + (message.length > 60 ? '…' : '');
   let emailed = '';
   try {
@@ -46,7 +47,7 @@ async function notifyFounder(q, { providerId, email, rating, message, kind, time
         to,
         // Reply-To is the provider, so hitting Reply answers them directly.
         replyTo: email || undefined,
-        subject: `💬 Feedback from ${name || email || 'a provider'}: ${first}`,
+        subject: kind === 'quote' ? `⭐ A website quote from ${name || email || 'a provider'}: ${first}` : `💬 Feedback from ${name || email || 'a provider'}: ${first}`,
         text: `${who} sent feedback in SlickChart.\n\n${message}\n\n${extra.join('\n')}${extra.length ? '\n' : ''}Sent: ${when}\n\nReply to this email to answer them. Every message is also in Feedback Inbox in the app.\n`,
         html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;">
           <div style="font-size:20px;margin-bottom:6px;">💬 New feedback</div>
@@ -170,7 +171,8 @@ export default async function handler(req, res) {
     const message = String(b.message || '').slice(0, 4000).trim();
     const rating = b.rating ? parseInt(b.rating, 10) : null;
     // Pulse survey fields (from the recurring in-app prompt).
-    const kind = (b.kind === 'pulse') ? 'pulse' : 'adhoc';
+    // 'quote': a provider who gave a 5 wrote a line for the website and said it may be shown (2026-11-16).
+    const kind = (b.kind === 'pulse') ? 'pulse' : (b.kind === 'quote') ? 'quote' : 'adhoc';
     const timeSaved = ['much_less', 'less', 'same', 'more'].includes(b.timeSaved) ? b.timeSaved : null;
     // A pulse response is valid even if it's only a time-saved answer (no rating/message);
     // the plain feedback button still needs at least a message or rating.

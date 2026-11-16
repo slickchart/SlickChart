@@ -51,6 +51,9 @@ export default async function handler(req, res) {
       // rule as the Home card, plus her on/off and the least days between asks (founder settings).
       promptOn: !!s.ref_prompt_on && days >= s.ref_home_days && !!(sub && sub.status === 'active'),
       promptDays: s.ref_prompt_days,
+      // Ask a provider who gives a 5 for a website quote (her settings grow_quote_*). Added fields.
+      quoteOn: !!s.grow_quote_on,
+      quoteDays: s.grow_quote_days,
       hasBilling: !!sub,
       ...summary
     });

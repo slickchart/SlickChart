@@ -42,7 +42,7 @@ async function page(opts) {
       return J({ error: 'stub portal' });   // no url: the app shows its "email support" toast, never navigates
     }
     if (u.endsWith('/api/referral') || u.includes('/api/referral?')) { log.push({ u: 'referral', m, body }); return m === 'POST' ? J({ ok: true }) : J(state.ref); }
-    if (u.includes('/api/feedback')) return J({ ok: true });
+    if (u.includes('/api/feedback')) { log.push({ u: 'feedback', body }); return J({ ok: true }); }
     return J({ ok: true, data: {}, clients: [], events: [] });
   });
   await p.goto(BASE + '/slickchart.html' + (opts.query || '')); await p.waitForTimeout(9000);
@@ -248,6 +248,31 @@ const txt = (p, id) => p.evaluate(id => (document.getElementById(id) || {}).inne
   await r.p.evaluate(() => _refMoment('pulse')); await r.p.waitForTimeout(600);
   check('older server (no promptOn): never asks', !(await r.p.$('#ref-nudge')));
   await ctx.close(); await r.ctx.close();
+}
+// ── 5b. A 5 asks for a website quote (her setting), sends it as kind 'quote' with the name to show ────
+{
+  const { p, ctx, errs, log } = await page({ ref: Object.assign({}, REF, { quoteOn: true, quoteDays: 120 }), offer: Object.assign({}, OFFER, { showYearly: false }) });
+  await p.evaluate(() => { bizInfo.ownerName = 'Jennie Smith'; nav('home'); }); await p.waitForTimeout(800);
+  await p.evaluate(() => { _openPulse(); _pulsePickRating(5); }); await p.evaluate(() => _sendPulse()); await p.waitForTimeout(3500);
+  const t = await txt(p, 'quote-ask');
+  check('a 5 asks for a line for the website', /Could I share a line from you/.test(t) && /Nothing goes up before I read it/.test(t), t);
+  check('the referral prompt waits (one ask at a time)', !(await p.$('#ref-nudge')));
+  check('her name is filled in to show', await p.evaluate(() => /^Jennie/.test(document.getElementById('quote-credit').value)));
+  await p.screenshot({ path: '/tmp/claude-0/grow-quote-' + ENGINE + '.png' });
+  await p.click('#quote-send'); await p.waitForTimeout(300);
+  check('an empty quote is not sent', /Write a sentence first/.test(await txt(p, 'quote-msg')) && !log.some(x => x.u === 'feedback' && /"quote"/.test(x.body)));
+  await p.fill('#quote-text', 'SlickChart keeps every chart and form in one place. My clients love it.');
+  await p.fill('#quote-credit', 'Jennie, Lash Artist');
+  await p.click('#quote-send'); await p.waitForTimeout(800);
+  const sent = log.find(x => x.u === 'feedback' && /"quote"/.test(x.body));
+  const sj = sent ? JSON.parse(sent.body) : {};
+  check('sent as a quote with her words and the name to show', sj.kind === 'quote' && /keeps every chart/.test(sj.message) && /as: Jennie, Lash Artist/.test(sj.message), sent && sent.body);
+  check('the sheet closes', !(await p.$('#quote-ask')));
+  await p.evaluate(() => { _openPulse(); _pulsePickRating(5); }); await p.evaluate(() => _sendPulse()); await p.waitForTimeout(3500);
+  check('not asked again soon; the referral prompt shows instead', !(await p.$('#quote-ask')) && !!(await p.$('#ref-nudge')));
+  check('the quote stamp is device-only', await p.evaluate(() => !!localStorage.getItem('slickquoteask')));
+  check('no page errors (5b)', !errs.length, errs.join(' | '));
+  await ctx.close();
 }
 // ── 6. Refer screen line, and the go deep link from the email ──────────────────────────────────────
 {

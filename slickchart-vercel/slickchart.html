@@ -370,7 +370,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-16e';
+const APP_BUILD='2026-11-16f';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -18694,6 +18694,67 @@ function _refNudge(why){
   (document.querySelector('.shell')||document.body).appendChild(m);
 }
 function _refNudgeClose(){const m=document.getElementById('ref-nudge');if(m)m.remove();}
+// A provider who just gave SlickChart a 5 is asked, now and then, for one line for slickchart.app
+// (2026-11-16, growth plan: real provider quotes on the landing page). It goes to Ashley's feedback
+// inbox as kind 'quote' with the name she said to show; nothing reaches the site until Ashley picks
+// it, word for word. Her settings: grow_quote_on, grow_quote_days (via /api/referral). The "last
+// asked" stamp is device-only (no sc_ prefix).
+function _quoteAskMaybe(){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return false;
+    _refOwnerCheck();
+    const i=_refInfo;if(!i||!i.quoteOn)return false;
+    const days=Math.max(7,Number(i.quoteDays)||120);
+    let last=0;try{const o=JSON.parse(localStorage.getItem('slickquoteask')||'{}');if(o&&o.o===_refTok.slice(-12))last=Number(o.at)||0;}catch(e){}
+    if(last&&Date.now()-last<days*86400000)return false;
+    if(document.getElementById('pulse-sheet')||document.getElementById('beta-fb')||document.getElementById('ref-nudge')||document.getElementById('quote-ask')||document.getElementById('grow-locked'))return false;
+    if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='room')return false;
+    _quoteAsk();return true;
+  }catch(e){return false;}
+}
+function _quoteCredit(){
+  let n='';try{n=_providerFirstName();}catch(e){}
+  let prof='';try{const ps=getActiveProfessions();prof=(ps[0]&&ps[0].name)||'';}catch(e){}
+  return [n,prof].filter(Boolean).join(', ');
+}
+function _quoteAsk(){
+  try{localStorage.setItem('slickquoteask',JSON.stringify({o:_refTok.slice(-12),at:Date.now()}));}catch(e){}
+  const old=document.getElementById('quote-ask');if(old)old.remove();
+  try{const t=document.getElementById('pro-toast');if(t)t.remove();}catch(e){}
+  const m=document.createElement('div');m.id='quote-ask';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:500;display:flex;flex-direction:column;justify-content:flex-end;';
+  m.innerHTML=`
+  <div onclick="_quoteClose()" style="flex:1;background:rgba(0,0,0,.55);"></div>
+  <div role="dialog" aria-label="Share a line for our website" style="background:var(--surf1);border-radius:16px;padding:20px 16px 28px;border-top:1px solid var(--p-line);">
+    <div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 16px;"></div>
+    <div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">That made my day. Could I share a line from you?</div>
+    <div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">A sentence or two about SlickChart for slickchart.app helps other beauty pros find it.</div>
+    <textarea id="quote-text" class="fi" aria-label="Your words about SlickChart" maxlength="600" placeholder="What do you love about SlickChart?" style="height:96px;resize:none;margin-bottom:10px;"></textarea>
+    <span class="fl-lbl">Show my name as</span>
+    <input id="quote-credit" class="fi" aria-label="Show my name as" maxlength="80" value="${_fileEsc(_quoteCredit())}" placeholder="First name, what you do" style="margin-bottom:8px;">
+    <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">Sending says it’s OK to show your words exactly as written, with this name. Nothing goes up before I read it.</div>
+    <div id="quote-msg" style="font-size:15px;color:var(--p-amber);min-height:4px;margin-bottom:6px;"></div>
+    <button class="btnp" id="quote-send" style="width:100%;border-radius:10px;justify-content:center;margin-bottom:8px;" onclick="_quoteSend()"><i class="ti ti-send" aria-hidden="true"></i> Send</button>
+    <button class="btng" style="width:100%;border-radius:10px;padding:10px;" onclick="_quoteClose()">Not now</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(m);
+}
+function _quoteClose(){const m=document.getElementById('quote-ask');if(m)m.remove();}
+async function _quoteSend(){
+  const t=((document.getElementById('quote-text')||{}).value||'').trim();
+  const c=((document.getElementById('quote-credit')||{}).value||'').trim();
+  const msg=document.getElementById('quote-msg');
+  if(t.length<8){if(msg)msg.textContent='Write a sentence first, or tap Not now.';return;}
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+  const b=document.getElementById('quote-send');if(b)b.disabled=true;
+  try{
+    const r=await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({kind:'quote',rating:5,message:t+'\n\nOK to show on slickchart.app as: '+(c||'(no name)'),at:Date.now()})});
+    if(r.ok){_quoteClose();proToast('Thank you so much 💛');return;}
+    if(msg)msg.textContent='Couldn’t send just now. Try again.';
+  }catch(e){if(msg)msg.textContent='Couldn’t send just now. Try again.';}
+  if(b)b.disabled=false;
+}
 function renderRefer(){
   setNav('more');
   document.getElementById('tt').textContent='Refer a friend';
@@ -28770,7 +28831,8 @@ async function _sendPulse(){
   }catch(e){}
   _dismissPulse();
   if(_pulseOk)proToast('Thanks, that really helps \ud83d\udc9b');
-  if(_pulseOk&&(_pulseAnswers.rating||0)>=4)setTimeout(function(){try{_refMoment('pulse');}catch(e){}},2600);
+  // A 5: ask for a line for the website first (once in a while). Otherwise a 4 or 5 is a good moment to share.
+  if(_pulseOk&&(_pulseAnswers.rating||0)>=4)setTimeout(function(){try{if(!(_pulseAnswers.rating===5&&_quoteAskMaybe()))_refMoment('pulse');}catch(e){}},2600);
   else proToast('Couldn’t send just now, please try again.',0);
 }
 // Beta feedback (reachable from onboarding + settings)
