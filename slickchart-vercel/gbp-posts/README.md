@@ -22,6 +22,10 @@ Files are `YYYY-MM-DD-slickchart.txt` and `YYYY-MM-DD-build.txt`, plain text, re
 4. **No phone number in the text.** The button is the call to action.
 5. **No em dashes.** Consistent with `/build`, `/free` and both blogs.
 6. **An image with every post**, made from the **real UI**, 4:3, at least 1200x900.
+7. **Give her the button link with every post, every week** (her rule, 2026-11-16). The full URL of
+   that post's blog page, in its own copyable code block, so she can paste it into the button:
+   `https://slickchart.app/blog/<slug>` for SlickChart, `https://slickchart.app/build/blog/<slug>`
+   for Build. Check the generated page exists (`blog/<slug>.html`, `build-blog/<slug>.html`) first.
 
 ## The business description
 
