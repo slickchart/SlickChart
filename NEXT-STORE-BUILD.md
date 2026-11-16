@@ -55,6 +55,8 @@ Every session: check this list whenever a change turns out to need a store build
   2. `node scripts/native/tap-to-pay.cjs enable`, then `npx cap sync`, build both apps.
   3. Square Developer Dashboard > the app > Mobile Payments SDK: submit the Android release signing
      certificate (SHA-256) or Android production payments are refused.
+     Play App Signing key SHA-256 (read from Play Console > App signing, 2026-11-16):
+     `53:F7:EC:3A:46:93:22:30:7B:2F:70:B7:E0:53:60:1F:41:3B:29:F2:20:AD:64:B7:C7:8D:6F:4D:7C:4D:32:3F`
   4. Play Console data safety: approximate + precise location and phone state are used for payments.
   5. Test one real $1 payment on an iPhone XS or newer and an Android 9+ phone with NFC, then refund it.
 - **Square scope:** `PAYMENTS_WRITE_IN_PERSON` was added to the OAuth scopes (build 2026-11-16k).
