@@ -7,6 +7,8 @@ import { safeStripeMessage } from '../lib/stripe-safe.js';
 import { dbEnabled, getSubscription, accountEmail } from '../lib/db.js';
 import { appOrigin } from '../lib/email.js';
 import { yearlyCentsFor } from '../lib/pricing.js';
+import { sql } from '../lib/db.js';
+import { pauseSubscription, unpauseSubscription } from '../lib/growth.js';
 
 function claims(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -41,6 +43,16 @@ export default async function handler(req, res) {
       const b = (req.body && typeof req.body === 'object') ? req.body : JSON.parse(req.body || '{}');
       intent = String((b && b.intent) || '');
     } catch (e) {}
+
+    // intent 'pause' {months} / 'unpause': no portal, done here (lib/growth.js). The subscription is the
+    // one on HER row, found by the session's own email above; the request only says how many months.
+    if (intent === 'pause' || intent === 'unpause') {
+      let months = 0;
+      try { const b = (req.body && typeof req.body === 'object') ? req.body : JSON.parse(req.body || '{}'); months = Number(b && b.months); } catch (e) {}
+      const r = intent === 'pause' ? await pauseSubscription(sql(), email, sub, months) : await unpauseSubscription(sql(), email, sub);
+      res.status(r.ok ? 200 : 409).json(r);
+      return;
+    }
 
     const origin = appOrigin(req);
     const stripeGet = (path) => fetch('https://api.stripe.com/v1/' + path, { headers: { Authorization: 'Bearer ' + key } })

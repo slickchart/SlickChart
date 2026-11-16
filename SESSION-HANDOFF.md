@@ -9409,7 +9409,64 @@ check-in or other forms. A failed send restores the form and stays in form-only 
 already done the link opens Home as before. Home, the client's other to-dos and the push deep links are
 unchanged. `test-form-link-direct.mjs` now replays her exact list (18 checks, Chromium + WebKit).
 
-## 2026-11-16: signed PAPER forms go on a client's file (Lisa, build 2026-11-16a)
+## 2026-11-16 — Keeping providers: trial emails, referral prompts, yearly card, pause (build `2026-11-16a`, PREVIEW)
+
+Ashley: *"please do the improvement of trial emails, referral prompts, and ask monthly payers to switch to
+yearly in months 2 to 5, and offer a pause when someone cancels."* (She has already done the Stripe
+step from the growth plan; the Square App Marketplace is closed to new applications, so that is off.)
+
+**Every number is her setting** (Admin tools, Referrals; `lib/referral.js` REFERRAL_SETTINGS, keys
+`ref_prompt_*` and `grow_*`, stored in `founder_settings`): prompt on/off and days between asks (21),
+yearly months from/to (2 to 5), pause on/off, longest pause (3 months), pauses per year (1), trial-ending
+email days before (3), import offer on/off and the client count below which it is offered (5).
+
+- **Trial emails** (`lib/nurture.js`): the day-4 email drops the "send a form" step when she already
+  has a form back. A NEW step is APPENDED (index 4, never inserted: the index is the stored claim id):
+  day 1 "Bring your clients in", skipped when she has Square connected or enough clients; it has
+  `since: 2026-11-16` so providers who signed up earlier never get it. Steps now run in day order.
+  `runTrialEnding` sends ONE trial-ending email per trial (`nurture_sends` seq `trialend`), N days
+  before `trial_end`, never within 20 h of another nurture email, respecting opt-out. With few
+  clients and no Square it offers "reply with your export file and we'll bring them in" — **those
+  replies come to Ashley's support inbox**. Otherwise it lists what she set up, the price, and the
+  yearly option. `providerFacts` counts only (clients from kv `sc_clients`, Square connected,
+  forms/check-ins back); unknown facts never skip a step.
+- **Yearly card** (`lib/growth.js` `offerFor`, Home `#grow-home-slot`): monthly payers whose month
+  of paying (from `trial_outcomes.first_paid_at`, else `subscriptions.paid_notified_at`) is inside her
+  window. One card at a time: the referral card waits while it shows. "Not now" hides it until her
+  next month of paying (`slickyearlyskip`, device-only, not synced). Hidden in the native app.
+- **Pause** (`lib/growth.js` `pauseSubscription`, `api/create-portal-session.js` intents
+  `pause`/`unpause`): Cancel subscription now opens "Need a break instead?" with 1..max month
+  buttons (each shows when billing starts again), yearly, and "Cancel anyway". Stripe
+  `pause_collection {behavior:'void', resumes_at}`: invoices are voided and billing starts again on its
+  own. **CHANGED same evening (build `2026-11-16b`), Ashley: "i dont like that if people pause they can
+  keep using the app - that means they are using it for free".** She keeps the time she already paid
+  for; from `subscriptions.pause_starts_at` (= that paid-up end, kept by the webhook with COALESCE so
+  Stripe's rolling period does not move it) until `paused_until` the app is LOCKED behind
+  `#grow-locked` ("SlickChart is paused": data safe, the reopen date, Resume now, Sign out).
+  `offer.locked` / `offer.pauseStartsAt` from billing-status; the app re-checks on coming back to it and
+  every 15 min. Resume before the lock = cancel the pause, nothing charged. Resume while locked =
+  `billing_cycle_anchor: now, proration_behavior: none` (charged today, billing date = today). Native
+  app: locked too, but no price or pay button ("sign in at slickchart.app"). NOTE: the lock is in the
+  app; the server does not refuse a paused account's API calls, the same as a cancelled account whose
+  session is still open (login is the only server gate today). Clients' links keep working. Re-checked against the LIVE Stripe sub
+  (active, monthly, not cancelling, not already paused); identity from the session only. Recorded in
+  `subscription_pauses`; `subscriptions.paused_until` (new column) is kept by the webhook too.
+  Billing screen shows "Paused", the date, and "Resume billing now". An older server with no `offer`
+  field means Cancel works exactly as before.
+- **Referral prompt** (`_refMoment`/`_refNudge`): a 4-5 on the pulse, a client signing a form in the
+  last 2 h, or saving a note with 10+ charts. Only when `/api/referral` says `promptOn` (paying,
+  past `ref_home_days`), at most once per `ref_prompt_days` per device (`slickrefnudge`), never over
+  another sheet or in the treatment room. Showing it is not counted as a share; tapping Share is.
+  Refer screen: "Refer 12 friends who stay, and SlickChart is free for a whole year" when the reward
+  is a month and her yearly cap allows 12.
+- `?n=go&i=<screen>` deep link for emails, allow-listed (import-clients, switch-app, refer,
+  subscription-billing, data-setup).
+
+Tests: `scratchpad/test-growth-nurture.mjs` (PGlite, 37 checks) and `scratchpad/test-growth-ui.mjs`
+(54 checks, Chromium AND WebKit: `ENGINE=webkit PLAYWRIGHT_BROWSERS_PATH=<webkit dir>`).
+`test-billing-banner`, `test-referral-mrr` pass. `test-referral-ui`'s two landing-page ad-link checks
+fail under a plain static server (they expect Vercel's clean `/` path); `index.html` is untouched here.
+## 2026-11-16: signed PAPER forms go on a client's file (Lisa, build 2026-11-16c)
 
 **What Lisa asked (email 2026-11-16, 02:28Z):** she is going paperless and has years of paper intake
 forms clients already signed. She wants to scan them with her iPhone or iPad into each client's

@@ -19,6 +19,7 @@ import crypto from 'crypto';
 import { sql, ensureProvidersTable } from './db.js';
 import { sendEmail } from './email.js';
 import { signupPricing } from './pricing.js';
+import { getReferralSettings } from './referral.js';
 // The price a prospect would pay if they signed up today ($10 until 2026-11-07, then $17).
 const P = () => signupPricing();
 
@@ -140,11 +141,13 @@ export const PROVIDER_SEQUENCE = [
     subject: () => 'Lock in your protection (5 minutes)',
     html: (c) => wrap(`
       <p>Hi ${esc(c.first)},</p>
-      <p>Let’s make sure you’re covered. Two quick setup steps today:</p>
-      <p style="margin:0 0 4px;">1. Upload your license and insurance to your document vault — SlickChart will remind you before they expire.<br>2. Send a client your consent/intake form and watch it come back signed and stored.</p>
+      ${c.facts && c.facts.formsBack > 0 ? `<p>You already have a client form back, signed and stored. Nice work! One more quick step today:</p>
+      <p style="margin:0 0 4px;">Upload your license and insurance to your document vault. SlickChart will remind you before they expire.</p>` : `<p>Let’s make sure you’re covered. Two quick setup steps today:</p>
+      <p style="margin:0 0 4px;">1. Upload your license and insurance to your document vault — SlickChart will remind you before they expire.<br>2. Send a client your consent/intake form and watch it come back signed and stored.</p>`}
       <p>That’s the safety net most solo pros never had. Done in five minutes.</p>
       ${btn(SITE + '/slickchart', 'Set up your vault')}`, c.email),
-    text: (c) => `Hi ${c.first},\n\nTwo quick setup steps today:\n1. Upload your license and insurance to your document vault — SlickChart reminds you before they expire.\n2. Send a client your consent/intake form and watch it come back signed and stored.\n\nThe safety net most solo pros never had. Five minutes.\n\n${SITE}/slickchart\n\nWith love,\nAshley${footerText(c.email)}`,
+    text: (c) => `Hi ${c.first},\n\n${c.facts && c.facts.formsBack > 0 ? 'You already have a client form back, signed and stored. One more quick step today:\nUpload your license and insurance to your document vault. SlickChart reminds you before they expire.' : 'Two quick setup steps today:\n1. Upload your license and insurance to your document vault — SlickChart reminds you before they expire.\n2. Send a client your consent/intake form and watch it come back signed and stored.'}\n\nThe safety net most solo pros never had. Five minutes.\n\n${SITE}/slickchart\n\nWith love,\nAshley${footerText(c.email)}`,
+    facts: true,
   },
   {
     day: 6,
@@ -168,7 +171,105 @@ export const PROVIDER_SEQUENCE = [
       ${btn(SITE, 'Share SlickChart')}`, c.email),
     text: (c) => `Hi ${c.first},\n\nIf SlickChart has saved you time or a headache, two favors:\n1. Send me a sentence or a 20-second video about your experience — I'd love to feature you.\n2. Know another solo pro who'd love this? Send them over: slickchart.app\n\nThank you for being here. This is only the beginning.\n\nWith love,\nAshley${footerText(c.email)}`,
   },
+  // ── Added 2026-11-16 (trial emails that follow what she has done). APPEND ONLY: a step's position in
+  // this list is its stored id in nurture_sends, so inserting above would re-send old steps to everyone.
+  // The loop runs the steps in `day` order, so a day-1 step can sit at the end. `since` keeps a new step
+  // from going to anyone who joined before it existed. `skip` = she has already done it: the step is
+  // marked done and nothing is sent.
+  {
+    day: 1,
+    since: Date.parse('2026-11-16T00:00:00Z'),
+    facts: true,
+    skip: (f, s) => !!f && (f.square || f.clients >= s.grow_import_below),
+    subject: () => 'Bring your clients in (about 2 minutes)',
+    html: (c) => wrap(`
+      <p>Hi ${esc(c.first)},</p>
+      <p>SlickChart feels like home once your clients are in it. There are two quick ways:</p>
+      <p style="margin:0 0 4px;">1. <strong>Use Square?</strong> Connect it and your clients and bookings come in on their own.<br>2. <strong>Coming from another app or a spreadsheet?</strong> Tap Import clients and pick the file. It reads the columns for you.</p>
+      ${btn(SITE + '/slickchart?n=go&i=import-clients', 'Import my clients')}
+      <p>Stuck on an export from your old app? Reply to this email and tell me which app. I’ll point you to the right button.</p>`, c.email),
+    text: (c) => `Hi ${c.first},\n\nSlickChart feels like home once your clients are in it. Two quick ways:\n1. Use Square? Connect it and your clients and bookings come in on their own.\n2. Coming from another app or a spreadsheet? Tap Import clients and pick the file. It reads the columns for you.\n\nImport my clients: ${SITE}/slickchart?n=go&i=import-clients\n\nStuck on an export from your old app? Reply and tell me which app. I'll point you to the right button.\n\nWith love,\nAshley${footerText(c.email)}`,
+  },
 ];
+
+// ─── TRIAL ENDING ───────────────────────────────────────────────────────────────
+// One email, a few days before a free trial ends (her setting grow_trial_end_days). Few clients and no
+// Square: the "we'll bring your clients in" offer (her setting grow_import_offer; replies come to her).
+// Otherwise: what she has set up so far, and what happens next. Always says plainly how to cancel.
+function _fmtDay(ts) {
+  try { return new Date(ts).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' }); } catch (e) { return ''; }
+}
+function _priceLine(t) {
+  if (!t || !t.plan_amount) return '';
+  const d = '$' + (Number(t.plan_amount) / 100).toFixed(Number(t.plan_amount) % 100 ? 2 : 0);
+  return t.plan_interval === 'year' ? d + ' for the year' : d + ' a month';
+}
+export function trialEndEmail(c) {
+  const f = c.facts || {};
+  const when = _fmtDay(c.trialEnd);
+  const price = _priceLine(c.trial);
+  const yearly = c.trial && c.trial.plan_interval !== 'year' && c.trial.plan_amount
+    ? '$' + Math.round(Number(c.trial.plan_amount) * 10 / 100) : '';
+  const fewClients = !f.square && (f.clients || 0) < c.importBelow;
+  const cancelLine = 'Not for you? Cancel any time before then in Settings, Subscription &amp; Billing, and you won’t be charged.';
+  const cancelText = "Not for you? Cancel any time before then in Settings, Subscription & Billing, and you won't be charged.";
+  if (fewClients && c.importOffer) {
+    return {
+      subject: 'Your free trial ends ' + (when || 'soon') + '. Want help bringing your clients in?',
+      html: wrap(`
+        <p>Hi ${esc(c.first)},</p>
+        <p>Your free trial ends on <strong>${esc(when)}</strong>. Most providers fall in love with SlickChart once their own clients are in it, so let’s get yours in.</p>
+        <p style="margin:0 0 4px;">1. <strong>Do it yourself in about 2 minutes:</strong> tap Import clients and pick a spreadsheet or the export from your old app.<br>2. <strong>Or let us do it:</strong> reply to this email with that file attached and we’ll bring your clients in for you.</p>
+        ${btn(SITE + '/slickchart?n=go&i=import-clients', 'Import my clients')}
+        <p style="font-size:14px;color:#777;">${cancelLine}</p>`, c.email),
+      text: `Hi ${c.first},\n\nYour free trial ends on ${when}. Most providers fall in love with SlickChart once their own clients are in it, so let's get yours in.\n\n1. Do it yourself in about 2 minutes: tap Import clients and pick a spreadsheet or the export from your old app.\n${SITE}/slickchart?n=go&i=import-clients\n2. Or let us do it: reply to this email with that file attached and we'll bring your clients in for you.\n\n${cancelText}\n\nWith love,\nAshley${footerText(c.email)}`,
+    };
+  }
+  const done = [];
+  if (f.clients) done.push(f.clients + ' client' + (f.clients === 1 ? '' : 's') + ' in your list');
+  if (f.formsBack) done.push(f.formsBack + ' form' + (f.formsBack === 1 ? '' : 's') + ' and check-in' + (f.formsBack === 1 ? '' : 's') + ' back from clients');
+  if (f.square) done.push('Square connected');
+  const doneHtml = done.length ? '<p>Here’s what you’ve set up so far:</p><p style="margin:0 0 4px;">' + done.map(x => '✓ ' + esc(x)).join('<br>') + '</p>' : '';
+  const doneText = done.length ? "Here's what you've set up so far:\n" + done.map(x => '- ' + x).join('\n') + '\n\n' : '';
+  return {
+    subject: 'Your free trial ends ' + (when || 'soon'),
+    html: wrap(`
+      <p>Hi ${esc(c.first)},</p>
+      <p>Your free trial ends on <strong>${esc(when)}</strong>.</p>
+      ${doneHtml}
+      <p>There’s nothing you need to do to keep going${price ? ': it simply continues at ' + esc(price) : ''}.${yearly ? ' Prefer to pay once a year? Switch to yearly for ' + esc(yearly) + ' in Settings, Subscription &amp; Billing. That’s 2 months free.' : ''}</p>
+      ${btn(SITE + '/slickchart', 'Open SlickChart')}
+      <p>Questions, or something not working the way you hoped? Just reply. I read every one.</p>
+      <p style="font-size:14px;color:#777;">${cancelLine}</p>`, c.email),
+    text: `Hi ${c.first},\n\nYour free trial ends on ${when}.\n\n${doneText}There's nothing you need to do to keep going${price ? ': it simply continues at ' + price : ''}.${yearly ? ' Prefer to pay once a year? Switch to yearly for ' + yearly + ' in Settings, Subscription & Billing. That is 2 months free.' : ''}\n\nQuestions, or something not working the way you hoped? Just reply. I read every one.\n\n${cancelText}\n\nWith love,\nAshley${footerText(c.email)}`,
+  };
+}
+
+// ─── WHAT SHE HAS DONE ──────────────────────────────────────────────────────────
+// Counts only, read for ONE provider by her own provider id (from the providers row the cron is
+// walking, never from a request). Any read that fails leaves that fact unknown (null), and an unknown
+// fact never skips an email: the step is sent as it always was.
+export async function providerFacts(q, providerId) {
+  const f = { clients: 0, square: false, formsBack: 0 };
+  if (!providerId) return null;
+  try {
+    const r = (await q`SELECT v FROM kv WHERE owner = ${String(providerId)} AND k = 'sc_clients' AND length(v) < 8000000`)[0];
+    if (r && r.v) {
+      const o = JSON.parse(r.v);
+      const list = Array.isArray(o) ? o : (o && typeof o === 'object' ? Object.values(o) : []);
+      f.clients = list.filter(c => c && typeof c === 'object' && !c.deleted && !c.removed).length;
+    }
+  } catch (e) { return null; }
+  try {
+    const r = await q`SELECT 1 FROM square_connections WHERE provider_id = ${String(providerId)} AND access_token IS NOT NULL LIMIT 1`;
+    f.square = !!r.length;
+  } catch (e) { f.square = false; }
+  try {
+    const r = await q`SELECT count(*)::int AS n FROM client_events WHERE provider_id = ${String(providerId)} AND kind IN ('form', 'checkin')`;
+    f.formsBack = (r[0] && r[0].n) || 0;
+  } catch (e) { f.formsBack = 0; }
+  return f;
+}
 
 // ─── TABLES ────────────────────────────────────────────────────────────────────
 export async function ensureNurtureTables(q) {
@@ -243,7 +344,7 @@ export async function runNurture() {
 
   // Providers created since start, not opted out.
   const providers = await q`
-    SELECT email, name, extract(epoch from created_at)*1000 AS ts
+    SELECT id, email, name, extract(epoch from created_at)*1000 AS ts
     FROM providers
     WHERE created_at >= ${startTs}
       AND lower(email) NOT IN (SELECT email FROM nurture_optout)`;
@@ -251,9 +352,57 @@ export async function runNurture() {
   // (email, seq, step) — the record of which emails each person has already had. Renaming it would
   // make every existing provider look like they'd received nothing, and re-send them the whole
   // sequence. The customer-facing wording is what changed, not this key.
-  for (const row of providers) { if (unsub.has(String(row.email || '').toLowerCase())) continue; await processContact(q, 'founder', PROVIDER_SEQUENCE, row, {}, summary); }
+  // Her growth settings (lib/referral.js): the "few clients" line and the trial-ending email's timing.
+  let gs = null;
+  try { gs = await getReferralSettings(q); } catch (e) { gs = null; }
+  const settings = gs || { grow_import_below: 5, grow_trial_end_days: 3, grow_import_offer: 1 };
+  for (const row of providers) {
+    if (unsub.has(String(row.email || '').toLowerCase())) continue;
+    // What she has done, read only if a step that needs it is due (lib/nurture.js providerFacts).
+    let memo;
+    const facts = async () => (memo !== undefined ? memo : (memo = await providerFacts(q, row.id)));
+    await processContact(q, 'founder', PROVIDER_SEQUENCE, row, { factsFn: facts, settings }, summary);
+  }
+
+  // Trials ending in the next N days (her setting). One email per trial, ever.
+  summary.trialend = 0;
+  try { await runTrialEnding(q, unsub, settings, summary); } catch (e) { summary.errors++; console.error('[nurture] trial-ending failed', e && e.message || e); }
 
   return summary;
+}
+
+async function runTrialEnding(q, unsub, settings, summary) {
+  let rows = [];
+  try {
+    rows = await q`SELECT t.sub_id, t.email, t.trial_end, t.plan_amount, t.plan_interval, p.id AS pid, p.name
+      FROM trial_outcomes t JOIN providers p ON lower(p.email) = t.email
+      WHERE t.outcome = 'trialing' AND t.trial_end > now()
+        AND t.trial_end <= now() + make_interval(days => ${settings.grow_trial_end_days})
+        AND t.email NOT IN (SELECT email FROM nurture_optout)`;
+  } catch (e) { return; }   // no trial table yet: nothing to send
+  for (const t of rows) {
+    const email = String(t.email || '').trim().toLowerCase();
+    if (!email || unsub.has(email)) continue;
+    // Never two of our emails within a day: if another one went out in the last 20 hours, this one
+    // waits for a later run (the window is days wide).
+    const recent = await q`SELECT 1 FROM nurture_sends WHERE email = ${email} AND seq <> 'trialend' AND sent_at > now() - interval '20 hours' LIMIT 1`;
+    if (recent.length) continue;
+    const claimed = await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, 'trialend', 0)
+      ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`;
+    if (!claimed.length) continue;
+    const facts = await providerFacts(q, t.pid);
+    const first = String(t.name || '').trim().split(/\s+/)[0] || 'there';
+    const m = trialEndEmail({ first, email, facts: facts || {}, trialEnd: new Date(t.trial_end).getTime(), trial: t,
+      importBelow: settings.grow_import_below, importOffer: !!settings.grow_import_offer && !!facts });
+    try {
+      await sendEmail({ to: email, from: FROM, replyTo: REPLY_TO, subject: m.subject, html: m.html, text: m.text });
+      summary.trialend++;
+    } catch (e) {
+      await q`DELETE FROM nurture_sends WHERE email=${email} AND seq='trialend' AND step=0`;
+      summary.errors++;
+      console.error('[nurture] trial-ending send failed', email, e && e.message || e);
+    }
+  }
 }
 
 // Send at most one email per contact per run: the earliest due, not-yet-sent step.
@@ -265,10 +414,14 @@ export async function processContact(q, seq, sequence, row, ctx, summary, sender
   if (!email) return;
   const daysSince = (Date.now() - Number(row.ts)) / 86400000;
   const first = String(row.name || '').trim().split(/\s+/)[0] || 'there';
+  // Run the steps in day order but claim each by its position in the list (its stored id), so a step
+  // appended later with an earlier day still goes out in the right order.
+  const order = sequence.map((st, i) => i).sort((a, b) => sequence[a].day - sequence[b].day || a - b);
 
-  for (let i = 0; i < sequence.length; i++) {
+  for (const i of order) {
     const step = sequence[i];
     if (daysSince < step.day) break;              // not due yet — later steps aren't either
+    if (step.since && Number(row.ts) < step.since) continue;   // she joined before this step existed
     // Claim atomically. If nothing returned, this step was already sent → try the next.
     const claimed = await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, ${seq}, ${i})
       ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`;
@@ -285,6 +438,13 @@ export async function processContact(q, seq, sequence, row, ctx, summary, sender
       continue;
     }
     const c = { ...ctx, first, email };
+    delete c.factsFn;
+    if ((step.facts || step.skip) && ctx && ctx.factsFn) {
+      try { c.facts = await ctx.factsFn(); } catch (e) { c.facts = null; }
+    }
+    // Already done it: mark the step done (the claim above stays) and send nothing. Unknown facts
+    // (null) never skip.
+    if (step.skip && c.facts && step.skip(c.facts, (ctx && ctx.settings) || {})) { summary.skipped = (summary.skipped || 0) + 1; continue; }
     try {
       await sendEmail({
         to: email,

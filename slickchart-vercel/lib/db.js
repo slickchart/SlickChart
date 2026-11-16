@@ -257,6 +257,13 @@ export async function ensureProvidersTable() {
   // 'month' or 'year' from the Stripe price, so the billing screen does not call a yearly plan
   // "$100.00/month". NULL on rows written before this existed reads as monthly, which they all were.
   try { await q`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS plan_interval text`; } catch (e) {}
+  // When a paused subscription starts billing again (Stripe pause_collection.resumes_at), or NULL when
+  // it is not paused (2026-11-16, "offer a pause when someone cancels"). Written by the webhook and by
+  // api/create-portal-session.js (intent 'pause' / 'unpause'). Stripe keeps a paused plan 'active'.
+  try { await q`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS paused_until timestamptz`; } catch (e) {}
+  // When the pause actually begins: the end of the time she had already paid for. From then until
+  // paused_until SlickChart is LOCKED (Ashley, 2026-11-15: a pause must not mean using it for free).
+  try { await q`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS pause_starts_at timestamptz`; } catch (e) {}
   // When the founder was told this provider started paying. It is the once-ever claim behind the
   // "💰 New PAID provider" ping: a RENEWAL is just another `customer.subscription.updated` with
   // status=active, indistinguishable from the first payment without a stamp like this, which is why

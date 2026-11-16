@@ -288,6 +288,21 @@ export default async function handler(req, res) {
       const effPlanInterval = effSub.items && effSub.items.data && effSub.items.data[0] && effSub.items.data[0].price
         && effSub.items.data[0].price.recurring ? effSub.items.data[0].price.recurring.interval || null : null;
 
+      // A paused plan (pause_collection, offered when she taps Cancel) stays 'active' in Stripe. Keep
+      // when it starts billing again, so the billing screen can say "Paused until ..." (NULL = not paused).
+      const pc = effSub && effSub.pause_collection;
+      const effPausedUntil = pc && pc.resumes_at ? new Date(pc.resumes_at * 1000).toISOString() : null;
+      // The pause begins at the end of the time already paid for, and SlickChart is locked from then until
+      // it resumes (lib/growth.js). Keep the first start we saw: Stripe moves current_period_end on every
+      // voided month, so a later event would otherwise push the lock date forward. Not paused = clear both.
+      const setPause = (qq, until, periodEnd, by, key) => until
+        ? (by === 'email'
+          ? qq`UPDATE subscriptions SET paused_until=${until}, pause_starts_at=COALESCE(pause_starts_at, ${periodEnd}::timestamptz) WHERE email=${key}`
+          : qq`UPDATE subscriptions SET paused_until=${until}, pause_starts_at=COALESCE(pause_starts_at, ${periodEnd}::timestamptz) WHERE stripe_customer_id=${key}`)
+        : (by === 'email'
+          ? qq`UPDATE subscriptions SET paused_until=NULL, pause_starts_at=NULL WHERE email=${key}`
+          : qq`UPDATE subscriptions SET paused_until=NULL, pause_starts_at=NULL WHERE stripe_customer_id=${key}`);
+
       if (existing[0]) {
         // Point the row at whichever subscription is actually live, so a later event for the
         // cancelled one can be recognised as being about a different subscription.
@@ -295,6 +310,7 @@ export default async function handler(req, res) {
           stripe_customer_id=${effCustomer}, current_period_end=${effPeriodEnd}, plan_amount=${effPlanAmount},
           plan_interval=${effPlanInterval}, cancel_at_period_end=${!!effSub.cancel_at_period_end}, updated_at=now()
           WHERE stripe_customer_id=${customerId}`;
+        try { await setPause(q, effPausedUntil, effPeriodEnd, 'customer', customerId); } catch (e) {}
       } else {
         subEmail = await lookupCustomerEmail(customerId);
         if (subEmail) {
@@ -307,6 +323,7 @@ export default async function handler(req, res) {
             ON CONFLICT (email) DO UPDATE SET status=EXCLUDED.status, stripe_subscription_id=EXCLUDED.stripe_subscription_id,
               current_period_end=EXCLUDED.current_period_end, plan_amount=EXCLUDED.plan_amount, plan_interval=EXCLUDED.plan_interval,
               cancel_at_period_end=EXCLUDED.cancel_at_period_end, updated_at=now()`;
+          try { await setPause(q, effPausedUntil, effPeriodEnd, 'email', subEmail); } catch (e) {}
         }
       }
       // If THIS event is the one that made the provider active, ping the founder — deduped once-per-

@@ -32,6 +32,20 @@ export const REFERRAL_SETTINGS = {
   ref_reward_on_payment:{ def: 1,   min: 0, max: 1,    label: 'Credit the sharer after the friend’s first real payment (1), or as soon as the trial ends (0)', unit: '' },
   ref_max_per_year:     { def: 12,  min: 0, max: 1000, label: 'Most credits one sharer can earn in a year (0 = no limit)', unit: '' },
   ref_home_days:        { def: 7,   min: 0, max: 365,  label: 'Days after joining before the Refer a friend card shows on Home', unit: 'days' },
+  // Growth settings (2026-11-16, Ashley: "do the improvement of trial emails, referral prompts, ask
+  // monthly payers to switch to yearly in months 2 to 5, and offer a pause when someone cancels").
+  // Stored in the same founder_settings table and shown on the same Admin > Referrals screen, so every
+  // number in these behaviours is hers to change (CLAUDE.md §1f). Keys outside 'ref_' are 'grow_'.
+  ref_prompt_on:        { def: 1,   min: 0, max: 1,    label: 'Ask providers to share their code at good moments (a form comes back signed, a happy rating) (1 on, 0 off)', unit: '' },
+  ref_prompt_days:      { def: 21,  min: 1, max: 365,  label: 'Least days between those asks, per provider', unit: 'days' },
+  grow_yearly_from:     { def: 2,   min: 1, max: 24,   label: 'Offer monthly payers the yearly plan on Home from this month of paying', unit: 'month' },
+  grow_yearly_to:       { def: 5,   min: 1, max: 24,   label: '...up to and including this month of paying', unit: 'month' },
+  grow_pause_on:        { def: 1,   min: 0, max: 1,    label: 'Offer a pause when a monthly payer taps Cancel (1 on, 0 off)', unit: '' },
+  grow_pause_max:       { def: 3,   min: 1, max: 6,    label: 'Longest pause she can pick', unit: 'months' },
+  grow_pause_per_year:  { def: 1,   min: 1, max: 6,    label: 'Pauses allowed in any 12 months', unit: '' },
+  grow_trial_end_days:  { def: 3,   min: 1, max: 13,   label: 'Days before a free trial ends to send the "your trial ends soon" email', unit: 'days' },
+  grow_import_offer:    { def: 1,   min: 0, max: 1,    label: 'In that email, offer to bring in her clients for her when she has few (replies come to you) (1 on, 0 off)', unit: '' },
+  grow_import_below:    { def: 5,   min: 1, max: 1000, label: '"Few clients" means fewer than', unit: 'clients' },
 };
 export const DEFAULT_SHARE_MESSAGE = 'I use SlickChart for my charts, forms and client photos. Use my code {code} for your first month free: {link}';
 const MESSAGE_KEY = 'ref_share_message';
@@ -52,12 +66,14 @@ export async function getReferralSettings(q) {
   try {
     q = q || sql();
     await ensureFounderSettingsTable(q);
-    const rows = await q`SELECT k, v FROM founder_settings WHERE k LIKE 'ref_%'`;
+    const rows = await q`SELECT k, v FROM founder_settings WHERE k LIKE 'ref_%' OR k LIKE 'grow_%'`;
     for (const r of rows) {
       if (r.k === MESSAGE_KEY) { const m = cleanMessage(r.v); if (m) out.message = m; continue; }
       const c = cleanReferralSetting(r.k, r.v); if (c != null) out[r.k] = c;
     }
   } catch (e) {}
+  // The yearly window can never run backwards.
+  if (out.grow_yearly_to < out.grow_yearly_from) out.grow_yearly_to = out.grow_yearly_from;
   return out;
 }
 
