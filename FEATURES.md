@@ -451,26 +451,15 @@ saved anywhere", not "does this always call that".
 | `_openSquarePurge` | `/api/square/delete-customers` | via `_sqp_execute` |
 | `_payDelete` | `/api/square/giftcard` | via `_checkGiftCard` |
 | `_payDelete` | `/api/square/invoices` | via `_paySyncSquare` |
-| `_payDeleteDo` | `/api/square/giftcard` | via `_checkGiftCard` |
-| `_payDeleteDo` | `/api/square/invoices` | via `_paySyncSquare` |
-| `_payDeleteDo` | `/api/square/payment-link` | via `_payTextLink` |
-| `_payDeleteDo` | `/api/square/refund` | via `_payRefund` |
 | `_payLogOpen` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_payLogOpen` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_payLogOpen` | `/api/square/customers` | via `_autoSyncCustomers` |
 | `_payLogOpen` | `/api/square/giftcard` | via `_checkGiftCard` |
 | `_payLogOpen` | `/api/square/invoices` | via `_paySyncSquare` |
-| `_payMarkPaid` | `/api/square/giftcard` | via `_checkGiftCard` |
-| `_payMarkPaid` | `/api/square/invoices` | via `_paySyncSquare` |
-| `_payMarkPaid` | `/api/square/payment-link` | via `_payTextLink` |
-| `_payMarkPaid` | `/api/square/refund` | via `_payRefund` |
 | `_payOpen` | `/api/square/giftcard` | via `_checkGiftCard` |
 | `_payOpen` | `/api/square/invoices` | via `_paySyncSquare` |
 | `_payOpen` | `/api/square/payment-link` | via `_payTextLink` |
 | `_payOpen` | `/api/square/refund` | via `_payRefund` |
-| `_payRefund` | `/api/square/giftcard` | via `_checkGiftCard` |
-| `_payRefund` | `/api/square/invoices` | via `_paySyncSquare` |
-| `_payRefund` | `/api/square/payment-link` | via `_payTextLink` |
 | `_payRefund` | `/api/square/refund` | direct |
 | `_paySyncSquare` | `/api/square/invoices` | direct |
 | `_payTextLink` | `/api/square/payment-link` | direct |
@@ -713,6 +702,8 @@ saved anywhere", not "does this always call that".
 | `_sqLoadCatalog` | `/api/square/catalog` | direct |
 | `_sqLoadCustomers` | `/api/square/customers` | direct |
 | `_sqLoadSlots` | `/api/square/availability` | direct |
+| `_sqPayCTA` | `/api/square/connect` | via `_sqConnect` |
+| `_sqPayCTA` | `/api/square/connection` | via `_sqConnState` |
 | `_sqRenderConnState` | `/api/square/connect` | via `_sqConnect` |
 | `_sqRenderConnState` | `/api/square/connection` | via `_sqConnState` |
 | `_sqWaitSettled` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -980,11 +971,6 @@ saved anywhere", not "does this always call that".
 | `renderCheckinDetail` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `renderCheckinDetail` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `renderCheckinDetail` | `/api/square/save-card` | via `_addCardOnFile` |
-| `renderCheckout` | `/api/square/booking-options` | via `_coEnsureMenu` |
-| `renderCheckout` | `/api/square/catalog` | via `_coEnsureMenu` |
-| `renderCheckout` | `/api/square/charge-card` | via `_coCharge` |
-| `renderCheckout` | `/api/square/invoice` | via `_coInvoice` |
-| `renderCheckout` | `/api/square/payment-link` | via `_coLink` |
 | `renderClientForms` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderClients` | `/api/ai` | via `_aiComplete` |
 | `renderClients` | `/api/clients` | via `_tidySaveToAccount` |

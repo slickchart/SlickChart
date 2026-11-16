@@ -370,7 +370,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-16f';
+const APP_BUILD='2026-11-16g';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -18546,8 +18546,8 @@ async function _bookCheckSquare(){
 function _bookDepositToggle(){
   if(!bookCfg.depositOn&&_bookSquare===false){
     if(typeof confirmModal==='function')confirmModal({title:'Deposits need Square',
-      body:'A deposit has to be paid somewhere, and SlickChart uses your own Square to take it. Connect Square in Settings → Integrations and this turns on.',
-      action:'Got it',hideCancel:true},function(){});
+      body:'A deposit has to be paid somewhere, and SlickChart uses your own Square to take it. Connect your Square, or open a free one with our link (no processing fees on your first $1,000), and this turns on.',
+      action:'Set up Square'},function(){if(typeof nav==='function')nav('square-guide');});
     else if(typeof proToast==='function')proToast('Connect Square first — deposits are taken through your own Square account.',0);
     return;
   }
@@ -30359,6 +30359,7 @@ function renderCheckout(id){
     <span class="fl-lbl">What it is for</span>
     <input class="fi" id="co-desc" value="${(c.treatment&&c.treatment!=='New client')?String(c.treatment).replace(/"/g,'&quot;'):''}" placeholder="e.g. Session, package, or product" style="margin-bottom:14px;">
     <div style="margin-bottom:14px;"><span class="fl-lbl">Line items <span style="color:var(--p-mut);font-weight:400;">optional, for detailed invoices</span></span><div id="co-items"></div><div style="display:flex;gap:8px;margin-top:6px;"><button onclick="_coMenuOpen()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-list-search"></i> Add from menu</button><button onclick="_coAddCustom()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus"></i> Add custom line</button></div></div>
+    <div id="co-sqcta"></div>
     <div id="co-result" style="margin-bottom:14px;"></div>
     <button class="btnp" onclick="_coLink('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;"><i class="ti ti-link"></i> Send payment link</button>
     <button class="btng" onclick="_coInvoice('${id}')" style="width:100%;border-radius:12px;margin-bottom:9px;justify-content:center;"><i class="ti ti-file-invoice"></i> Send invoice by email</button>
@@ -30366,6 +30367,7 @@ function renderCheckout(id){
     <button class="btng" onclick="_coMarkPaid('${id}')" style="width:100%;border-radius:12px;justify-content:center;"><i class="ti ti-cash"></i> Mark paid \u2014 cash / other</button>
     <div style="margin-top:14px;font-size:14px;color:var(--p-mut);line-height:1.6;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;"><i class="ti ti-lock" style="font-size:14px;"></i> Card payments run securely through your connected Square \u2014 never stored in SlickChart. \u201cMark paid\u201d just records a payment you took another way (cash, Venmo, your own reader) so your ledger and reports stay accurate.</div>
   </div><div style="height:20px;"></div>`;
+  try{_sqPayCTA('co-sqcta');}catch(e){}
 }
 
 
@@ -31638,6 +31640,7 @@ function renderBuildInvoice(){
   if(!_biClient||!CL[_biClient])_biClient=entries.length?entries[0][0]:'';
   S.innerHTML=`
   <div style="padding:14px 16px;">
+    <div id="bi-sqcta"></div>
     ${_biEditId?'<div style="background:var(--p-blue-bg);border:1px solid #24405e;border-radius:8px;padding:9px 12px;font-size:16px;color:#8fc0f0;margin-bottom:12px;">Editing invoice \u2014 sending creates an updated invoice and replaces this entry.</div>':''}
     <span class="fl-lbl">Client</span>
     <button type="button" onclick="_biClientPick()" style="width:100%;text-align:left;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:12px 14px;font-size:16px;color:var(--p-ink);font-family:inherit;cursor:pointer;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;"><span id="bi-client-label">${_biClient&&CL[_biClient]?String(CL[_biClient].name).replace(/</g,'&lt;'):(entries.length?'Choose a client':'No clients yet')}</span><i class="ti ti-chevron-down" style="color:var(--p-mut);font-size:16px;"></i></button>
@@ -31658,6 +31661,7 @@ function renderBuildInvoice(){
   </div>`;
   _coRenderItems();try{_fetchSquareTaxRate().then(()=>{if(document.getElementById('co-items'))_coRenderItems();});}catch(e){}
   const _lb=document.getElementById('bi-client-label');if(_lb&&_biClient&&CL[_biClient])_lb.textContent=CL[_biClient].name;
+  try{_sqPayCTA('bi-sqcta');}catch(e){}
 }
 
 function _biClientPick(){
@@ -31740,6 +31744,7 @@ function renderPayments(){
   const chip=s=>({paid:['var(--p-surf2)','var(--p-green)','Paid'],unpaid:['var(--p-amber-bg)','#e8b060','Unpaid'],partial:['var(--p-blue-bg)','var(--p-blue)','Partial'],refunded:['var(--p-surf3)','#999','Refunded'],canceled:['var(--p-surf3)','var(--p-mut)','Canceled']}[s]||['var(--p-surf3)','#999',s]);
   const row=p=>{const cs=chip(p.status);return `<div onclick="_payOpen('${p.id}')" style="background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px 13px;margin:0 16px 8px;cursor:pointer;"><div style="display:flex;justify-content:space-between;align-items:center;"><div style="min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">$${(parseFloat(p.amount)||0).toFixed(2)} <span style="font-size:14px;color:var(--p-mut);font-weight:400;">\u00b7 ${_fileEsc(p.method||'')}</span></div><div style="font-size:16px;color:var(--p-mut);margin-top:1px;">${_clientNameLink(p.clientId,p.clientName||'\u2014',{color:'#999'})} \u00b7 ${_payDateDisp(p.date)}</div></div><span style="font-size:12px;font-weight:700;padding:3px 9px;border-radius:24px;background:${cs[0]};color:${cs[1]};">${_fileEsc(cs[2])}</span></div>${p.note?`<div style="font-size:14px;color:var(--p-mut);margin-top:5px;">${String(p.note).replace(/</g,'&lt;')}</div>`:''}<div style="display:flex;gap:14px;margin-top:8px;align-items:center;">${p.status!=='paid'?`<button onclick="event.stopPropagation();_payMarkPaid('${p.id}')" style="background:none;border:none;color:var(--p-green);font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-check"></i> Mark paid</button>`:''}<span style="color:var(--p-blue);font-size:16px;font-weight:600;"><i class="ti ti-chevron-right"></i> Details</span><button onclick="event.stopPropagation();_payDelete('${p.id}')" style="background:none;border:none;color:var(--p-red);font-size:16px;cursor:pointer;font-family:inherit;padding:0;margin-left:auto;">Remove</button></div></div>`;};
   S.innerHTML=`
+  <div id="pay-sqcta" style="padding:10px 16px 0;"></div>
   <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;">
     <button onclick="nav('build-invoice')" style="flex:1 1 100%;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:11px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-file-invoice"></i> Build an invoice</button>
     <button onclick="_payLogOpen()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:10px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-plus"></i> Log a payment</button>
@@ -31757,6 +31762,7 @@ function renderPayments(){
   ${(!_pv.length)?`<div style="margin:14px 16px;text-align:center;color:var(--p-mut);font-size:16px;padding:26px 16px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;">No payments yet. Send an invoice from a client\u2019s chart, or tap <b>Log a payment</b> to record cash, Venmo, or anything else.</div>`:''}
   <div style="height:20px;"></div>`;
   try{_paySyncSquare(true);}catch(e){}
+  try{_sqPayCTA('pay-sqcta');}catch(e){}
 }
 function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p&&p.status!=='refunded'&&p.status!=='canceled'){p.status='paid';if(!p.paidDate)p.paidDate=(typeof _todayISO==='function'?_todayISO():'');const _ok=_savePayments();if(_ok===false&&typeof proToast==='function')proToast('Couldn’t save that — your device storage may be full. The change may not stick on reload.',0);}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDeleteDo(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){if(_payments[i]&&_payments[i].squareInvoiceId)_markSquareDeleted(_payments[i].squareInvoiceId);_libForget('sc_payments',_payments[i]);_payments.splice(i,1);_savePayments();if(typeof proToast==='function')proToast('Payment removed');}const _m=document.getElementById('pay-detail');if(_m)_m.remove();if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
@@ -32061,6 +32067,35 @@ function renderConnectCalendar(){
 // Calendly and Acuity as "live sync possible on request" — none of that was ever built, and the
 // request button only incremented a counter.
 const SQ_REFERRAL='https://squareup.com/refer/2832A5A0B0';
+// "Get paid" card (2026-11-16). A trial provider canceled saying she had "no direct pay options":
+// Take payment, Payments and Build invoice all assumed a connected Square and only said "connect
+// Square" AFTER she tapped a button that could not work. When THIS account has no Square of its own,
+// these screens now lead with the two ways forward: open a Square account through SlickChart's
+// referral link (Square's own terms: fee-free processing on the first $1,000 over 180 days), or
+// connect the Square she already has. Reads only this account's own connection state
+// (/api/square/connection with her session token), so it can never reflect another account.
+// A failed read (offline, demo file) shows nothing rather than a wrong "not connected".
+let _sqPayState=null,_sqPayStateAt=0;
+async function _sqPayCTA(slotId){
+  const el=document.getElementById(slotId);if(!el)return;
+  let st=_sqPayState;
+  if(!st||Date.now()-_sqPayStateAt>60000){
+    try{st=await _sqConnState();}catch(e){st=null;}
+    if(st&&typeof st.connected==='boolean'){_sqPayState=st;_sqPayStateAt=Date.now();}
+  }
+  const slot=document.getElementById(slotId);if(!slot)return;   // she moved on while it loaded
+  if(!st||typeof st.connected!=='boolean'||st.connected){slot.innerHTML='';return;}
+  if(st.expired){
+    slot.innerHTML='<div style="background:var(--p-amber-bg);border:1px solid var(--p-line-ctl);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.5;">Your Square sign-in expired, so card payments are paused. <button onclick="_sqConnect()" style="background:none;border:none;padding:0;color:var(--accent-strong);font-weight:700;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:16px;">Reconnect Square</button></div>';
+    return;
+  }
+  slot.innerHTML='<div data-sq-pay-cta="1" style="background:var(--accent-tint);border:1px solid var(--accent);border-radius:12px;padding:13px 14px;margin-bottom:14px;">'
+    +'<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:11px;"><i class="ti ti-credit-card" style="font-size:18px;color:var(--accent-strong);flex-shrink:0;margin-top:2px;"></i><div style="font-size:16px;color:var(--p-ink);line-height:1.55;"><b>Take card payments in SlickChart</b><br>Card payments, payment links and invoices run through your own Square account. It is free to open, and signing up with our link means <b>no processing fees on your first $1,000</b> in sales (over 6 months, Square’s terms).</div></div>'
+    +'<a href="'+SQ_REFERRAL+'" target="_blank" rel="noopener" style="display:block;background:#1C1C1C;color:#fff;text-decoration:none;border-radius:8px;padding:11px;font-size:16px;font-weight:700;text-align:center;font-family:inherit;">Open a free Square account →</a>'
+    +'<button onclick="_sqConnect()" style="width:100%;background:transparent;border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:10px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;">I already have Square, connect it</button>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:9px;">Paid in cash, Venmo or Zelle? You can still record it here either way.</div>'
+    +'</div>';
+}
 function renderSwitchApp(){
   setNav('account');document.getElementById('tt').textContent='Switch Apps';
   const known=(_impProfiles||[]).filter(p=>p&&p.id!=='spreadsheet').map(p=>p.label);
