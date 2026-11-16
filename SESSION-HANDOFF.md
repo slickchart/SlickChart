@@ -9605,3 +9605,20 @@ the products recommended in that visit's chart, and add tipping to payment links
   `squarePaymentId`, `tip`, `amountPaid`), `_ttpSignOut` called from `_doLogout`. `_sqFetch` now keeps a
   server error's `code` on non-401 errors. Button shows only when the plugin exists.
 - Tests: `scratchpad/test-tap-to-pay.mjs` (21), plus test-checkout-qr-tip and test-square-pay-cta still pass.
+
+## 2026-11-16 — Build 2026-11-16l: Tap to Pay meets Apple's review requirements (PREVIEW; native still staged)
+- Apple TTPOI email (11:10 PT): entitlement granted DEVELOPMENT only; publishing entitlement needs Apple's
+  requirements guide v1.8 + filled checklist + 3 videos (new user, existing user/enable, checkout filmed
+  with a second phone), sent by replying to that email (File Uploader link in it). Docs:
+  apple.box.com/v/ttpoirequirements. Filled checklist: /mnt/project-files/tap-to-pay/.
+- Built for it (numbers are Apple's): warm-up at launch + foreground (`_ttpInit`/`_ttpWarm`, 1.5/5.6),
+  full-screen "Tap to Pay on iPhone is here" once per Square location (`_ttpMaybeIntro`, 3.1-3.4),
+  More > Tap to Pay on iPhone (`renderTapToPay`, 3.6/4.3), terms -> Apple guide
+  (`education` = ProximityReaderDiscovery, iOS 18+; our 4-step guide otherwise) -> "is on" screen with
+  readiness (3.9/3.9.1), initializing screen at checkout until the reader is ready (5.7), button
+  "Tap to Pay on iPhone" under the amount, no icon (5.1-5.5), Approved/Declined + receipt by text,
+  email, QR of Square's receipt page or Share (5.9/5.10, `pay-status?paymentId=`), local notification
+  for a decline while backgrounded (Swift, 5.12), OS_UPDATE message (1.4).
+- Not done (marketing at general availability, Apple 6.1/6.3): launch email + push with Apple's toolkit
+  copy; the toolkit has to be downloaded by Ashley. Face ID login (1.7, recommended) not built.
+- Test: scratchpad/test-tap-to-pay.mjs (35 checks).

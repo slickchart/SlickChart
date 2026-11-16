@@ -171,6 +171,18 @@ public class SquareTapToPayPlugin extends Plugin {
         });
     }
 
+    // Apple's review items (education, reader progress) are iPhone-only; Android answers simply so the
+    // web app needs no platform checks: ready once Square is signed in on this phone.
+    @PluginMethod
+    public void readerStatus(PluginCall call) {
+        boolean authorized = false;
+        try { authorized = initialized && MobilePaymentsSdk.authorizationManager().getAuthorizationState().isAuthorized(); } catch (Exception e) { authorized = false; }
+        JSObject r = new JSObject(); r.put("status", authorized ? "ready" : "none"); r.put("reason", ""); call.resolve(r);
+    }
+
+    @PluginMethod
+    public void education(PluginCall call) { call.reject("Not on Android.", "UNSUPPORTED"); }
+
     @PluginMethod
     public void deauthorize(PluginCall call) {
         getActivity().runOnUiThread(() -> {

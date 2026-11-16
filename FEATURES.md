@@ -180,7 +180,8 @@ saved anywhere", not "does this always call that".
 | `_coQrSheet` | `/api/square/pay-status` | direct |
 | `_coRecordPaid` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_coTapToPay` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_coTapToPay` | `/api/square/mobile-auth` | direct |
+| `_coTapToPay` | `/api/square/mobile-auth` | via `_ttpWarm` |
+| `_coTapToPay` | `/api/square/pay-status` | via `_ttpReceipt` |
 | `_commitDeleteSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_commitRenameSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_commitWriteNote` | `/api/beta-event` | via `_pingChart` |
@@ -772,6 +773,15 @@ saved anywhere", not "does this always call that".
 | `_toggleSquareImport` | `/api/square/customers` | via `_autoSyncCustomers` |
 | `_transcribeAndPreview` | `/api/ai` | via `_aiComplete` |
 | `_transcribeAndPreview` | `/api/transcribe` | direct |
+| `_ttpEnable` | `/api/square/mobile-auth` | via `_ttpWarm` |
+| `_ttpInit` | `/api/square/mobile-auth` | via `_ttpWarm` |
+| `_ttpIntro` | `/api/square/mobile-auth` | via `_ttpWarm` |
+| `_ttpMaybeIntro` | `/api/square/mobile-auth` | via `_ttpWarm` |
+| `_ttpOutcome` | `/api/square/pay-status` | via `_ttpReceipt` |
+| `_ttpPaintSettings` | `/api/square/mobile-auth` | via `_ttpWarm` |
+| `_ttpReceipt` | `/api/square/pay-status` | direct |
+| `_ttpSetStatus` | `/api/square/mobile-auth` | via `_ttpWarm` |
+| `_ttpWarm` | `/api/square/mobile-auth` | direct |
 | `_uSendCopy` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_uSendDone` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_uSendEmail` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -1056,6 +1066,7 @@ saved anywhere", not "does this always call that".
 | `renderSubscriptionBilling` | `/api/billing-status` | via `_loadBillingStatus` |
 | `renderSubscriptionBilling` | `/api/create-portal-session` | via `_openBillingPortal` |
 | `renderSummaryHistory` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `renderTapToPay` | `/api/square/mobile-auth` | via `_ttpWarm` |
 | `renderTodayAppts` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `renderVcInbox` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `renderVirtual` | `/api/consult-requests` | via `_loadConsultRequests` |

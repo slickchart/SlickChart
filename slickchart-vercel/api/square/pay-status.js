@@ -4,6 +4,8 @@
 //   order id from another account simply is not found.
 //   -> { ok, paid, total, tip, paymentId }
 //
+// GET /api/square/pay-status?paymentId=PAYMENT_ID  -> { ok, status, receiptUrl, receiptNumber, total, tip }
+//
 // GET /api/square/pay-status?since=ISO_TIME&cents=AMOUNT
 //   After "Charge in person" hands off to the Square app (Tap to Pay or a reader), find the payment
 //   it took: a COMPLETED payment at her location since the hand-off, for that amount (before tip).
@@ -19,6 +21,17 @@ export default async function handler(req, res) {
   const q = req.query || {};
   res.setHeader('Cache-Control', 'no-store');
   try {
+    // ?paymentId= : one payment taken on this phone with Tap to Pay -> its status and Square's own
+    // receipt page, so the client can be texted or emailed a receipt (Apple Tap to Pay review 5.10).
+    const paymentId = String(q.paymentId || '').trim();
+    if (paymentId) {
+      if (!/^[A-Za-z0-9_-]{6,64}$/.test(paymentId)) { res.status(400).json({ error: 'Bad payment id.' }); return; }
+      const d = await sf('/v2/payments/' + encodeURIComponent(paymentId));
+      const p = d.payment || {};
+      res.status(200).json({ ok: true, status: p.status || '', receiptUrl: p.receipt_url || '', receiptNumber: p.receipt_number || '',
+        total: money(p.total_money), tip: money(p.tip_money) });
+      return;
+    }
     const orderId = String(q.orderId || '').trim();
     if (orderId) {
       if (!/^[A-Za-z0-9_-]{6,64}$/.test(orderId)) { res.status(400).json({ error: 'Bad order id.' }); return; }

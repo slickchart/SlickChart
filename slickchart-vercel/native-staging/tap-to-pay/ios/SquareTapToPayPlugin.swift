@@ -2,6 +2,8 @@ import Foundation
 import UIKit
 import Capacitor
 import SquareMobilePaymentsSDK
+import ProximityReader
+import UserNotifications
 
 // Tap to Pay on iPhone inside SlickChart, through Square's Mobile Payments SDK (2026-11-16, Ashley).
 //
@@ -11,12 +13,20 @@ import SquareMobilePaymentsSDK
 //   linkAccount()                    -> { linked }   (Apple's Tap to Pay terms sheet, once per merchant)
 //   pay({amountCents, tipCents, note, referenceId, attemptId}) -> { status, paymentId, amountCents, tipCents, totalCents }
 //   deauthorize()                    -> {}           (on sign-out, so the next account never inherits it)
+//   readerStatus()                   -> { status: ready|preparing|unavailable|none, reason }
+//   education()                      -> {}           (Apple's own "how to take Tap to Pay" screens, iOS 18+)
+//   event "readerStatus"             -> same shape as readerStatus(), whenever the Tap to Pay reader changes
+//
+// Apple's Tap to Pay review (App Requirements v1.8): 1.4 an iOS too old -> "update iOS" message
+// (code OS_UPDATE); 1.5 warm-up at launch/foreground = authorize early (the web app does that);
+// 1.6 linked status read from Apple every time (isAppleAccountLinked), never cached; 3.9.1 progress
+// while the reader prepares = readerStatus + the event; 4.1 education = ProximityReaderDiscovery.
 //
 // The access token is the provider's OWN Square OAuth token from /api/square/mobile-auth (her session).
 // It is handed straight to the SDK and never stored by this plugin. The app ID (public, sq0idp-...) is
 // remembered so the SDK can be started at launch next time, as Square recommends.
 @objc(SquareTapToPayPlugin)
-public class SquareTapToPayPlugin: CAPPlugin, CAPBridgedPlugin, PaymentManagerDelegate {
+public class SquareTapToPayPlugin: CAPPlugin, CAPBridgedPlugin, PaymentManagerDelegate, ReaderObserver {
     public let identifier = "SquareTapToPayPlugin"
     public let jsName = "SquareTapToPay"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -24,12 +34,79 @@ public class SquareTapToPayPlugin: CAPPlugin, CAPBridgedPlugin, PaymentManagerDe
         CAPPluginMethod(name: "authorize", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "linkAccount", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "pay", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "deauthorize", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "deauthorize", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readerStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "education", returnType: CAPPluginReturnPromise)
     ]
 
     static let appIdKey = "sc_square_app_id"
     static var initialized = false
     private var payCall: CAPPluginCall?
+    private var observing = false
+
+    private func startObserving() {
+        guard SquareTapToPayPlugin.initialized, !observing else { return }
+        observing = true
+        MobilePaymentsSDK.shared.readerManager.add(self)
+    }
+
+    private func tapToPayStatus() -> [String: Any] {
+        guard SquareTapToPayPlugin.initialized else { return ["status": "none", "reason": ""] }
+        guard let r = MobilePaymentsSDK.shared.readerManager.readers.first(where: { $0.model == .tapToPay }) else {
+            return ["status": MobilePaymentsSDK.shared.authorizationManager.state == .authorized ? "preparing" : "none", "reason": ""]
+        }
+        switch r.statusInfo.status {
+        case .ready: return ["status": "ready", "reason": ""]
+        case .connectingToDevice, .connectingToSquare: return ["status": "preparing", "reason": ""]
+        default:
+            let why = r.statusInfo.unavailableReasonInfo
+            var reason = ""
+            if let w = why { reason = w.detail.isEmpty ? w.title : w.detail }
+            let notLinked = why?.reason == .tapToPayIsNotLinked
+            return ["status": notLinked ? "notLinked" : "unavailable", "reason": reason]
+        }
+    }
+
+    @objc func readerStatus(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { self.startObserving(); call.resolve(self.tapToPayStatus()) }
+    }
+
+    @objc func education(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else { call.reject("The app is not ready.", "NO_VIEW"); return }
+            if #available(iOS 18.0, *) {
+                Task { @MainActor in
+                    do {
+                        let d = ProximityReaderDiscovery()
+                        let content = try await d.content(for: ProximityReaderDiscovery.Topic.payment(.howToTap))
+                        try await d.presentContent(content, from: vc)
+                        call.resolve()
+                    } catch { call.reject(error.localizedDescription, "EDUCATION_FAILED") }
+                }
+            } else {
+                call.reject("Update your iPhone to see Apple's Tap to Pay guide.", "OS_UPDATE")
+            }
+        }
+    }
+
+    // MARK: ReaderObserver
+    public func readerWasAdded(_ readerInfo: ReaderInfo) { notifyListeners("readerStatus", data: tapToPayStatus()) }
+    public func readerWasRemoved(_ readerInfo: ReaderInfo) { notifyListeners("readerStatus", data: tapToPayStatus()) }
+    public func readerDidChange(_ readerInfo: ReaderInfo, change: ReaderChange) { notifyListeners("readerStatus", data: tapToPayStatus()) }
+
+    private func readerErrorCode(_ error: NSError) -> String {
+        if error.domain.contains("TapToPayReaderError") {
+            switch error.code {
+            case TapToPayReaderError.unsupportedOSVersion.rawValue: return "OS_UPDATE"
+            case TapToPayReaderError.unsupportedDeviceModel.rawValue: return "NOT_CAPABLE"
+            case TapToPayReaderError.passcodeDisabled.rawValue: return "PASSCODE"
+            case TapToPayReaderError.linkingCanceled.rawValue: return "CANCELED"
+            case TapToPayReaderError.noNetwork.rawValue, TapToPayReaderError.networkError.rawValue: return "NETWORK"
+            default: break
+            }
+        }
+        return "LINK_FAILED"
+    }
 
     /// Called from AppDelegate at launch when an app ID was saved by an earlier session.
     static func initializeAtLaunch(_ launchOptions: [UIApplication.LaunchOptionsKey: Any]?) {
@@ -81,7 +158,7 @@ public class SquareTapToPayPlugin: CAPPlugin, CAPBridgedPlugin, PaymentManagerDe
             // Already signed in to THIS location: nothing to do. A different location (another account
             // on the same phone) is signed out first, so payments can never land in the wrong Square.
             if auth.state == .authorized {
-                if auth.location?.id == locationId { call.resolve(["authorized": true]); return }
+                if auth.location?.id == locationId { self.startObserving(); call.resolve(["authorized": true]); return }
                 auth.deauthorize {
                     DispatchQueue.main.async { self.doAuthorize(call, token: token, locationId: locationId) }
                 }
@@ -95,7 +172,7 @@ public class SquareTapToPayPlugin: CAPPlugin, CAPBridgedPlugin, PaymentManagerDe
         MobilePaymentsSDK.shared.authorizationManager.authorize(accessToken: token, locationID: locationId) { error in
             DispatchQueue.main.async {
                 if let error = error { call.reject(error.localizedDescription, "AUTH_FAILED") }
-                else { call.resolve(["authorized": true]) }
+                else { self.startObserving(); call.resolve(["authorized": true]) }
             }
         }
     }
@@ -104,11 +181,15 @@ public class SquareTapToPayPlugin: CAPPlugin, CAPBridgedPlugin, PaymentManagerDe
         DispatchQueue.main.async {
             guard SquareTapToPayPlugin.initialized else { call.reject("Square is not set up.", "NOT_SET_UP"); return }
             let settings = MobilePaymentsSDK.shared.readerManager.tapToPaySettings
-            guard settings.isDeviceCapable else { call.reject("This iPhone can't take Tap to Pay. It needs an iPhone XS or newer on iOS 16.7 or later.", "NOT_CAPABLE"); return }
+            guard settings.isDeviceCapable else { call.reject("This iPhone can't take Tap to Pay on iPhone. It needs an iPhone XS or newer.", "NOT_CAPABLE"); return }
             settings.linkAppleAccount { error in
                 DispatchQueue.main.async {
                     if let error = error as NSError?, error.code != TapToPayReaderError.alreadyLinked.rawValue {
-                        call.reject(error.localizedDescription, error.code == TapToPayReaderError.linkingCanceled.rawValue ? "CANCELED" : "LINK_FAILED")
+                        let code = self.readerErrorCode(error)
+                        let msg = code == "OS_UPDATE" ? "Tap to Pay needs a newer iOS. Update your iPhone in Settings > General > Software Update, then try again."
+                            : code == "PASSCODE" ? "Tap to Pay needs a passcode on this iPhone. Turn one on in Settings > Face ID & Passcode, then try again."
+                            : error.localizedDescription
+                        call.reject(msg, code)
                     } else {
                         call.resolve(["linked": true])
                     }
@@ -165,9 +246,20 @@ public class SquareTapToPayPlugin: CAPPlugin, CAPBridgedPlugin, PaymentManagerDe
     }
 
     public func paymentManager(_ paymentManager: PaymentManager, didFail payment: Payment, withError error: Error) {
+        // Apple 5.12: a payment that was not approved while she had left the app still tells her.
+        if UIApplication.shared.applicationState != .active {
+            let n = UNMutableNotificationContent()
+            n.title = "Payment not approved"
+            n.body = "A Tap to Pay payment of $" + String(format: "%.2f", Double(payment.amountMoney.amount) / 100.0) + " was not approved. Nothing was charged."
+            n.sound = .default
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "ttp-declined-" + UUID().uuidString, content: n, trigger: nil))
+        }
         guard let call = payCall else { return }
         payCall = nil
-        call.reject(error.localizedDescription, "PAYMENT_FAILED")
+        let ns = error as NSError
+        let code = readerErrorCode(ns)
+        call.reject(code == "OS_UPDATE" ? "Tap to Pay needs a newer iOS. Update your iPhone in Settings > General > Software Update, then try again." : error.localizedDescription,
+                    code == "LINK_FAILED" ? "PAYMENT_FAILED" : code, nil, ["paymentId": payment.id ?? ""])
     }
 
     public func paymentManager(_ paymentManager: PaymentManager, didCancel payment: Payment) {
