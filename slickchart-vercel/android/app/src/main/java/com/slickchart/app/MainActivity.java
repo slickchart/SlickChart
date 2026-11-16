@@ -12,6 +12,7 @@ import com.getcapacitor.WebViewListener;
 public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        registerPlugin(SquareTapToPayPlugin.class);
         super.onCreate(savedInstanceState);
         // Android can kill the web page's renderer to free memory (most often on a busy, older phone
         // with the camera open). Left unhandled, that takes the whole app down. Rebuild the screen

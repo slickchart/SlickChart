@@ -27,6 +27,13 @@ Every session: check this list whenever a change turns out to need a store build
   iphone"), so Apple's review videos cannot be recorded yet; a simulator cannot do Tap to Pay. She chose
   "Do Android Tap to Pay first". iPhone resumes when she can borrow an iPhone XS or newer for an hour
   (dev build steps: `tap-to-pay.cjs enable --ios`, automatic Development signing, xcodebuild + devicectl).
+- **Android is now SWITCHED ON in the repo (2026-11-16):** `enable --android` applied and committed,
+  Android version 1.0.6 (versionCode 7), minSdk 28. Square production signature for
+  `com.slickchart.app` + the Play app signing SHA-256 was added in the Square Developer Console
+  (Mobile Payments SDK page) the same day. Test phone: Ashley's Google Pixel 10.
+  Next: build the signed bundle on her Mac (`npx cap sync android`, then bundleRelease with
+  `slickchart-upload-NEW.jks`; she types the keystore password), upload to Play internal testing,
+  one real $1 tap on the Pixel and refund, then production. Play data safety: location + phone.
 - **Android uses Square SDK 2.6.1, not 2.7.0** (`ANDROID_SDK_VERSION` in tap-to-pay.cjs): 2.7.0 pulls
   Jetpack Compose 1.12.1, which needs compileSdk 37 + AGP 9.1 and fails this project's build. With 2.6.1,
   `enable --android` + `cap sync android` + `gradlew assembleDebug` AND `assembleRelease` both compile
