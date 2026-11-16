@@ -370,7 +370,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-15b';
+const APP_BUILD='2026-11-16a';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -3235,7 +3235,10 @@ const _TOMB_OBJ={sc_deleted_svc:1,sc_deleted_msg_tmpls:1,sc_deleted_starters:1,s
   // note draft from that device reached the account either. Ids are "nd:<clientId>" so that a client
   // id here never reads as "this client was deleted" to the guard on every other per-client key.
   sc_deleted_note_drafts:1};
-const _TOMB_ARR={sc_photo_backed:1,sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1,
+const _TOMB_ARR={sc_photo_backed:1,
+  // Paper forms she removed from a client's file (2026-11-16). Union, so a removal on the iPad holds
+  // on the phone; the scanned bytes stay on her account.
+  sc_paper_removed:1,sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1,
   // Added 2026-10-08 in the thread-16 pass. Both are append-only id lists where an overwrite undoes
   // an action: sc_deleted_sq is the Square products she DELETED (lose it and they come back — the
   // same resurrect bug the shop catalogue had), and sc_imported_products is what she has already
@@ -7696,7 +7699,8 @@ function _buildPhotoIndex(){
       if(cid==='__recovered__')return;
       // A removed client's photos are not carried (their delete record says so); the bytes stay on the server.
       if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds&&_deletedClientIds[cid])return;
-      const keep=(Array.isArray(prev[cid])?prev[cid]:[]).filter(function(m){return m&&m.pid&&!mine.has(m.pid)&&!gone.has(m.pid);});
+      const pgone=(typeof _paperRemoved==='function')?_paperRemoved():[];
+      const keep=(Array.isArray(prev[cid])?prev[cid]:[]).filter(function(m){return m&&m.pid&&!mine.has(m.pid)&&!gone.has(m.pid)&&!(m.phase==='paperform'&&pgone.indexOf(_paperDocId(m))>=0);});
       if(keep.length)idx[cid]=keep;
     });
   }catch(e){}
@@ -7707,7 +7711,8 @@ function _buildPhotoIndex(){
     const arr=capturedPhotos[cid]||[];if(!arr.length)return;
     // _ts = when the photo was last turned, and only once the turned bytes are on the account (no
     // `reup` left), so another device that refetches on seeing it gets the new bytes, not the old.
-    idx[cid]=(idx[cid]||[]).concat(arr.map(function(p){const m={pid:_photoPid(p),ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',source:p.source||'',fileType:p.fileType||''};if(p.ets&&!p.reup)m._ts=p.ets;return m;}));
+    const _pgone=(typeof _paperRemoved==='function')?new Set(_paperRemoved()):new Set();
+    idx[cid]=(idx[cid]||[]).concat(arr.filter(function(p){return !(p&&p.phase==='paperform'&&_pgone.has(_paperDocId(p)));}).map(function(p){const m={pid:_photoPid(p),ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',source:p.source||'',fileType:p.fileType||''};if(p.ets&&!p.reup)m._ts=p.ets;return m;}));
   });}catch(e){}
   return idx;
 }
@@ -7795,6 +7800,7 @@ async function _restorePhotosFromCloud(){
       const metas=idx[cid]||[];
       for(let mi=0;mi<metas.length;mi++){
         const meta=metas[mi];if(!meta||!meta.pid||gone.has(meta.pid))continue;
+        if(meta.phase==='paperform'&&typeof _paperRemoved==='function'&&_paperRemoved().indexOf(_paperDocId(meta))>=0)continue;
         if(have.has(meta.pid)){
           // Turned on another device since this one got it: fetch the turned bytes.
           const mine=(capturedPhotos[cid]||[]).find(function(p){return p&&p.pid===meta.pid;});
@@ -11382,7 +11388,7 @@ function renderClient(id){
   <div style="padding:0 16px 6px;">
     <button onclick="nav('client-forms','${id}')" style="width:100%;background:var(--surf2);border:1px solid ${c.flaggedContra?'var(--p-red-line)':'var(--p-line-ctl)'};border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;text-align:left;">
       <div style="width:38px;height:38px;border-radius:8px;background:${c.flaggedContra?'var(--p-red-bg)':'var(--accent-tint)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-folder" aria-hidden="true" style="font-size:18px;color:${c.flaggedContra?'var(--p-red)':'var(--accent)'};"></i></div>
-      <div style="flex:1;min-width:0;">${(function(){const subs=c.submittedForms||[];const extra=(c.signedForms||[]).filter(x=>!subs.some(s=>s.title===x)).length;const n=subs.length+extra;return `<div style="font-size:16px;font-weight:500;color:var(--p-ink);">${n} form${n===1?'':'s'} on file</div><div style="font-size:14px;color:var(--p-mut);">${n?'Intakes, consents &amp; signed forms, tap to view':'Send an intake or consent to get started'}</div>`;})()}</div>
+      <div style="flex:1;min-width:0;">${(function(){const subs=c.submittedForms||[];const extra=(c.signedForms||[]).filter(x=>!subs.some(s=>s.title===x)).length;const n=subs.length+extra+((typeof _paperForms==='function')?_paperForms(id).length:0);return `<div style="font-size:16px;font-weight:500;color:var(--p-ink);">${n} form${n===1?'':'s'} on file</div><div style="font-size:14px;color:var(--p-mut);">${n?'Intakes, consents &amp; signed forms, tap to view':'Send an intake or consent to get started'}</div>`;})()}</div>
       <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>
     </button>
     <button onclick="openClientFormSender('${id}')" class="btnp" style="width:100%;border-radius:12px;margin-top:8px;padding:11px;"><i class="ti ti-send" aria-hidden="true"></i> Send a form to ${_fileEsc(c.name.split(' ')[0])}</button>
@@ -11710,10 +11716,11 @@ function renderClientForms(id){
   const subs=c.submittedForms||[];
   const subTitles=subs.map(s=>s.title);
   const signedOnly=(c.signedForms||[]).filter(n=>subTitles.indexOf(n)<0);
+  const paper=_paperForms(id);
   const card=(inner,onclick,danger)=>`<button ${onclick?`onclick="${onclick}"`:'disabled'} style="width:100%;background:var(--surf2);border:1px solid ${danger?'var(--p-red-line)':'var(--p-line-ctl)'};border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;margin-bottom:8px;cursor:${onclick?'pointer':'default'};font-family:inherit;text-align:left;">${inner}</button>`;
   S.innerHTML=`
   
-  <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Forms &amp; documents</div><div style="font-size:16px;color:var(--p-mut);">${subs.length+signedOnly.length} on file for ${_fileEsc(c.name.split(' ')[0])}</div></div></div>
+  <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Forms &amp; documents</div><div style="font-size:16px;color:var(--p-mut);">${subs.length+signedOnly.length+paper.length} on file for ${_fileEsc(c.name.split(' ')[0])}</div></div></div>
   <div style="padding:14px 16px 0;">
     <button onclick="openClientFormSender('${id}')" class="btnp" style="width:100%;border-radius:12px;margin-bottom:16px;"><i class="ti ti-send"></i> Send a form to ${_fileEsc(c.name.split(' ')[0])}</button>
     ${subs.length?`<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px;">Completed &amp; signed</div>`+subs.map((sf,i)=>card(
@@ -11725,8 +11732,152 @@ function renderClientForms(id){
       `<div style="width:36px;height:36px;border-radius:8px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-signature" aria-hidden="true" style="font-size:18px;color:var(--accent-strong);"></i></div>
        <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(n)}</div><div style="font-size:14px;color:var(--p-mut);">Signed ✓</div></div>${fk?'<i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>':''}`,
       fk?`nav('form-preview','${fk}')`:'');}).join(''):''}
-    ${(!subs.length&&!signedOnly.length)?`<div style="background:var(--surf2);border:1px dashed var(--p-line);border-radius:12px;padding:26px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;"><i class="ti ti-folder-open" aria-hidden="true" style="font-size:26px;color:var(--p-mut);"></i><div style="font-size:16px;color:var(--p-mut);font-weight:500;">No forms on file yet</div><div style="font-size:16px;color:var(--p-mut);line-height:1.5;max-width:260px;">Intakes, consents, and signed forms for ${_fileEsc(c.name.split(' ')[0])} are stored here. Send one above to get started.</div></div>`:''}
+    ${paper.length?`<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin:6px 0 9px;">Paper forms</div>`+paper.map(d=>card(
+      `<div style="width:36px;height:36px;border-radius:8px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:18px;color:var(--accent-strong);"></i></div>
+       <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(d.title)}</div><div style="font-size:14px;color:var(--p-mut);">${_fileEsc(_paperDateLine(d))} · ${d.pages.length} page${d.pages.length===1?'':'s'}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>`,
+      `_openPaperForm('${_jsAttr(id)}','${_jsAttr(d.id)}')`)).join(''):''}
+    <button onclick="_openPaperFormAdd('${_jsAttr(id)}')" class="btng" style="width:100%;justify-content:center;border-radius:12px;margin:${(subs.length||signedOnly.length||paper.length)?'4px 0 14px':'0 0 14px'};"><i class="ti ti-scan" aria-hidden="true"></i> Add a paper form</button>
+    ${(!subs.length&&!signedOnly.length&&!paper.length)?`<div style="background:var(--surf2);border:1px dashed var(--p-line);border-radius:12px;padding:26px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;"><i class="ti ti-folder-open" aria-hidden="true" style="font-size:26px;color:var(--p-mut);"></i><div style="font-size:16px;color:var(--p-mut);font-weight:500;">No forms on file yet</div><div style="font-size:16px;color:var(--p-mut);line-height:1.5;max-width:260px;">Intakes, consents, and signed forms for ${_fileEsc(c.name.split(' ')[0])} are stored here. Send one above to get started.</div></div>`:''}
   </div>`;
+}
+// ── Signed paper forms on a client's file (Lisa, 2026-11-16: "years of existing paper intake forms
+// that my clients have already filled out and signed ... scan these using my iPhone or iPad and
+// upload them directly into each client's profile"). Each page is a captured photo with phase
+// 'paperform', so it rides the photo backup that already exists: the bytes go to HER account
+// (_backupPhotosToServer -> /api/guide-file, keyed by owner) and the merged photo index brings them to
+// her other devices. They never show in Photos and are never sent to the client. A PDF (an iPhone
+// Notes or Files scan) is kept whole as one "page". `source` carries 'paper|<docId>|<date signed>'
+// because the photo index keeps source, so the grouping survives on every device.
+let _paperDraft=null;
+function _paperRemoved(){try{const a=JSON.parse(localStorage.getItem('sc_paper_removed')||'[]');return Array.isArray(a)?a:[];}catch(e){return [];}}
+function _paperDocId(p){const m=/^paper\|([^|]+)/.exec(String((p&&p.source)||''));return m?m[1]:'';}
+function _paperForms(cid){
+  const gone=new Set(_paperRemoved());const by={};const out=[];
+  ((typeof capturedPhotos!=='undefined'&&capturedPhotos[cid])||[]).forEach(function(p,i){
+    if(!p||p.phase!=='paperform'||!p.url)return;
+    const d=_paperDocId(p)||('t'+(p.ts||i));if(gone.has(d))return;
+    if(!by[d]){by[d]={id:d,title:p.angle||'Paper form',signed:String(p.source||'').split('|')[2]||'',ts:p.ts||0,pages:[]};out.push(by[d]);}
+    by[d].pages.push({p:p,i:i});if((p.ts||0)<by[d].ts)by[d].ts=p.ts||0;
+  });
+  out.forEach(function(d){d.pages.sort(function(a,b){return (a.p.ts||0)-(b.p.ts||0);});});
+  return out.sort(function(a,b){return b.ts-a.ts;});
+}
+function _paperDateLine(d){
+  const f=function(x){try{return x.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
+  const sd=d&&d.signed&&(typeof _parseDate==='function'?_parseDate(d.signed):new Date(d.signed));
+  if(sd&&!isNaN(sd))return 'Signed '+f(sd);
+  return 'Added '+f(new Date((d&&d.ts)||Date.now()));
+}
+function _openPaperFormAdd(cid){
+  const c=CL[cid];if(!c)return;
+  _paperDraft={cid:cid,pages:[],title:'',signed:''};
+  _paperSheet();
+}
+function _paperSheet(){
+  const dr=_paperDraft;if(!dr)return;const c=CL[dr.cid];if(!c)return;
+  let ov=document.getElementById('paper-sheet');
+  const tEl=document.getElementById('paper-title'),dEl=document.getElementById('paper-signed');
+  if(tEl)dr.title=tEl.value;if(dEl)dr.signed=dEl.value;
+  if(!ov){ov=document.createElement('div');ov.id='paper-sheet';
+    ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+    (document.querySelector('.shell')||document.body).appendChild(ov);}
+  const first=_fileEsc(c.name.split(' ')[0]);const n=dr.pages.length;
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px 16px 20px;max-height:88%;overflow-y:auto;box-sizing:border-box;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Add a paper form for ${first}</div><button onclick="_paperClose()" aria-label="Close" style="border:none;background:none;font-size:22px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>
+    <div style="font-size:15px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">Take a photo of each page, or pick a scan you already made. It is saved to ${first}’s file and backed up to your account. Only you can see it.</div>
+    <span class="fl-lbl">Form name</span><input id="paper-title" class="fi" maxlength="70" value="${_jsAttr(dr.title)}" placeholder="e.g. Intake form" style="margin-bottom:12px;">
+    <span class="fl-lbl">Date they signed it <span style="color:var(--p-mut);font-weight:400;">(optional)</span></span><input id="paper-signed" class="fi" type="date" value="${_jsAttr(dr.signed)}" style="margin-bottom:14px;">
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <label class="btnp" style="flex:1;justify-content:center;border-radius:12px;padding:11px 6px;cursor:pointer;"><i class="ti ti-camera" aria-hidden="true"></i> ${n?'Add a page':'Take a photo'}<input id="paper-cam" type="file" accept="image/*" capture="environment" onchange="_paperPick(this)" style="display:none;"></label>
+      <label class="btng" style="flex:1;justify-content:center;border-radius:12px;padding:11px 6px;cursor:pointer;"><i class="ti ti-photo" aria-hidden="true"></i> Choose files<input id="paper-files" type="file" accept="image/*,application/pdf" multiple onchange="_paperPick(this)" style="display:none;"></label>
+    </div>
+    <div id="paper-pages" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">${dr.pages.map(function(pg,i){return `<div style="position:relative;width:72px;">${pg.type==='pdf'
+        ?`<div style="width:72px;height:92px;border-radius:8px;background:var(--surf2);border:1px solid var(--p-line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;"><i class="ti ti-file-type-pdf" aria-hidden="true" style="font-size:24px;color:var(--accent-strong);"></i><span style="font-size:11px;color:var(--p-mut);">PDF</span></div>`
+        :`<img src="${_imgSrc(pg.url)}" alt="Page ${i+1}" style="width:72px;height:92px;object-fit:cover;border-radius:8px;border:1px solid var(--p-line);display:block;">`}
+        <div style="font-size:12px;color:var(--p-mut);text-align:center;margin-top:2px;">Page ${i+1}</div>
+        <button onclick="_paperDropPage(${i})" aria-label="Remove page ${i+1}" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:none;background:#000c;color:#fff;font-size:13px;cursor:pointer;line-height:1;">✕</button></div>`;}).join('')||`<div style="font-size:15px;color:var(--p-mut);">No pages yet.</div>`}</div>
+    <button id="paper-save" onclick="_paperSave()" class="btnp" ${n?'':'disabled'} style="width:100%;border-radius:12px;padding:12px;${n?'':'opacity:.5;'}"><i class="ti ti-check" aria-hidden="true"></i> Save to ${first}’s file${n?' ('+n+' page'+(n===1?'':'s')+')':''}</button>
+  </div>`;
+}
+function _paperClose(){_paperDraft=null;const ov=document.getElementById('paper-sheet');if(ov)ov.remove();}
+function _paperDropPage(i){if(!_paperDraft)return;_paperDraft.pages.splice(i,1);_paperSheet();}
+function _paperPick(input){
+  const dr=_paperDraft;if(!dr||!input||!input.files)return;
+  const files=Array.from(input.files);try{input.value='';}catch(e){}
+  let left=files.length;if(!left)return;
+  const done=function(){left--;if(left<=0&&_paperDraft===dr)_paperSheet();};
+  files.forEach(function(file){
+    if(dr.pages.length>=60){done();return;}
+    const isPdf=/pdf/i.test(file.type||'')||/\.pdf$/i.test(file.name||'');
+    if(isPdf){
+      if(file.size>15*1024*1024){if(typeof proToast==='function')proToast((file.name||'That PDF')+' is over 15 MB, try a smaller scan');done();return;}
+      const r=new FileReader();
+      r.onload=function(e){const u=String(e.target.result||'');if(/^data:/.test(u))dr.pages.push({url:u.replace(/^data:[^;,]*/,'data:application/pdf'),type:'pdf'});done();};
+      r.onerror=function(){if(typeof proToast==='function')proToast('Couldn’t read '+(file.name||'that file'));done();};
+      r.readAsDataURL(file);return;
+    }
+    if(!/^image\//i.test(file.type||'')&&!/\.(jpe?g|png|heic|heif|webp)$/i.test(file.name||'')){if(typeof proToast==='function')proToast((file.name||'That file')+' isn’t a photo or PDF');done();return;}
+    // 2200px keeps small print on a form readable; a 900px photo thumbnail would not be.
+    _downscaleImg(file,function(url){if(url)dr.pages.push({url:url,type:'image'});else if(typeof proToast==='function')proToast('Couldn’t read '+(file.name||'a photo')+', skipped');done();},2200);
+  });
+}
+function _paperSave(){
+  const dr=_paperDraft;if(!dr||!dr.pages.length)return;
+  const cid=dr.cid;if(!CL[cid])return;
+  const tEl=document.getElementById('paper-title'),dEl=document.getElementById('paper-signed');
+  const title=(String((tEl&&tEl.value)||'').replace(/[|\n\r]+/g,' ').trim()||'Paper form').slice(0,70);
+  const signed=/^\d{4}-\d{2}-\d{2}$/.test(String((dEl&&dEl.value)||''))?dEl.value:'';
+  const docId='pf'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  const base=Date.now();
+  if(!capturedPhotos[cid])capturedPhotos[cid]=[];
+  const before=capturedPhotos[cid].slice();
+  dr.pages.forEach(function(pg,i){capturedPhotos[cid].push({url:pg.url,ts:base+i,phase:'paperform',angle:title,source:'paper|'+docId+'|'+signed,fileType:pg.type==='pdf'?'pdf':''});});
+  const btn=document.getElementById('paper-save');if(btn){btn.disabled=true;btn.style.opacity='.5';}
+  const finish=function(ok){
+    if(!ok){capturedPhotos[cid]=before;try{persistCapturedPhotos();}catch(e){}if(btn){btn.disabled=false;btn.style.opacity='1';}if(typeof proToast==='function')proToast('Couldn’t save, this device is out of space');return;}
+    _paperClose();
+    if(typeof proToast==='function')proToast('Saved to '+CL[cid].name.split(' ')[0]+'’s file');
+    try{nav('client-forms',cid);}catch(e){}
+  };
+  let r;try{r=persistCapturedPhotos();}catch(e){r=false;}
+  Promise.resolve(r).then(function(v){finish(v!==false);}).catch(function(){finish(false);});
+}
+function _openPaperForm(cid,docId){
+  const d=_paperForms(cid).find(function(x){return x.id===docId;});if(!d)return;
+  const old=document.getElementById('paper-view');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='paper-view';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px 16px 20px;max-height:88%;overflow-y:auto;box-sizing:border-box;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;"><div style="min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${_fileEsc(d.title)}</div><div style="font-size:14px;color:var(--p-mut);">${_fileEsc(_paperDateLine(d))} · ${d.pages.length} page${d.pages.length===1?'':'s'}</div></div><button onclick="this.closest('#paper-view').remove()" aria-label="Close" style="border:none;background:none;font-size:22px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>
+    ${d.pages.map(function(pg,k){return pg.p.fileType==='pdf'||/^data:application\/pdf/i.test(String(pg.p.url))
+      ?`<button onclick="_paperOpenPdf('${_jsAttr(cid)}',${pg.i})" class="btng" style="width:100%;justify-content:center;border-radius:12px;margin-bottom:10px;"><i class="ti ti-file-type-pdf" aria-hidden="true"></i> Open the PDF${d.pages.length>1?' (page '+(k+1)+')':''}</button>`
+      :`<img src="${_imgSrc(pg.p.url)}" alt="Page ${k+1}" onclick="_viewClientPhoto('${_jsAttr(cid)}',${pg.i})" style="width:100%;border-radius:10px;border:1px solid var(--p-line);display:block;margin-bottom:10px;cursor:zoom-in;">`;}).join('')}
+    <button onclick="_paperRemove('${_jsAttr(cid)}','${_jsAttr(d.id)}')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;margin-top:4px;"><i class="ti ti-trash" aria-hidden="true"></i> Remove from their file</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+function _paperOpenPdf(cid,idx){
+  const p=(capturedPhotos[cid]||[])[idx];if(!p||!p.url)return;
+  const nm=((CL[cid]&&CL[cid].name)||'client').replace(/[^a-z0-9]+/gi,'_')+'_'+String(p.angle||'form').replace(/[^a-z0-9]+/gi,'_')+'.pdf';
+  try{
+    const b64=String(p.url).split(',')[1]||'';const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+    const url=URL.createObjectURL(new Blob([arr],{type:'application/pdf'}));
+    const a=document.createElement('a');a.href=url;a.download=nm;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
+    setTimeout(function(){try{URL.revokeObjectURL(url);}catch(e){}},60000);
+  }catch(e){if(typeof proToast==='function')proToast('Couldn’t open that PDF');}
+}
+function _paperRemove(cid,docId){
+  const go=function(){
+    const a=_paperRemoved();if(a.indexOf(docId)<0)a.push(docId);
+    try{const v=JSON.stringify(a.slice(-5000));localStorage.setItem('sc_paper_removed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_paper_removed',v);}catch(e){}
+    if(capturedPhotos[cid])capturedPhotos[cid]=capturedPhotos[cid].filter(function(p){return !(p&&p.phase==='paperform'&&_paperDocId(p)===docId);});
+    try{persistCapturedPhotos();}catch(e){}
+    const v=document.getElementById('paper-view');if(v)v.remove();
+    if(typeof proToast==='function')proToast('Removed from their file');
+    try{nav('client-forms',cid);}catch(e){}
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Remove this paper form?',body:'It comes off '+((CL[cid]&&CL[cid].name.split(' ')[0])||'their')+'’s file on all your devices.',action:'Remove',danger:true},go);else go();
 }
 // Searchable "send to this client" sheet, mirrors the Forms / Guides / Bundles library
 // so the provider sends any of them from one place, scoped to their professions, without
@@ -14362,7 +14513,7 @@ function _renderPhotosView(id,c,_passed){
     const all=capturedPhotos[id]||[];
     if(!all.length)return '';
     const ref=[],ba=[];
-    all.forEach((p,i)=>{(p.phase==='before'||p.phase==='after'?ba:ref).push([p,i]);});
+    all.forEach((p,i)=>{if(p&&p.phase==='paperform')return;(p.phase==='before'||p.phase==='after'?ba:ref).push([p,i]);});
     const photoBlock=(p,i)=>`<div style="position:relative;">
       <div onclick="_viewClientPhoto('${id}',${i})" title="View / save photo" style="cursor:zoom-in;">${_capturedThumb(p,84)}</div>
       <div style="display:flex;gap:3px;margin-top:4px;">
@@ -16674,7 +16825,7 @@ let _ghost={stream:null,facing:'environment',ref:null,cid:'',phase:'',after:null
 // the pair a client actually sees side by side. Otherwise line up with the most recent photo at that
 // angle, which is what makes a months-long progress series comparable.
 function _ghostRef(clientId,phase,angle){
-  const list=(capturedPhotos[clientId]||[]).filter(p=>p&&p.url&&(p.angle||'Front')===(angle||'Front'));
+  const list=(capturedPhotos[clientId]||[]).filter(p=>p&&p.url&&p.phase!=='paperform'&&(p.angle||'Front')===(angle||'Front'));
   if(!list.length)return null;
   const byNewest=list.slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
   if(phase==='after'){
@@ -16874,11 +17025,11 @@ function _tattooBeforePhoto(id){
   const all=capturedPhotos[id]||[];
   const before=all.filter(p=>p&&p.url&&p.phase==='before');
   if(before.length)return before[before.length-1].url;
-  const any=all.filter(p=>p&&p.url);
+  const any=all.filter(p=>p&&p.url&&p.phase!=='paperform');
   return any.length?any[any.length-1].url:'';
 }
 function _stencilCandidates(id){
-  return (capturedPhotos[id]||[]).filter(p=>p&&p.url&&p.phase!=='before'&&p.phase!=='after');
+  return (capturedPhotos[id]||[]).filter(p=>p&&p.url&&p.phase!=='before'&&p.phase!=='after'&&p.phase!=='paperform');
 }
 function _openStencilOverlay(id){
   const base=_tattooBeforePhoto(id);

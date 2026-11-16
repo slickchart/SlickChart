@@ -9408,3 +9408,25 @@ send links `?c=<tok>&s=form&f=<formId>`. The client page (`_formOnlyId`): opens 
 check-in or other forms. A failed send restores the form and stays in form-only mode. If the form is
 already done the link opens Home as before. Home, the client's other to-dos and the push deep links are
 unchanged. `test-form-link-direct.mjs` now replays her exact list (18 checks, Chromium + WebKit).
+
+## 2026-11-16: signed PAPER forms go on a client's file (Lisa, build 2026-11-16a)
+
+**What Lisa asked (email 2026-11-16, 02:28Z):** she is going paperless and has years of paper intake
+forms clients already signed. She wants to scan them with her iPhone or iPad into each client's
+profile, kept with their treatment history.
+
+**What exists now:** client → Their file → Forms & documents → **Add a paper form**. Name, optional
+date signed, then "Take a photo" (one page per photo, "Add a page" for the next) or "Choose files"
+(photos or a PDF, e.g. a Notes/Files scan, up to 15 MB). Listed under "Paper forms" with the date and
+page count; tap to view, tap a page for full size, PDFs open whole; "Remove from their file".
+
+**How it is stored (no new endpoint, no new table):** each page is a `capturedPhotos[cid]` entry with
+`phase:'paperform'`, `angle` = the form name, `source:'paper|<docId>|<yyyy-mm-dd>'`, `fileType:'pdf'`
+for a PDF. So it rides `_backupPhotosToServer` (her account only) and the merged `sc_photo_index` to
+her other devices. Excluded from Photos, the stencil/ghost pickers, and the client app (only
+before/after ever goes there). Removal is the synced delete list `sc_paper_removed` (docIds, in
+`_TOMB_ARR`); the account's photo index keeps the page ids because the shrink guard holds back a
+smaller index on purpose, so every reader (list, index carry, restore) filters by that list.
+Test: `scratchpad/test-paper-forms.mjs`, 25/25 Chromium and WebKit (phone add, upload under her
+token, PDF kept as PDF, not in Photos, not in client data, iPad receives it, removal holds after
+relaunch, a new device does not download a removed form).
