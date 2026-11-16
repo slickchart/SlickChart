@@ -9487,3 +9487,15 @@ smaller index on purpose, so every reader (list, index carry, restore) filters b
 Test: `scratchpad/test-paper-forms.mjs`, 25/25 Chromium and WebKit (phone add, upload under her
 token, PDF kept as PDF, not in Photos, not in client data, iPad receives it, removal holds after
 relaunch, a new device does not download a removed form).
+
+## 2026-11-16: booking link QR code + "send this page to a friend" (feedback #21, build 2026-11-16d)
+
+Provider feedback (#21): wanted a direct link or QR code to her booking site for business cards, and
+a way for a friend to share the link to invite someone. More → Booking link now has **QR code for
+business cards**: drawn on the device (self-hosted `assets/vendor/qrcode-generator-2.0.4.js`, MIT,
+loaded only on tap), 1200px PNG, error level M, quiet zone 4, saved through `_savePhoto` (share
+sheet on a phone). It warns when the link is off; with no link name it opens the picker. Providers
+who book through Square get the same link, which forwards to Square. The public `/book/<slug>` page
+has "Send this page to a friend" (and on the done screen), sharing only the page address.
+Test: `scratchpad/test-booking-qr.mjs` (decodes the QR with jsQR from /tmp/qrt), 11/11 Chromium and
+WebKit; `scratchpad/render-book-page.mjs` renders the real handler with stubbed libs.

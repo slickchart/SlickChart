@@ -51,12 +51,13 @@ textarea.f{height:90px;resize:none;line-height:1.5;}
 .slot{border:1.5px solid #e8ddd3;background:#fff;border-radius:999px;padding:9px 15px;font-size:15px;cursor:pointer;font-family:inherit;color:#1a1a1a;}
 .slot[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700;}
 .muted{font-size:13px;color:#8a7a6c;line-height:1.6;margin-bottom:16px;}
+.share{display:block;width:100%;margin-top:14px;background:transparent;border:1.5px solid #e8ddd3;color:#5a4a3a;border-radius:12px;padding:12px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;}
 .foot{margin-top:26px;text-align:center;font-size:11px;color:#6b5d52;line-height:1.6;}
 .done{text-align:center;padding:40px 10px;}
 .done .ic{width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 18px;}
 .done h2{font-size:21px;font-weight:700;margin-bottom:8px;}
 .done p{font-size:14px;color:#6b5d52;line-height:1.6;}
-@media (prefers-color-scheme:dark){body{background:#141210;color:#f0ebe4;}.f,.hours,.slot{background:#1e1b18;border-color:#332e28;color:#f0ebe4;}.sub,.done p,.foot,.hours,.muted{color:#b3a596;}.hours b{color:#f0ebe4;}.err{background:#2a1414;border-color:#5a2a2a;color:#e8a0a0;}}
+@media (prefers-color-scheme:dark){body{background:#141210;color:#f0ebe4;}.share{border-color:#332e28;color:#e8ddd3;}.f,.hours,.slot{background:#1e1b18;border-color:#332e28;color:#f0ebe4;}.sub,.done p,.foot,.hours,.muted{color:#b3a596;}.hours b{color:#f0ebe4;}.err{background:#2a1414;border-color:#5a2a2a;color:#e8a0a0;}}
 ${BRAND_CSS}</style></head><body><div class="wrap">${inner}</div></body></html>`;
 }
 
@@ -121,6 +122,7 @@ export default async function handler(req, res) {
     <textarea class="f" id="f-note" placeholder="First time, something you're working on, a question…"></textarea>
     <button class="btn" id="go" type="button">Request this time</button>
   </div>
+  <button class="share" type="button" onclick="shareBook()">Send this page to a friend</button>
   <div class="foot">Powered by SlickChart · Your details are shared only with ${esc(bizName)}.</div>`;
 
     const boot = `<script>
@@ -128,6 +130,15 @@ var SLUG=${jsStr(slug)}, MODE=${jsStr(cfg.mode)}, BIZ=${jsStr(bizName)}, OPEN=${
     HORIZON=${cfg.horizonDays}, ACCENT=${jsStr(accent)}, DONEIC='\\u2713';
 // name → {mins, deposit}, so the page can say what each one costs in time and money up front.
 var SVC=${jsonForScript(services.reduce((m, sv) => { m[sv.name] = { mins: serviceMins(sv, cfg), dep: serviceDeposit(sv, cfg) }; return m; }, {}))};
+// A friend passes the page on (2026-11-16 feedback: "a friend can share the link to invite another
+// person"). The address is the public booking page itself, nothing about the person who booked.
+function shareBook(){
+  var u=location.origin+'/book/'+encodeURIComponent(SLUG), t='Book with '+BIZ;
+  try{ if(navigator.share){ navigator.share({title:t,url:u}).catch(function(){}); return; } }catch(e){}
+  var said=function(){ var bs=document.querySelectorAll('.share'); for(var i=0;i<bs.length;i++)bs[i].textContent='Link copied. Paste it in a text to your friend.'; };
+  try{ navigator.clipboard.writeText(u).then(said,function(){ prompt('Copy this link for your friend:', u); }); return; }catch(e){}
+  prompt('Copy this link for your friend:', u);
+}
 var DKEY=['sun','mon','tue','wed','thu','fri','sat'];
 var picked='', slotsFor='';
 function $(id){return document.getElementById(id);}
@@ -213,7 +224,7 @@ $('go').addEventListener('click',function(){
         +(x.j.confirmed
           ? 'Your appointment is set for <b>'+eh(x.j.when)+'</b>. Check your email for the details.'
           : eh(BIZ)+' will confirm <b>'+eh(x.j.when)+'</b>, or suggest another time if that one\\u2019s taken. Watch your email.')
-        +'</p>'+dep+'</div>';
+        +'</p>'+dep+'<button class="share" type="button" onclick="shareBook()" style="margin-top:22px;">Know someone who would love '+eh(BIZ)+'? Send them this page</button></div>';
       window.scrollTo(0,0);
     })
     .catch(function(){ b.disabled=false; b.textContent=MODE==='instant'?'Book this time':'Request this time'; show('Couldn\\u2019t reach the server. Please try again.'); });

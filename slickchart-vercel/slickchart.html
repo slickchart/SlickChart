@@ -370,7 +370,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-16c';
+const APP_BUILD='2026-11-16d';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -18378,6 +18378,48 @@ function loadBookCfg(){
 function saveBookCfg(){
   try{const v=JSON.stringify(bookCfg);localStorage.setItem('sc_booking_page',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_booking_page',v);}catch(e){}
 }
+// ── Booking link QR code (provider feedback 2026-11-16: "a direct link or QR code to my booking
+// site to put on my business cards"). Drawn on the device from her own link, no outside service:
+// the encoder (qrcode-generator 2.0.4, MIT, Kazuhiko Arase) is self-hosted in assets/vendor and only
+// loaded when she opens this. Square-booking providers get the same link, which forwards to Square.
+function _loadQrLib(){
+  if(typeof window.qrcode==='function')return Promise.resolve(window.qrcode);
+  return new Promise(function(res,rej){const s=document.createElement('script');s.src='/assets/vendor/qrcode-generator-2.0.4.js';
+    s.onload=function(){typeof window.qrcode==='function'?res(window.qrcode):rej(new Error('qr'));};s.onerror=rej;document.head.appendChild(s);});
+}
+// Black on white with the 4-module quiet zone the standard asks for, so a printer or a phone camera
+// reads it at business-card size. Error level M survives a little smudging.
+function _qrCanvas(text,px){
+  const q=window.qrcode(0,'M');q.addData(text);q.make();
+  const n=q.getModuleCount(),m=4,cell=Math.max(2,Math.floor(px/(n+2*m))),size=cell*(n+2*m);
+  const c=document.createElement('canvas');c.width=c.height=size;const x=c.getContext('2d');
+  x.fillStyle='#ffffff';x.fillRect(0,0,size,size);x.fillStyle='#000000';
+  for(let r=0;r<n;r++)for(let k=0;k<n;k++)if(q.isDark(r,k))x.fillRect((k+m)*cell,(r+m)*cell,cell,cell);
+  return c;
+}
+let _bookQrPng='';
+function _bookQrSheet(){
+  const url=_bookFull();
+  if(!url){if(typeof _setConsultSlug==='function')_setConsultSlug();return;}
+  _loadQrLib().then(function(){
+    let png='';try{png=_qrCanvas(url,1200).toDataURL('image/png');}catch(e){}
+    if(!png){if(typeof proToast==='function')proToast('Couldn’t make the QR code, try again');return;}
+    _bookQrPng=png;
+    const old=document.getElementById('bookqr-sheet');if(old)old.remove();
+    const ov=document.createElement('div');ov.id='bookqr-sheet';
+    ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+    ov.onclick=function(e){if(e.target===ov)ov.remove();};
+    ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px 16px 20px;max-height:88%;overflow-y:auto;box-sizing:border-box;text-align:center;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;text-align:left;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Your booking QR code</div><button onclick="this.closest('#bookqr-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:22px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>
+      <div style="font-size:15px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;text-align:left;">Put it on your business cards, a sign at your front desk, or a flyer. Anyone who scans it with their phone camera lands on your booking page.</div>
+      <img id="bookqr-img" src="${png}" alt="QR code for your booking link" style="width:240px;max-width:100%;height:auto;border-radius:8px;border:1px solid var(--p-line);background:#fff;">
+      <div style="font-size:14px;color:var(--p-mut);margin:8px 0 14px;word-break:break-all;">${_fileEsc(url.replace(/^https:\/\//,''))}</div>
+      <button class="btnp" onclick="_savePhoto(_bookQrPng,'booking-qr-code.png')" style="width:100%;border-radius:12px;padding:12px;"><i class="ti ti-download" aria-hidden="true"></i> Save the QR code</button>
+      ${bookCfg.on?'':`<div style="font-size:14px;color:var(--p-amber);line-height:1.5;margin-top:10px;text-align:left;">Your booking link is turned off, so people who scan it will see a “not active” page until you turn it on.</div>`}
+    </div>`;
+    (document.querySelector('.shell')||document.body).appendChild(ov);
+  }).catch(function(){if(typeof proToast==='function')proToast('Couldn’t load the QR code. Check your connection and try again.');});
+}
 function _bookFull(){return _consultSlug?('https://'+_consultHost()+'/book/'+_consultSlug):'';}
 function _bookSet(k,v){bookCfg[k]=v;saveBookCfg();renderBookingLink();}
 // The Calendar is where a provider looks for anything to do with bookings, so her public link lives
@@ -18730,6 +18772,7 @@ function renderBookingLink(){
         <button class="btng" style="flex:1;" onclick="_shareOrCopy('${full}','Book an appointment')"><i class="ti ti-share"></i> Share</button>
         <button class="btng" style="flex:0 0 auto;" onclick="_bookOpenPreview()" aria-label="Preview the page"><i class="ti ti-eye"></i></button>
       </div>
+      <button class="btng" style="width:100%;margin-top:8px;justify-content:center;" onclick="_bookQrSheet()"><i class="ti ti-scan" aria-hidden="true"></i> QR code for business cards</button>
     </div>`}
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin-bottom:16px;">
       <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;">

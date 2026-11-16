@@ -90,6 +90,8 @@ saved anywhere", not "does this always call that".
 | `_bookNote` | `/api/square/connection` | via `_sqConnState` |
 | `_bookOpenPreview` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `_bookOpenPreview` | `/api/consult-slug` | via `_setConsultSlug` |
+| `_bookQrSheet` | `/api/consult-requests` | via `_loadConsultRequests` |
+| `_bookQrSheet` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_bookSet` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_bookSet` | `/api/square/connection` | via `_sqConnState` |
 | `_bookSquareCardHTML` | `/api/consult-slug` | via `_setConsultSlug` |
