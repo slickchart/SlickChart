@@ -108,6 +108,17 @@ const readTime = body => Math.max(1, Math.round(body.split(/\s+/).length / 210))
 const pretty = d => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 // ── shared page chrome ─────────────────────────────────────────────────────
+// Words that say what a post is ABOUT, for linking posts on the same topic. The words every post
+// shares (consent, form, esthetician...) are left out, or everything would look related to everything.
+const TOPIC_STOP = new Set('a an and the for to of in on your you my with what how why is are do does it vs or form forms consent release template templates aftercare instructions contraindications esthetician estheticians app apps software one person solo client clients beauty pro best should guide permanent'.split(' '));
+const _topicCache = new Map();
+function topicWords(p) {
+  if (_topicCache.has(p)) return _topicCache.get(p);
+  const words = new Set((p.slug + ' ' + (p.meta.keywords || '')).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !TOPIC_STOP.has(w)));
+  _topicCache.set(p, words);
+  return words;
+}
+
 // ── build ──────────────────────────────────────────────────────────────────
 const built = [];   // every PUBLISHED post across both blogs, for the sitemap
 
@@ -138,7 +149,13 @@ for (const B of BLOGS) {
 
   // One page per post
   for (const p of posts) {
-    const related = posts.filter(o => o.slug !== p.slug).slice(0, 2);
+    // Keep reading: the posts closest in topic (shared slug and keyword words), newest first on a tie.
+    // It used to be the two newest posts on every page, so most posts were linked only from the index
+    // and Google crawled them and left them out ("Crawled - currently not indexed").
+    const related = posts.filter(o => o.slug !== p.slug)
+      .map(o => ({ o, s: [...topicWords(o)].filter(w => topicWords(p).has(w)).length
+        + 3 * o.slug.split('-').filter(w => !TOPIC_STOP.has(w) && p.slug.split('-').includes(w)).length }))
+      .sort((a, b) => b.s - a.s).slice(0, 3).map(x => x.o);
     const jsonld = {
       '@context': 'https://schema.org',
       '@graph': [{
