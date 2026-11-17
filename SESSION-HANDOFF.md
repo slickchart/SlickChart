@@ -9651,6 +9651,7 @@ Test: `scratchpad/test-book-lead-notice.mjs` 8/8 Chromium + WebKit; zoned time u
 - `squareNoAppointments(e)` (lib/booking.js): that one answer counts as "no Square bookings"; her SlickChart appointments, Google and link bookings still block times. Any OTHER Square failure still returns null (test).
 - `squareBookInstant` returns `why:'no square'` for it, and the app's `_reqSyncOut` files the booking on her SlickChart calendar / Google quietly instead of a "Not added to Square" warning each time.
 - Test `scratchpad/booking-alerts/test-square-no-appointments.mjs` (CI).
+- **Pushed live early** at Ashley's request (1:46 PM PT). Live check 21:48Z: `/api/book-slots?slug=wellnesswithinskin` now `mode:instant` with times (9:00 AM, 9:45 AM, ...) instead of `unknown`. Kristen's draft says "we think we found the fix" (Ashley: do not say fixed); the daily brief's `booking-blind` check keeps watching it.
 
 ## 2026-11-17 — Build 2026-11-17c: "Change or cancel" for people who book from her link (PREVIEW)
 Ashley: *"do this: A 'change or cancel' button for clients would fix it"* (after Kristen's alerts: a person who booked from `/book/<slug>` could only reply to the email, which reached the provider as an email she had to act on by hand).
