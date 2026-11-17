@@ -48,6 +48,26 @@ export default async function handler(req, res) {
     const ids = new Set(fa.byEmail.concat(fa.bySession)); const accounts = [];
     for (const id of fa.byEmail) accounts.push({ via: 'founder email', ref: id.slice(-4) });
     for (const id of fa.bySession) accounts.push({ via: 'signed in as founder', ref: id.slice(-4) });
+    // Her own public links (booking + consult share one slug), so checking a booking alert never
+    // needs her to paste her link. Founder accounts only, from the same lookup as every founder alert.
+    try {
+      const { getSlugForProvider } = await import('../../lib/consult.js');
+      out.links = [];
+      for (const id of ids) {
+        const slug = await getSlugForProvider(id);
+        if (slug) out.links.push({ account: id.slice(-4), book: 'https://slickchart.app/book/' + slug, consult: 'https://slickchart.app/consult/' + slug });
+      }
+    } catch (err) { out.links = []; }
+    // POST ?bookingtest=1: one test BOOKING alert through the real provider path (lib/booking-alerts:
+    // her switches, phone app AND web push) to each of her accounts. Creates no booking, no client.
+    if (req.method === 'POST' && String((req.query && req.query.bookingtest) || '') === '1') {
+      const { alertProvider } = await import('../../lib/booking-alerts.js');
+      out.bookingTest = [];
+      for (const id of ids) {
+        const r = await alertProvider(id, { event: 'new', who: 'Test Client', detail: 'Test of booking alerts, nothing was booked', url: '/slickchart?n=calendar', kind: 'calendar', tag: 'booking-alert-test' });
+        out.bookingTest.push({ account: id.slice(-4), sent: r.sent, skipped: r.skipped || '' });
+      }
+    }
     out.founderEmails = emails.length;
     out.accounts = accounts;
     const idList = Array.from(ids);
