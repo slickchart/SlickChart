@@ -9681,3 +9681,19 @@ Kristen asked for text alerts for bookings. Ashley: *"make sure all bookings/boo
 - **No Square:** the built-in booking link alerts in both modes with no Square connection (`scratchpad/booking-alerts/test-booking-link-no-square.mjs`, in CI). Built-in bookings have no client self-serve change/cancel (the guest email says "reply to change or cancel"), so there is nothing to alert on there yet.
 - **Founder test:** `GET /api/admin/push-state` now lists her own `links` (book + consult); `POST ?bookingtest=1` sends one "New booking: this is only a test" through `alertProvider` to every founder account (creates nothing). Use it instead of asking her for her link.
 - **Observed (Ashley, 2026-11-17 11:50 PT):** the live `?bookingtest=1` alert reached her phone ("i got the test booking notification"). push-state showed 2 Android devices accepting it.
+
+## 2026-11-17 — New providers get their "create your account" email right after paying
+
+**Observed (Ashley, 2026-11-17 2:49 PM PT):** the provider who had just signed up (jen…@gmail.com,
+paid 2:27 PM PT) said she did not get a setup email. `/api/admin/orphans` showed her paid, no account
+yet, status "waiting (3h until the email)". Not a send failure: nothing was ever emailed between
+paying and the 3 h rescue (`api/cron-orphan-checkout.js`), so anyone who closed the page after Stripe
+had no way in for 3 hours.
+- Resent by hand from ashley@slickchart.app at 2:51 PM PT (signup link with her email filled in), no bounce.
+- Fix: `lib/setup-email.js` `sendSetupEmailNow`, called from the Stripe webhook's checkout branch:
+  only when no provider account has that email, once ever (`nurture_sends` seq `setup`), never a
+  founder or unsubscribed address, a failed send releases the claim and never blocks Stripe's 200. The
+  3 h rescue still goes as the reminder if the account is still missing. `/api/admin/orphans` adds
+  `setupEmailAt`. Test `scratchpad/founder-push/setup-email.mjs` (in CI with the founder-push set).
+- Still stranded (paid, no account, rescue email already sent): hal… (2 failed sign-ins), jil… (6),
+  bel… (1), izz… (rescued 2026-09-17, row updated 2026-11-10).
