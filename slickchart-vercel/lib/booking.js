@@ -284,6 +284,12 @@ export async function noteBookingBlind(providerId, reason) {
       ON CONFLICT (provider_id) DO UPDATE SET reason = EXCLUDED.reason, at = now()`;
   } catch (e) { /* never block a booking page on a diagnostic */ }
 }
+// Square says this business does not use Square Appointments (it takes payments only).
+export function squareNoAppointments(e) {
+  const msg = String((e && e.message) || '');
+  const codes = ((e && e.squareErrors) || []).map(x => String((x && x.detail) || '') + ' ' + String((x && x.code) || '')).join(' ');
+  return /not onboarded to appointments/i.test(msg + ' ' + codes);
+}
 export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
   const out = [];
   const dur = Math.max(5, parseInt(defaultMins, 10) || 60);
@@ -331,8 +337,14 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
         out.push({ start: s - pad, end: s + (mins > 0 ? mins : dur) + pad });
       });
     } catch (e) {
-      busyRanges.why = 'square bookings: ' + String((e && e.message) || e).slice(0, 140);
-      return null;   // she has Square but we could not read it — never publish a half-informed slot list
+      // Square for payments only, not for bookings (Kristen, 2026-11-17: Square answers "Merchant not
+      // onboarded to Appointments"). Then Square holds no appointments of hers at all, so there is
+      // nothing there to clash with: her calendar is her SlickChart appointments and Google. Treating
+      // it as "unreadable" hid every open time on her link and turned it into request-only.
+      if (!squareNoAppointments(e)) {
+        busyRanges.why = 'square bookings: ' + String((e && e.message) || e).slice(0, 140);
+        return null;   // she has Square but we could not read it — never publish a half-informed slot list
+      }
     }
   }
 
@@ -530,6 +542,7 @@ export async function squareBookInstant(providerId, { date, time, serviceName, n
     if (!b.id) return { ok: false, why: 'Square did not return a booking' };
     return { ok: true, id: b.id, startAt: b.start_at || slot.start_at };
   } catch (e) {
+    if (squareNoAppointments(e)) return { ok: false, why: 'no square' };   // payments-only Square: her app files it
     return { ok: false, why: String((e && e.message) || 'Square would not take it').slice(0, 160) };
   }
 }

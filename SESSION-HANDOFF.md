@@ -9646,6 +9646,12 @@ Ashley: *"since we added in the free trial not every sign up is a paid provider 
 - 413 "photo too large" toast: once per oversized key per session, and the key name + size go to the launch log (`store-413`), so app-launches shows what it is.
 Test: `scratchpad/test-book-lead-notice.mjs` 8/8 Chromium + WebKit; zoned time unit check (NY winter, LA summer, DST day). Still open: why her calendar is unreadable (wait for `booking-blind`), and what the oversized key is (wait for `store-413`).
 
+## 2026-11-17 — Build 2026-11-17d: Kristen's booking link shows open times (Square for payments only)
+**Read, not guessed:** live `/api/book-slots?slug=wellnesswithinskin` = `unknown:true`; health sweep `booking-blind` = *"square bookings: Merchant not onboarded to Appointments"*. Her Square is payments only, so Square holds no bookings of hers, and `busyRanges` treated that as "calendar unreadable" and hid every time.
+- `squareNoAppointments(e)` (lib/booking.js): that one answer counts as "no Square bookings"; her SlickChart appointments, Google and link bookings still block times. Any OTHER Square failure still returns null (test).
+- `squareBookInstant` returns `why:'no square'` for it, and the app's `_reqSyncOut` files the booking on her SlickChart calendar / Google quietly instead of a "Not added to Square" warning each time.
+- Test `scratchpad/booking-alerts/test-square-no-appointments.mjs` (CI).
+
 ## 2026-11-17 — Build 2026-11-17c: "Change or cancel" for people who book from her link (PREVIEW)
 Ashley: *"do this: A 'change or cancel' button for clients would fix it"* (after Kristen's alerts: a person who booked from `/book/<slug>` could only reply to the email, which reached the provider as an email she had to act on by hand).
 
