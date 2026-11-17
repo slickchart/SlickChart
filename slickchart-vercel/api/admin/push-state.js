@@ -64,7 +64,7 @@ export default async function handler(req, res) {
       const { alertProvider } = await import('../../lib/booking-alerts.js');
       out.bookingTest = [];
       for (const id of ids) {
-        const r = await alertProvider(id, { event: 'new', who: 'Test Client', detail: 'Test of booking alerts, nothing was booked', url: '/slickchart?n=calendar', kind: 'calendar', tag: 'booking-alert-test' });
+        const r = await alertProvider(id, { event: 'new', who: 'this is only a test', detail: 'Checking your booking alerts, nothing was booked', url: '/slickchart?n=calendar', kind: 'calendar', tag: 'booking-alert-test' });
         out.bookingTest.push({ account: id.slice(-4), sent: r.sent, skipped: r.skipped || '' });
       }
     }
