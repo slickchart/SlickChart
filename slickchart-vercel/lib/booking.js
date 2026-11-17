@@ -44,7 +44,11 @@ export const DEFAULT_CONFIG = {
   // Her OWN Square booking page (Jaimie, 2026-10-22: she takes prepayment for every service there
   // and books several services at once). When set, the Book button in her clients' app and her
   // /book/<slug> link send people there instead of SlickChart's request form.
-  squareUrl: ''
+  squareUrl: '',
+  // "Change or cancel" in the person's confirmation email (lib/booking-manage). Hers to switch off,
+  // and the cut-off is hers too (CLAUDE.md §1f): inside it the page says to contact her instead.
+  clientChanges: true,
+  changeHours: 24
 };
 
 // Only a Square booking address is accepted, https, on Square's own hosts. Her /book/<slug> link
@@ -91,6 +95,8 @@ export async function getBookingConfig(providerId) {
       cfg.depositAmount = Math.max(0, Math.min(10000, Math.round((parseFloat(o.depositAmount) || 0) * 100) / 100));
       cfg.depositLabel = String(o.depositLabel || '').slice(0, 200);
       cfg.squareUrl = normalizeSquareBookingUrl(o.squareUrl);
+      cfg.clientChanges = o.clientChanges !== false;
+      cfg.changeHours = clampInt(o.changeHours, 0, 720, DEFAULT_CONFIG.changeHours);
       // Services were names only to begin with. Both shapes are accepted, for ever — a provider who
       // set hers up before durations existed must not have her list silently emptied.
       if (Array.isArray(o.services)) {

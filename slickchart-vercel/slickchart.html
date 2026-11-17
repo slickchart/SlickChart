@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-17b';
+const APP_BUILD='2026-11-17c';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -18410,7 +18410,8 @@ function renderVirtual(){
 // person booking, but it necessarily shows when she is busy — the screen says that in plain words
 // rather than burying it, because it is her call to make and she can only make it if she is told.
 let bookCfg={on:false,mode:'request',slotMins:60,bufferMins:0,leadHours:12,horizonDays:60,note:'',requirePhone:true,
-  emailGuest:true,emailMe:true,depositOn:false,depositAmount:0,depositLabel:'',services:[]};
+  emailGuest:true,emailMe:true,depositOn:false,depositAmount:0,depositLabel:'',services:[],
+  clientChanges:true,changeHours:24};   // "Change or cancel" in their confirmation email, and her cut-off (api/book-manage)
 let _bookSquare=null;   // null = not checked yet; deposits need her own Square to take the money
 function loadBookCfg(){
   try{const raw=localStorage.getItem('sc_booking_page');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')bookCfg=Object.assign(bookCfg,o);}}catch(e){}
@@ -18937,6 +18938,15 @@ function renderBookingLink(){
         <div style="flex:1;min-width:0;font-size:16px;color:var(--p-ink);">Usual deposit</div>
         <div style="font-size:16px;color:var(--accent-strong);font-weight:600;">$${_fileEsc(String(bookCfg.depositAmount||0))}</div>
         <i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`:''}
+    </div>
+    <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Changes and cancellations</div>
+    <div id="bk-changes" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;${bookCfg.clientChanges!==false?'border-bottom:1px solid var(--p-line2);':''}">
+        <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">Let them change or cancel</div>
+        <div style="font-size:14px;color:var(--p-mut);line-height:1.4;margin-top:2px;">${bookCfg.clientChanges!==false?'Their confirmation email has a Change or cancel button. You get a notification, and your calendar and Square update.':'Off. Their email says to reply to you to change or cancel.'}</div></div>
+        ${togBtn(bookCfg.clientChanges!==false,'_bookSet(\'clientChanges\',!(bookCfg.clientChanges!==false))','Let them change or cancel')}
+      </div>
+      ${bookCfg.clientChanges!==false?numRow('Up to how long before','changeHours',[[0,'Any time before'],[2,'2 hours'],[12,'12 hours'],[24,'1 day'],[48,'2 days'],[72,'3 days'],[168,'1 week']]):''}
     </div>
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Confirmation emails</div>
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:10px;">
@@ -34784,6 +34794,9 @@ async function syncClientEvents(){
     // Instant bookings from her link have to reach Square / Google, including ones that came in
     // before this was wired (they sat only on her SlickChart calendar). Runs after the bookings above
     // are stored; never awaited, so a slow Square cannot hold up the rest of this pass.
+    // A client moved or cancelled from their "Change or cancel" link. Before the line below, so a moved
+    // booking that is already booked goes out to Square / Google in this same pass.
+    try{_clientBookingChanges(j.events);}catch(e){}
     try{_instantBookingsOut(j.events);}catch(e){}
     if(touchedNotif)updateBadge();
     if(touchedMsgs)try{saveMessages();}catch(e){}
@@ -36776,6 +36789,83 @@ async function _instantBookingOut(b){
   done();
   return true;
 }
+// ── A client changed or cancelled from their "Change or cancel" link (2026-11-17) ───────────────
+// The server records it as a `booking_change` event (api/book-manage) and has already cancelled or
+// moved her Square booking with her own connection. This closes the old entry here: off Booking
+// Requests, off her calendar and her Google feed. A move becomes a NEW entry (id = the change event's
+// id): booked if the time was open, or a request she confirms like any other. A new entry rather than
+// an edit, because sc_bookings merges "a decision beats pending", so flipping a confirmed booking
+// back to pending would be undone by any device holding the old copy.
+// Runs over the FULL event list on every poll, like _instantBookingsOut: a device on an older build
+// marks these events seen without understanding them, so "fresh events only" would miss them. Each
+// change is applied once: the new entry exists, or the old one is already closed by it.
+var _bkChangeDone=Object.create(null);
+function _clientBookingChanges(events){
+  if(typeof Cloud!=='undefined'&&Cloud&&(Cloud._booting||(Cloud.token&&!Cloud._pulledOnce)))return false;   // the next poll does it
+  const chg=(Array.isArray(events)?events:[]).filter(function(ev){return ev&&ev.id&&ev.kind==='booking_change'&&ev.payload&&ev.payload.ref&&!_bkChangeDone[ev.id];});
+  if(!chg.length)return false;
+  chg.sort(function(a,b){return (Number(a.created_at)||0)-(Number(b.created_at)||0);});   // a chain of changes applies in order
+  let all=null;try{all=SlickBridge.getBookings()||[];}catch(e){return false;}
+  let changed=false,sqReload=false;
+  chg.forEach(function(ev){
+    const p=ev.payload||{};
+    const prevId=String(p.prevId||p.ref);
+    let old=all.find(function(x){return x&&x.id===prevId;});
+    if(all.some(function(x){return x&&x.id===ev.id;})||(old&&old.closedBy===ev.id)){_bkChangeDone[ev.id]=1;return;}
+    const cid=(typeof _resolveClientId==='function')?_resolveClientId(ev.client_id):ev.client_id;
+    if(!old){   // the original never reached this device: keep a closed record so the history reads right
+      old={id:prevId,clientId:cid,client:p.client||'A client',treatment:p.treatment||'Appointment',date:p.prevDate||'',dateLabel:p.prevDateLabel||'',time:p.prevTime||'',status:p.prevStatus||'pending',created:ev.created_at||Date.now()};
+      all.unshift(old);
+    }
+    // Off her calendar: the in-app copy, and the copy that feeds her Google (manualAppts).
+    try{
+      for(let i=confirmedAppts.length-1;i>=0;i--){const a=confirmedAppts[i];if(a&&a.client===old.client&&a.date===old.date&&String(a.time||'')===String(old.time||''))confirmedAppts.splice(i,1);}
+    }catch(e){}
+    try{
+      if(typeof manualAppts!=='undefined'&&Array.isArray(manualAppts)){
+        const mid='ma_req_'+String(prevId).replace(/[^A-Za-z0-9_-]/g,'').slice(-40);
+        let hit=false;
+        for(let i=manualAppts.length-1;i>=0;i--){const a=manualAppts[i];
+          if(a&&(a.id===mid||(String(a.id||'').indexOf('ma_req_')===0&&String(a.client||'')===String(old.client||'')&&a.date===old.date&&String(a.time||'')===String(old.time||'')))){
+            manualAppts.splice(i,1);try{_apptDeleted(a.id);}catch(e){}hit=true;}}
+        if(hit){_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}}
+      }
+    }catch(e){}
+    old.status='cancelled';old.cancelledBy='client';old.closedBy=ev.id;old.decidedAt=Date.now();old.seen=true;
+    if(p.action==='move')old.movedTo=ev.id;
+    const nm=old.client||p.client||'A client';
+    const wasLbl=fmtBookingDate(old)+(old.time?' at '+old.time:'');
+    if(p.action==='move'){
+      const nb={id:ev.id,clientId:old.clientId||cid,client:nm,treatment:p.treatment||old.treatment||'Appointment',
+        date:p.date||'',dateLabel:p.dateLabel||'',time:p.time||'',note:old.note||'',created:ev.created_at||Date.now(),
+        status:p.confirmed?'confirmed':'pending',movedFrom:prevId};
+      if(p.confirmed){nb.decidedAt=Date.now();nb.instant=true;nb.seen=true;
+        if(p.squareBookingId){nb.squareBookingId=String(p.squareBookingId);nb.outSent=true;sqReload=true;}}
+      all.unshift(nb);
+      if(p.confirmed){try{addConfirmedAppt(nb);}catch(e){}}
+      const nowLbl=fmtBookingDate(nb)+(nb.time?' at '+nb.time:'');
+      try{pushBookingNotif({icon:p.confirmed?'ti-calendar-event':'ti-calendar-plus',title:p.confirmed?'Booking moved':'New time requested',
+        body:nm+' · '+nb.treatment+' · '+(p.confirmed?'now ':'asked for ')+nowLbl+' (was '+wasLbl+')'});}catch(e){}
+    }else{
+      try{pushBookingNotif({icon:'ti-calendar-x',col:'var(--p-red-bg)',ic:'var(--p-red)',title:'Booking cancelled',body:nm+' cancelled '+(old.treatment||'their appointment')+' on '+wasLbl+'.'});}catch(e){}
+    }
+    if(p.squareDone)sqReload=true;
+    else if(p.prevStatus==='confirmed'&&p.squareWhy&&p.squareWhy!=='no square'&&p.squareWhy!=='not in Square'){
+      try{pushBookingNotif({icon:'ti-calendar-x',col:'var(--p-red-bg)',ic:'var(--p-red)',title:'Change it in Square too',
+        body:nm+' · '+(old.treatment||'Appointment')+' · '+wasLbl+'. The old time could not be cancelled in Square automatically.'});}catch(e){}
+    }
+    _bkChangeDone[ev.id]=1;changed=true;
+  });
+  if(!changed)return false;
+  try{SlickBridge.setBookings(all);}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bookings',_lsGet('sc_bookings')||'');}catch(e){}
+  try{if(typeof _stampClientNextVisit==='function')_stampClientNextVisit(true);}catch(e){}
+  try{updateBadge();}catch(e){}
+  if(sqReload){try{if(typeof _loadSquareAppts==='function')_loadSquareAppts(true);}catch(e){}}
+  try{if(document.getElementById('requests-screen'))renderRequests();}catch(e){}
+  try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='calendar'&&typeof renderCalendar==='function')renderCalendar();}catch(e){}
+  return true;
+}
 function confirmBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;
   if(b.status==='confirmed')return; // already confirmed, don't duplicate the calendar entry
@@ -36880,7 +36970,7 @@ function renderRequests(){
   document.getElementById('tt').textContent='Booking Requests';
   const pend=pendingRequests();
   const done=decidedRequests();
-  const statusChip=s=>({confirmed:['var(--p-surf2)','var(--p-green)','Confirmed'],declined:['var(--p-red-bg)','var(--p-red)','Declined'],suggested:['var(--accent-tint)','var(--accent)','Time suggested']}[s]||['var(--p-surf3)','#999',s]);
+  const statusChip=s=>({confirmed:['var(--p-surf2)','var(--p-green)','Confirmed'],declined:['var(--p-red-bg)','var(--p-red)','Declined'],suggested:['var(--accent-tint)','var(--accent)','Time suggested'],cancelled:['var(--p-red-bg)','var(--p-red)','Cancelled'],moved:['var(--p-surf3)','var(--p-mut)','Moved']}[s]||['var(--p-surf3)','#999',s]);
   S.innerHTML=`
   <div id="requests-screen" style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
   </div>
@@ -36897,7 +36987,7 @@ function renderRequests(){
     ${pend.map(requestCard).join('')}`}
   ${done.length?`
     <div class="sh"><h2>Recent decisions</h2></div>
-    ${done.map(b=>{const[bg,ic,lbl]=statusChip(b.status);return`
+    ${done.map(b=>{const[bg,ic,lbl]=statusChip(b.movedTo?'moved':b.status);return`
     <div style="margin:0 16px 8px;background:var(--surf1);border:1px solid var(--p-line2);border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;opacity:.85;">
       <div style="width:36px;height:36px;border-radius:8px;background:var(--p-chip);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;font-weight:600;color:var(--p-mut);">${initialsOf(b.client)}</div>
       <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">${_fileEsc(b.client)} · ${_fileEsc(b.treatment)}</div><div style="font-size:14px;color:var(--p-mut);margin-top:1px;">${b.status==='suggested'?`Suggested ${_fileEsc(b.suggestedTime)}`:`${_fileEsc(fmtBookingDate(b))} · ${_fileEsc(b.time)}`}</div></div>

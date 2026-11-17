@@ -195,14 +195,20 @@ export default async function handler(req, res) {
     try { const raw = await getKVValue(prov.id, 'sc_bizinfo'); if (raw) biz = JSON.parse(raw) || {}; } catch (e) {}
     const bizName = String(biz.name || prov.name || 'Your appointment').trim();
     const addr = [biz.address, biz.city, biz.state].filter(Boolean).join(', ');
+    // Their own "Change or cancel" link for this one booking (lib/booking-manage). Only when she lets
+    // people change bookings themselves; otherwise the email says to reply, as before.
+    let manageUrl = '';
+    if (cfg.clientChanges !== false && logged && logged.id) {
+      try { const { manageUrl: mu } = await import('../lib/booking-manage.js'); manageUrl = mu(trustedOrigin(), prov.id, logged.id); } catch (e) { manageUrl = ''; }
+    }
     if (firstTime && cfg.emailGuest !== false) {
       try {
         await sendEmail({
           to: email,
           replyTo: prov.email || undefined,   // answering reaches HER, not our support inbox
           subject: (confirmed ? 'Booked: ' : 'Request sent: ') + when + ' — ' + bizName,
-          html: bookingGuestEmailHtml({ bizName, name, when, treatment, confirmed, note: cfg.note, depositUrl, depositLabel, address: addr, phone: biz.phone }),
-          text: bookingGuestEmailText({ bizName, name, when, treatment, confirmed, note: cfg.note, depositUrl, depositLabel, address: addr, phone: biz.phone })
+          html: bookingGuestEmailHtml({ bizName, name, when, treatment, confirmed, note: cfg.note, depositUrl, depositLabel, address: addr, phone: biz.phone, manageUrl }),
+          text: bookingGuestEmailText({ bizName, name, when, treatment, confirmed, note: cfg.note, depositUrl, depositLabel, address: addr, phone: biz.phone, manageUrl })
         });
       } catch (e) { console.error('[book-request] guest email failed:', e && e.message); }
     }

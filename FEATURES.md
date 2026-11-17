@@ -1199,6 +1199,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/automation-claim` | POST | provider session | Provider-authed: pre-claim a scheduled automation's occurrence for a set of clients, so the |
 | `/api/beta-event` | POST | provider session | POST /api/beta-event |
 | `/api/billing-status` | GET | provider session | GET /api/billing-status — provider-authed: returns the real Stripe |
+| `/api/book-manage` | POST, GET | **public** | PUBLIC (no login): slickchart.app/booking/manage?m=<token> — "Change or cancel" for someone who |
 | `/api/book-page` | — | **public** | PUBLIC: serves slickchart.app/book/<slug> — a branded page where anyone can book with a specific |
 | `/api/book-request` | POST | **public** | PUBLIC (no auth): someone books through a provider's public link — slickchart.app/book/<slug>. |
 | `/api/book-slots` | GET | **public** | PUBLIC (no auth): GET /api/book-slots?slug=<slug>&date=YYYY-MM-DD |

@@ -237,7 +237,7 @@ export function consultLeadEmailText({ providerName, name, email, phone, message
 // `confirmed` is the difference between the two states the link can produce: instant mode books the
 // slot outright, request mode asks. The wording has to be honest about which happened, because
 // "You're booked" for something she hasn't agreed to yet is how someone turns up to a locked door.
-export function bookingGuestEmailHtml({ bizName, name, when, treatment, confirmed, note, depositUrl, depositLabel, address, phone }) {
+export function bookingGuestEmailHtml({ bizName, name, when, treatment, confirmed, note, depositUrl, depositLabel, address, phone, manageUrl }) {
   const first = (String(name || '').trim().split(/\s+/)[0]) || 'there';
   const head = confirmed ? 'You’re booked' : 'Request sent';
   const lede = confirmed
@@ -259,11 +259,13 @@ export function bookingGuestEmailHtml({ bizName, name, when, treatment, confirme
         <a href="${depositUrl}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px;display:inline-block;font-size:14px;">Pay the deposit</a>
       </div>` : ''}
       ${note ? `<div style="background:#eef6f4;border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.6;color:#3a3a3a;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:18px;">${esc(note)}</div>` : ''}
-      <p style="font-size:13px;line-height:1.7;color:#7a948c;margin:0;">Need to change or cancel? Just reply to this email — it goes straight to ${esc(bizName)}.</p>
+      ${manageUrl ? `<div style="margin-bottom:16px;"><a href="${esc(manageUrl)}" style="background:#ffffff;color:#0a1719;border:1.5px solid #cfdcd8;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:10px;display:inline-block;font-size:14px;">Change or cancel</a></div>
+      <p style="font-size:13px;line-height:1.7;color:#7a948c;margin:0;">Or just reply to this email. It goes straight to ${esc(bizName)}.</p>`
+      : `<p style="font-size:13px;line-height:1.7;color:#7a948c;margin:0;">Need to change or cancel? Just reply to this email — it goes straight to ${esc(bizName)}.</p>`}
     </div>
   </div>`;
 }
-export function bookingGuestEmailText({ bizName, name, when, treatment, confirmed, note, depositUrl, depositLabel, address, phone }) {
+export function bookingGuestEmailText({ bizName, name, when, treatment, confirmed, note, depositUrl, depositLabel, address, phone, manageUrl }) {
   const first = (String(name || '').trim().split(/\s+/)[0]) || 'there';
   const lines = [confirmed ? 'You’re booked' : 'Request sent', ''];
   lines.push('Hi ' + first + ' — ' + (confirmed
@@ -276,7 +278,8 @@ export function bookingGuestEmailText({ bizName, name, when, treatment, confirme
   if (phone) lines.push('Their phone: ' + phone);
   if (depositUrl) { lines.push('', depositLabel || 'A deposit is needed to hold this appointment.', 'Pay the deposit: ' + depositUrl); }
   if (note) lines.push('', note);
-  lines.push('', 'Need to change or cancel? Reply to this email — it goes straight to ' + bizName + '.');
+  if (manageUrl) lines.push('', 'Change or cancel: ' + manageUrl, 'Or reply to this email. It goes straight to ' + bizName + '.');
+  else lines.push('', 'Need to change or cancel? Reply to this email — it goes straight to ' + bizName + '.');
   return lines.join('\n');
 }
 // And the provider's own copy. She already gets a push, but a push is gone the moment it is swiped
@@ -312,4 +315,62 @@ export function bookingProviderEmailText({ name, email, phone, when, treatment, 
   return lines.join('\n');
 }
 
+// After the person changes or cancels from their "Change or cancel" link (lib/booking-manage).
+// action: 'cancel' | 'move'. confirmed: a move that is booked outright (instant mode) vs one she has
+// to confirm. Plain and short: they just did it themselves and only need to know it took.
+export function bookingChangeGuestEmail({ bizName, name, action, when, treatment, confirmed, manageUrl }) {
+  const first = (String(name || '').trim().split(/\s+/)[0]) || 'there';
+  const head = action === 'cancel' ? 'Appointment cancelled' : (confirmed ? 'Appointment moved' : 'New time requested');
+  const lede = action === 'cancel'
+    ? `Your ${esc(treatment || 'appointment')} with ${esc(bizName)} on ${esc(when)} is cancelled.`
+    : (confirmed
+      ? `Your ${esc(treatment || 'appointment')} with ${esc(bizName)} is now <b>${esc(when)}</b>.`
+      : `${esc(bizName)} has your request to move to <b>${esc(when)}</b> and will confirm it, or suggest another time.`);
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;color:#1a1a1a;">
+    <div style="background:#0a1719;border-radius:14px;padding:22px 24px;color:#eaf6f4;">
+      <div style="font-size:12px;color:#a2beb9;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;">${esc(bizName)}</div>
+      <div style="font-size:20px;font-weight:700;">${head}</div>
+    </div>
+    <div style="padding:20px 6px 6px;">
+      <p style="font-size:15px;line-height:1.7;color:#3a3a3a;margin:0 0 16px;">Hi ${esc(first)}. ${lede}</p>
+      ${manageUrl && action !== 'cancel' ? `<div style="margin-bottom:16px;"><a href="${esc(manageUrl)}" style="background:#ffffff;color:#0a1719;border:1.5px solid #cfdcd8;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:10px;display:inline-block;font-size:14px;">Change or cancel</a></div>` : ''}
+      <p style="font-size:13px;line-height:1.7;color:#7a948c;margin:0;">Questions? Just reply to this email. It goes straight to ${esc(bizName)}.</p>
+    </div>
+  </div>`;
+  const lines = [head, '', 'Hi ' + first + '. ' + lede.replace(/<\/?b>/g, '')];
+  if (manageUrl && action !== 'cancel') lines.push('', 'Change or cancel: ' + manageUrl);
+  lines.push('', 'Questions? Reply to this email. It goes straight to ' + bizName + '.');
+  const subject = head + ': ' + (when || '') + ' — ' + bizName;
+  return { subject, html, text: lines.join('\n') };
+}
+export function bookingChangeProviderEmail({ name, email, phone, action, when, prevWhen, treatment, confirmed, squareNote, link }) {
+  const head = action === 'cancel' ? 'Cancelled by the client' : (confirmed ? 'Moved by the client' : 'New time requested');
+  const row = (label, val) => val ? `<tr><td style="padding:6px 12px 6px 0;font-size:13px;color:#7a948c;white-space:nowrap;vertical-align:top;">${esc(label)}</td><td style="padding:6px 0;font-size:14px;color:#1a1a1a;overflow-wrap:anywhere;">${esc(val)}</td></tr>` : '';
+  const what = action === 'cancel' ? 'They cancelled this appointment from the link in their confirmation email.'
+    : (confirmed ? 'They moved it from the link in their confirmation email. The new time was open, so it is booked.'
+      : 'They asked for a new time from the link in their confirmation email. Open SlickChart to confirm it, suggest another time, or decline.');
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;color:#1a1a1a;">
+    <div style="background:#0a1719;border-radius:14px;padding:22px 24px;color:#eaf6f4;">
+      <div style="font-size:12px;color:#a2beb9;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;">${head}</div>
+      <div style="font-size:20px;font-weight:700;">${esc(name || 'A client')} · ${esc(when || '')}</div>
+    </div>
+    <div style="padding:20px 6px 6px;">
+      <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">
+        ${row('What', treatment)}${action === 'cancel' ? '' : row('Was', prevWhen)}${row('Email', email)}${row('Phone', phone)}
+      </table>
+      <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 14px;">${what}</p>
+      ${squareNote ? `<p style="font-size:14px;line-height:1.7;color:#a33;margin:0 0 14px;">${esc(squareNote)}</p>` : ''}
+      ${link ? `<div><a href="${link}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px;display:inline-block;font-size:14px;">Open SlickChart</a></div>` : ''}
+    </div>
+  </div>`;
+  const lines = [head + ': ' + (name || 'A client') + ' · ' + (when || ''), ''];
+  if (treatment) lines.push('What: ' + treatment);
+  if (action !== 'cancel' && prevWhen) lines.push('Was: ' + prevWhen);
+  if (email) lines.push('Email: ' + email);
+  if (phone) lines.push('Phone: ' + phone);
+  lines.push('', what);
+  if (squareNote) lines.push('', squareNote);
+  if (link) lines.push('', 'Open SlickChart: ' + link);
+  return { subject: head + ': ' + (name || 'A client') + ' — ' + (when || ''), html, text: lines.join('\n') };
+}
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }

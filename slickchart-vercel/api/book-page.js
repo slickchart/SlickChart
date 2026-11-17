@@ -12,9 +12,9 @@ import { getBookingConfig, getServices, getHours, openDayKeys, toMins, DAY_KEYS,
 // JSON.stringify escapes quotes but NOT `<`, so a business name containing `</script>` would break
 // out of the inline script. Escape the terminator so provider-controlled text can never inject.
 function jsStr(s) { return JSON.stringify(String(s == null ? '' : s)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'); }
-function pretty(t) { const m = toMins(t); if (m == null) return ''; const h = Math.floor(m / 60), mi = m % 60; const ap = h < 12 ? 'am' : 'pm'; let hh = h % 12; if (hh === 0) hh = 12; return hh + (mi ? ':' + String(mi).padStart(2, '0') : '') + ap; }
+export function pretty(t) { const m = toMins(t); if (m == null) return ''; const h = Math.floor(m / 60), mi = m % 60; const ap = h < 12 ? 'am' : 'pm'; let hh = h % 12; if (hh === 0) hh = 12; return hh + (mi ? ':' + String(mi).padStart(2, '0') : '') + ap; }
 
-function shell(inner, o) {
+export function shell(inner, o) {
   o = o || {};
   const accent = o.accent || '#2BC7AC';
   const vars = o.vars || ('--accent:' + accent + ';--accent2:' + accent + ';--accent-ink:#ffffff;');

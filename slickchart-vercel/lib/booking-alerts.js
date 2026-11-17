@@ -49,6 +49,7 @@ const TITLE = {
   new: 'New booking: ',
   request: 'Booking request: ',
   changed: 'Booking moved: ',
+  change_request: 'New time requested: ',
   cancelled: 'Booking cancelled: ',
   consult: 'New consult request: ',
   payment: 'Payment received: ',
