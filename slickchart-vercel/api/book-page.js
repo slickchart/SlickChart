@@ -110,6 +110,7 @@ export default async function handler(req, res) {
       const bits = [mins + ' min']; if (dep > 0) bits.push('$' + dep + ' deposit');
       return `<option value="${esc(sv.name)}">${esc(sv.name)} \u00b7 ${esc(bits.join(' \u00b7 '))}</option>`;
     }).join('')}</select>
+    <div id="svcdesc" class="muted" style="display:none;margin:-8px 0 14px;line-height:1.5;"></div>
     <div id="depnote" class="muted" style="display:none;margin:-8px 0 14px;"></div>
     <label for="f-date">Day</label><input class="f" id="f-date" type="date">
     <div id="timewrap">
@@ -127,9 +128,9 @@ export default async function handler(req, res) {
 
     const boot = `<script>
 var SLUG=${jsStr(slug)}, MODE=${jsStr(cfg.mode)}, BIZ=${jsStr(bizName)}, OPEN=${jsonForScript(openDays)},
-    HORIZON=${cfg.horizonDays}, ACCENT=${jsStr(accent)}, DONEIC='\\u2713';
+    HORIZON=${cfg.horizonDays}, LEAD=${Math.max(0, parseInt(cfg.leadHours, 10) || 0)}, ACCENT=${jsStr(accent)}, DONEIC='\\u2713';
 // name → {mins, deposit}, so the page can say what each one costs in time and money up front.
-var SVC=${jsonForScript(services.reduce((m, sv) => { m[sv.name] = { mins: serviceMins(sv, cfg), dep: serviceDeposit(sv, cfg) }; return m; }, {}))};
+var SVC=${jsonForScript(services.reduce((m, sv) => { m[sv.name] = { mins: serviceMins(sv, cfg), dep: serviceDeposit(sv, cfg), desc: String(sv.desc || '').slice(0, 600) }; return m; }, {}))};
 // A friend passes the page on (2026-11-16 feedback: "a friend can share the link to invite another
 // person"). The address is the public booking page itself, nothing about the person who booked.
 function shareBook(){
@@ -147,7 +148,10 @@ function eh(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return 
 function show(m){var e=$('err');e.textContent=m;e.style.display=m?'block':'none';if(m)window.scrollTo({top:0,behavior:'smooth'});}
 function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 // First day she is actually open, so the date field never opens on a day that cannot be booked.
-function firstOpen(){var d=new Date();d.setHours(12,0,0,0);for(var i=0;i<=HORIZON;i++){if(OPEN.indexOf(DKEY[d.getDay()])>=0)return iso(d);d.setDate(d.getDate()+1);}return iso(new Date());}
+// A day that ends before her notice window does is skipped too (a 12-hour notice at 11am rules out today).
+function tooSoon(d){var e=new Date(d);e.setHours(23,59,0,0);return e.getTime()<Date.now()+LEAD*3600000;}
+function firstOpen(){var d=new Date();d.setHours(12,0,0,0);for(var i=0;i<=HORIZON;i++){if(OPEN.indexOf(DKEY[d.getDay()])>=0&&!tooSoon(d))return iso(d);d.setDate(d.getDate()+1);}return iso(new Date());}
+function leadText(){if(!LEAD)return '';var n=(LEAD>=24&&LEAD%24===0)?(LEAD/24)+(LEAD===24?' day':' days'):LEAD+(LEAD===1?' hour':' hours');return 'Appointments need '+n+' of notice.';}
 function setupDate(){
   var el=$('f-date'); var t=new Date(); t.setHours(12,0,0,0);
   el.min=iso(t); var max=new Date(t); max.setDate(max.getDate()+HORIZON); el.max=iso(max);
@@ -156,6 +160,7 @@ function setupDate(){
 // A different service can be a different length, so the open times change with it.
 function onSvc(){
   var s=SVC[$('f-svc').value]||{};
+  var ds=$('svcdesc'); if(ds){ ds.textContent=s.desc||''; ds.style.display=s.desc?'':'none'; }
   var d=$('depnote');
   if(d){ d.style.display=(s.dep>0)?'':'none';
     if(s.dep>0)d.textContent='This one needs a $'+s.dep+' deposit. You\\u2019ll get a link to pay it as soon as you book.'; }
@@ -165,10 +170,11 @@ function onDate(){
   var v=$('f-date').value; picked='';
   var d=v?new Date(v+'T12:00:00'):null;
   if(!d||isNaN(d)||OPEN.indexOf(DKEY[d.getDay()])<0){ $('slots').innerHTML='<div class="muted">They\\u2019re closed that day \\u2014 please pick another.</div>'; $('f-time').style.display='none'; return; }
+  if(tooSoon(d)){ $('slots').innerHTML='<div class="muted">That day is too soon. '+leadText()+' Please pick a later day.</div>'; $('f-time').style.display='none'; return; }
   if(MODE==='instant')loadSlots(v); else freeTime();
 }
 // Request mode: any time inside her hours, she decides.
-function freeTime(){ $('slots').innerHTML=''; var t=$('f-time'); t.style.display=''; }
+function freeTime(){ var lt=leadText(); $('slots').innerHTML=lt?'<div class="muted">'+lt+'</div>':''; var t=$('f-time'); t.style.display=''; }
 function loadSlots(v){
   slotsFor=v+'|'+$('f-svc').value;
   $('f-time').style.display='none';

@@ -15,7 +15,8 @@ import { dbEnabled, sql } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
 import { ensureClientTables, upsertClient, logEvent, logEventOnce, genToken } from '../lib/clients.js';
 import { getBookingConfig, getServices, getHours, openSlots, toMins, isoDay, DAY_KEYS,
-         pickService, serviceMins, serviceDeposit, depositLinkFor, squareBookInstant } from '../lib/booking.js';
+         pickService, serviceMins, serviceDeposit, depositLinkFor, squareBookInstant, providerTz, slotInstant } from '../lib/booking.js';
+import { getConnection } from '../lib/square.js';
 import { sendEmail, trustedOrigin, bookingGuestEmailHtml, bookingGuestEmailText,
          bookingProviderEmailHtml, bookingProviderEmailText } from '../lib/email.js';
 import { getKVValue } from '../lib/db.js';
@@ -84,10 +85,18 @@ export default async function handler(req, res) {
     if (!within) { res.status(409).json({ error: 'That time is outside their hours. Please pick another.' }); return; }
 
     // Not in the past, not beyond how far ahead she takes bookings.
-    const at = new Date(date + 'T00:00:00');
-    at.setHours(Math.floor(toMins(time) / 60), toMins(time) % 60, 0, 0);
-    if (at.getTime() < Date.now() + cfg.leadHours * 3600000) { res.status(409).json({ error: 'That time has passed or is too soon. Please pick another.' }); return; }
-    if (at.getTime() > Date.now() + cfg.horizonDays * 86400000) { res.status(409).json({ error: 'That is further ahead than they take bookings.' }); return; }
+    // Measured on HER clock: the server runs in UTC, and reading "2:00 PM" as 2pm UTC turned down
+    // times that were well inside her notice window (Kristen, New Jersey, 2026-11-17).
+    let tz = null; try { tz = await providerTz(prov.id, await getConnection(prov.id)); } catch (e) {}
+    const atMs = slotInstant(date, toMins(time), tz);
+    if (atMs < Date.now()) { res.status(409).json({ error: 'That time has already passed. Please pick another.' }); return; }
+    if (atMs < Date.now() + cfg.leadHours * 3600000) {
+      const lh = cfg.leadHours;
+      const need = (lh >= 24 && lh % 24 === 0) ? (lh / 24) + (lh === 24 ? ' day' : ' days') : lh + (lh === 1 ? ' hour' : ' hours');
+      res.status(409).json({ error: 'That is too soon. Appointments need ' + need + ' of notice. Please pick a later time.', code: 'lead' });
+      return;
+    }
+    if (atMs > Date.now() + cfg.horizonDays * 86400000) { res.status(409).json({ error: 'That is further ahead than they take bookings.' }); return; }
 
     // Instant mode promises the slot is genuinely free, so re-check it at submit time rather than
     // trusting what the page showed a few minutes ago. If we cannot be certain (see busyRanges),
@@ -207,6 +216,25 @@ export default async function handler(req, res) {
           text: bookingProviderEmailText({ name, email, phone, when, treatment, confirmed, note, link: trustedOrigin() + '/slickchart' })
         });
       } catch (e) { console.error('[book-request] provider email failed:', e && e.message); }
+    }
+
+    // Her phone too, like a booking a client makes from their own app (client-submit). A booking from
+    // her public link only ever reached her EMAIL, and email is easy to miss (Kristen, 2026-11-17:
+    // "texts notifications for bookings? Just afraid to miss them in my email"). Her own signed-in
+    // devices only (sendNativeToProvider, by HER provider id from the slug). Never affects the booking.
+    if (firstTime) {
+      try {
+        const { sendNativeToProvider } = await import('../lib/fcm.js');
+        const id = String((logged && logged.id) || '');
+        const sent = await sendNativeToProvider(prov.id, {
+          title: (confirmed ? 'New booking: ' : 'Booking request: ') + name,
+          body: treatment + ', ' + when + '. Tap to see it in SlickChart.',
+          url: '/slickchart?n=booking&c=' + encodeURIComponent(String(clientId)) + '&i=' + encodeURIComponent(id),
+          tag: 'client-' + clientId,
+          kind: 'booking', clientId: String(clientId), itemId: id
+        });
+        if (!sent) console.warn('[book-request] push reached 0 devices for provider=' + prov.id);
+      } catch (e) { console.error('[book-request] push failed:', e && e.message); }
     }
 
     res.status(200).json({ ok: true, confirmed, when, treatment, depositUrl, depositLabel });

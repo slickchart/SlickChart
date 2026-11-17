@@ -19,7 +19,7 @@
 // be an enumeration oracle for her client list. Free/busy is reduced to start+end times before it
 // leaves this module; the appointments it was computed from never go over the wire.
 import { sql, getKVValue, logSquareCreate } from './db.js';
-import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey, zonedMinutes, squareIdemKey } from './square.js';
+import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey, zonedMinutes, zonedWallToUtc, squareIdemKey } from './square.js';
 import { getGoogleConnection, googleBusyMinutes } from './google-cal.js';
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -153,7 +153,7 @@ export async function squareServices(providerId) {
     if (conn && conn.token) {
       const svc = await listBookableServices(conn.token);
       if (Array.isArray(svc) && svc.length) {
-        list = svc.map(s => ({ name: String(s.name || '').trim(), mins: s.durationMinutes || 60 }))
+        list = svc.map(s => ({ name: String(s.name || '').trim(), mins: s.durationMinutes || 60, desc: String(s.description || '').trim() }))
                   .filter(s => s.name);
       }
     }
@@ -183,7 +183,7 @@ export async function listServices(providerId, cfg) {
     const raw = await getKVValue(providerId, 'sc_service_menu');
     const a = raw ? JSON.parse(raw) : null;
     if (Array.isArray(a)) {
-      const names = a.map(s => String((s && s.name) || '').trim()).filter(Boolean).slice(0, 40).map(n => ({ name: n }));
+      const names = a.filter(s => s && String(s.name || '').trim()).slice(0, 40).map(s => ({ name: String(s.name).trim(), desc: String(s.desc || s.description || '').trim().slice(0, 600) }));
       if (names.length) return names;
     }
   } catch (e) {}
@@ -255,6 +255,29 @@ export async function providerTz(providerId, conn) {
   try { const raw = await getKVValue(providerId, 'sc_autos'); const a = raw ? JSON.parse(raw) : []; const hit = Array.isArray(a) && a.find(x => x && typeof x.tz === 'string' && x.tz.includes('/')); if (hit) return hit.tz; } catch (e) {}
   return null;
 }
+
+// The real instant of a wall-clock time on HER calendar. The server runs in UTC, so
+// `new Date(day + 'T00:00:00').setHours(...)` read "2:00 PM" as 2pm UTC: 9am in New Jersey. Her notice
+// window was then measured from the wrong hour (Kristen, 2026-11-17: every time was "too soon").
+// No zone known: UTC, as before.
+export function slotInstant(dateISO, mins, tz) {
+  const [Y, M, D] = String(dateISO).split('-').map(Number);
+  const h = Math.floor(mins / 60), mi = mins % 60;
+  if (tz) { try { return zonedWallToUtc(Y, M, D, h, mi, 0, tz).getTime(); } catch (e) {} }
+  return Date.UTC(Y, M - 1, D, h, mi, 0);
+}
+
+// Why her link could not see her calendar, kept so the founder health sweep can say it in words
+// instead of the booking page silently dropping to "request a time" for weeks. One row per provider,
+// newest reason wins; it holds a reason code and a time, nothing about her clients.
+export async function noteBookingBlind(providerId, reason) {
+  try {
+    const q = sql();
+    await q`CREATE TABLE IF NOT EXISTS booking_blind (provider_id TEXT PRIMARY KEY, reason TEXT, at TIMESTAMPTZ DEFAULT now())`;
+    await q`INSERT INTO booking_blind (provider_id, reason, at) VALUES (${String(providerId)}, ${String(reason || 'unknown').slice(0, 200)}, now())
+      ON CONFLICT (provider_id) DO UPDATE SET reason = EXCLUDED.reason, at = now()`;
+  } catch (e) { /* never block a booking page on a diagnostic */ }
+}
 export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
   const out = [];
   const dur = Math.max(5, parseInt(defaultMins, 10) || 60);
@@ -275,11 +298,11 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
         out.push({ start: s - pad, end: s + (parseInt(a.dur, 10) > 0 ? parseInt(a.dur, 10) : dur) + pad });
       });
     }
-  } catch (e) { return null; }   // her own calendar is unreadable — do not guess
+  } catch (e) { busyRanges.why = 'app appointments unreadable'; return null; }   // her own calendar is unreadable — do not guess
 
   // 2. Bookings that live in Square, if she uses it.
   let conn = null;
-  try { conn = await getConnection(providerId); } catch (e) { return null; }
+  try { conn = await getConnection(providerId); } catch (e) { busyRanges.why = 'square connection unreadable'; return null; }
   const tz = await providerTz(providerId, conn);
   if (conn && conn.token) {
     try {
@@ -302,6 +325,7 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
         out.push({ start: s - pad, end: s + (mins > 0 ? mins : dur) + pad });
       });
     } catch (e) {
+      busyRanges.why = 'square bookings: ' + String((e && e.message) || e).slice(0, 140);
       return null;   // she has Square but we could not read it — never publish a half-informed slot list
     }
   }
@@ -319,7 +343,7 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
       const gbusy = await googleBusyMinutes(providerId, dateISO, null, tz);
       gbusy.forEach(b => { out.push({ start: b.start - pad, end: b.end + pad }); });
     }
-  } catch (e) { return null; }
+  } catch (e) { busyRanges.why = 'google calendar: ' + String((e && e.message) || e).slice(0, 140); return null; }
 
   // 4. Times already given away INSTANTLY by her booking link that her app has not filed into her
   // appointments yet. Without this the slot stayed open and a second person was told "Booked" too.
@@ -535,16 +559,16 @@ export async function openSlots(providerId, dateISO, cfg, hours, serviceName) {
   const svc = serviceName ? pickService(await getServices(providerId, cfg), serviceName) : null;
   const step = svc ? serviceMins(svc, cfg) : cfg.slotMins;
 
+  busyRanges.why = '';
   const busy = await busyRanges(providerId, day, cfg.slotMins, cfg.bufferMins);
-  if (busy === null) return null;
+  if (busy === null) { await noteBookingBlind(providerId, busyRanges.why || 'calendar unreadable'); return null; }
 
-  // Not in the past, and not inside her notice window.
+  // Not in the past, and not inside her notice window, measured on HER clock.
+  let tz = null; try { tz = await providerTz(providerId, await getConnection(providerId)); } catch (e) {}
   const earliest = Date.now() + cfg.leadHours * 3600000;
   const out = [];
   for (let t = open; t + step <= close; t += step) {
-    const when = new Date(day + 'T00:00:00');
-    when.setHours(Math.floor(t / 60), t % 60, 0, 0);
-    if (when.getTime() < earliest) continue;
+    if (slotInstant(day, t, tz) < earliest) continue;
     const clash = busy.some(b => t < b.end && (t + step) > b.start);
     if (!clash) out.push(fromMins(t));
     if (out.length >= 40) break;

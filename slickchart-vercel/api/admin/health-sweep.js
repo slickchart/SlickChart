@@ -334,6 +334,16 @@ export async function runSweep(q) {
     return { level: rows.some(r => new Date(r.expires_at) < new Date()) ? 'alert' : (items.length ? 'warn' : 'ok'), items };
   });
 
+  // 7b. A booking link that cannot see her calendar drops every visitor to "request a time" and
+  // never shows an open slot (Kristen, 2026-11-17: "my link isn't working"). The reason is recorded
+  // by lib/booking.js noteBookingBlind each time the page asks for times and cannot get them.
+  await check('booking-blind', 'Every instant booking link can see its calendar', async () => {
+    let rows = [];
+    try { rows = await q`SELECT provider_id, reason, at FROM booking_blind WHERE at > now() - interval '3 days' ORDER BY at DESC`; }
+    catch (e) { return { items: [], note: 'nothing recorded yet' }; }
+    return { items: rows.map(r => who(r.provider_id) + ': booking link could not read her calendar (' + String(r.reason || 'unknown').slice(0, 160) + '), last ' + new Date(r.at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC') };
+  });
+
   // 8. Billing: a provider using the app on a lapsed plan, or a paid plan with no account to use it.
   await check('billing', 'Every paying provider can get in', async () => {
     const items = [];

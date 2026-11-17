@@ -9628,3 +9628,20 @@ Ashley: *"since we added in the free trial not every sign up is a paid provider 
 - The checkout alert (push, email, in-app bell/toast) now says **"🎉 New provider sign-up!"** with "N providers signed up now" (the count is active subscriptions, trials included). `notify_log` kind stays `paid-signup` so push-state reads the same.
 - New **"💰 Trial converted to paid!"** push + email to every founder device on the FIRST real payment of a trial (`notifyFounderTrialConverted` in `api/stripe-webhook.js`, claim `claimTrialConversion` in `lib/trial-outcomes.js`: once per subscription via `trial_outcomes.converted_notified_at`, only when `first_paid_at` is within 3 days, so old conversions and renewals stay silent). Fires from `invoice.paid` or the subscription event, whichever lands second. Logged as `notify_log` kind `trial-converted`. Test: `scratchpad/founder-push/trial-converted.mjs` (in CI).
 - Daily brief: health-sweep `trials.convertedLast24h` / `convertedLast30d`, and `trials.summary` opens with "N trials became paying in the last 24 hours."
+
+## 2026-11-17 — Build 2026-11-17a: booking link fixes from Kristen's report (PREVIEW)
+**Kristen Starr (Wellness Within Skin, Marlton NJ, wel…@gmail.com), email 2026-11-17 17:43Z. What she OBSERVED (§1b):**
+- iPhone, her public booking page (slickchart.app/book/wellnesswithinskin), 11:30am her time: picked "Glow Starter Consult · 30 min", got "That time has passed or is too soon. Please pick another." Her words: "My link isn't working and im not able to book an appointment."
+- iPhone app, More screen: "A photo was too large to back up to the cloud, your notes are saved. Try a smaller image next time." Her words: "this keeps popping up whenever I do anything in the app."
+- Asked for: service descriptions in the booking dropdown, and text notifications for bookings ("afraid to miss them in my email").
+
+**Found (read, not guessed):** `/api/book-slots` for her slug answers `unknown:true` on EVERY day, with or without the service, so the page drops to "request a time" with a free time box. Her app has Square (`sq` in boot-ms). So her calendar could not be read (Square bookings or Google), and nobody could see why. The page also opened on TODAY, and the server measured the time in UTC (`new Date(day+'T00:00:00').setHours()` on a UTC server reads "2:00 PM" as 2pm UTC = 9am New Jersey), so her notice window was measured from the wrong hour.
+
+**Changed:**
+- `slotInstant(day, mins, tz)` in lib/booking.js (via `zonedWallToUtc`, now exported): book-request and the generic slot grid measure "past" and her notice window on HER clock (`providerTz`). Error now says the notice ("That is too soon. Appointments need 12 hours of notice.") or "already passed".
+- Booking page: `LEAD` passed in; opens on the first open day her notice allows, request mode shows "Appointments need N hours of notice.", a too-soon day is refused on the page before sending.
+- `noteBookingBlind` records WHY the link could not see her calendar (`booking_blind` table, reason + time only) and health sweep check `booking-blind` lists it. Read the next brief's sweep for her reason before changing anything else.
+- Booking-link bookings now push to her phone (`sendNativeToProvider`, her own devices by the slug's provider id), like client-app bookings already did. Email unchanged.
+- Service descriptions: Square `description_plaintext` (and a `desc` on her own menu entries) shows under the service on the booking page, as text.
+- 413 "photo too large" toast: once per oversized key per session, and the key name + size go to the launch log (`store-413`), so app-launches shows what it is.
+Test: `scratchpad/test-book-lead-notice.mjs` 8/8 Chromium + WebKit; zoned time unit check (NY winter, LA summer, DST day). Still open: why her calendar is unreadable (wait for `booking-blind`), and what the oversized key is (wait for `store-413`).
