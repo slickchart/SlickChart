@@ -9697,3 +9697,9 @@ had no way in for 3 hours.
   `setupEmailAt`. Test `scratchpad/founder-push/setup-email.mjs` (in CI with the founder-push set).
 - Still stranded (paid, no account, rescue email already sent): hal… (2 failed sign-ins), jil… (6),
   bel… (1), izz… (rescued 2026-09-17, row updated 2026-11-10).
+- Build `2026-11-17e`: Admin tools -> Paid but no account has **Send setup email again to all N**
+  (POST `/api/admin/orphans` `{resend:'all'}`, founder session only; the list comes from the server,
+  never the request; once an hour per address, `nurture_sends` seq `setup-resend`; skips unsubscribed,
+  founders, anyone with an account). Rows show "Sent again <time>". Asked for by Ashley for the 4 above,
+  whose full addresses are only visible to her founder session. Tests: `test-orphan-settings` 29/29,
+  `test-orphans-ui` 12/12 Chromium (WebKit not installed in this container).

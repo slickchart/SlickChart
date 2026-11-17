@@ -55,6 +55,41 @@ SlickChart
 `;
 }
 
+// Founder "Send setup email again" (Admin tools -> Paid but no account, api/admin/orphans.js). Sends
+// the same email to someone who STILL has no account, at most once an hour per address so a double
+// tap cannot send two, logged in nurture_sends seq 'setup-resend'. Same rules: never a founder, never
+// someone with an account, never an unsubscribed address. Returns the same words as below.
+export async function resendSetupEmail(q, rawEmail) {
+  const email = String(rawEmail || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') < 1) return 'no-email';
+  try {
+    if (founderEmails().includes(email)) return 'founder';
+    if ((await q`SELECT 1 FROM providers WHERE lower(email) = ${email} LIMIT 1`).length) return 'has-account';
+    await ensureNurtureTables(q);
+    if ((await q`SELECT 1 FROM nurture_optout WHERE email = ${email}`).length) return 'unsubscribed';
+    const recent = await q`SELECT 1 FROM nurture_sends WHERE email = ${email} AND seq = 'setup-resend' AND sent_at > now() - interval '1 hour' LIMIT 1`;
+    if (recent.length) return 'already';
+    const n = await q`SELECT count(*)::int AS n FROM nurture_sends WHERE email = ${email} AND seq = 'setup-resend'`;
+    const step = ((n[0] && n[0].n) || 0) + 1;
+    const claimed = (await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, 'setup-resend', ${step})
+      ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`).length > 0;
+    if (!claimed) return 'already';
+    const link = setupLink(email);
+    try {
+      await sendEmail({ to: email, subject: 'Welcome to SlickChart: create your account',
+        html: setupEmailHtml(email, link), text: setupEmailText(email, link) });
+      return 'sent';
+    } catch (e) {
+      try { await q`DELETE FROM nurture_sends WHERE email = ${email} AND seq = 'setup-resend' AND step = ${step}`; } catch (e2) {}
+      console.error('[setup-email] resend failed for ' + email + ':', (e && e.message) || e);
+      return 'failed';
+    }
+  } catch (e) {
+    console.error('[setup-email] resend failed:', (e && e.message) || e);
+    return 'failed';
+  }
+}
+
 // Returns 'sent' | 'has-account' | 'founder' | 'unsubscribed' | 'already' | 'failed' | 'no-email'.
 export async function sendSetupEmailNow(q, rawEmail) {
   const email = String(rawEmail || '').trim().toLowerCase();

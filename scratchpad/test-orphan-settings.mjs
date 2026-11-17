@@ -10,7 +10,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orph-'));
 for (const d of ['api/admin', 'lib']) fs.mkdirSync(path.join(dir, d), { recursive: true });
 fs.copyFileSync(path.join(SRC, 'api/admin/orphans.js'), path.join(dir, 'api/admin/orphans.js'));
 fs.copyFileSync(path.join(SRC, 'api/cron-orphan-checkout.js'), path.join(dir, 'api/cron-orphan-checkout.js'));
-for (const f of ['founder-settings.js', 'auth.js', 'app-launch-log.js']) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
+for (const f of ['founder-settings.js', 'auth.js', 'app-launch-log.js', 'setup-email.js']) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
 fs.writeFileSync(path.join(dir, 'api/feedback.js'), 'export async function monitorKeyOk(req){return String(req.headers.authorization||"")==="Monitor good";}');
 fs.writeFileSync(path.join(dir, 'lib/db.js'), `
@@ -92,5 +92,23 @@ const j2 = (r.body.people || []).find(p => p.email === 'jill@stuck.com') || {};
 ok(j2.emailedAt && j2.status === 'emailed', 'the list shows when the email went', JSON.stringify(j2));
 r = await call(cron, 'GET', 'Bearer nope'); ok(r.code === 401, 'the job refuses a caller without the cron secret');
 
+// "Send setup email again to all" (2026-11-17): founder only, everyone on the list in one tap, the
+// list read from the server (a request field can't add a stranger), once an hour per address.
+await db.exec(`INSERT INTO nurture_optout (email) VALUES ('bell@stuck.com') ON CONFLICT DO NOTHING`);
+r = await call(orphans, 'POST', otherTok, { resend: 'all' }); ok(r.code === 403, 'a non-founder cannot resend');
+r = await call(orphans, 'POST', 'Monitor good', { resend: 'all' }); ok(r.code === 403, 'the monitor key cannot resend');
+globalThis.__mail = [];
+r = await call(orphans, 'POST', founderTok, { resend: 'all', email: 'stranger@evil.com' });
+const rs = Object.fromEntries((r.body.results || []).map(x => [x.email, x.result]));
+ok(r.code === 200 && rs['jill@stuck.com'] === 'sent' && rs['new@stuck.com'] === 'sent' && rs['bell@stuck.com'] === 'unsubscribed' && !('paying@has.com' in rs) && !('road@map.com' in rs), 'resend reaches everyone still waiting, skips the unsubscribed', JSON.stringify(r.body));
+ok(!globalThis.__mail.some(m => m.to === 'stranger@evil.com' || m.to === 'bell@stuck.com' || m.to === 'paying@has.com'), 'nobody off the list is emailed, whatever the request says');
+ok(globalThis.__mail.some(m => m.to === 'jill@stuck.com' && /signup=1&email=jill%40stuck.com/.test(m.text) && !/That is on me/.test(m.text)), 'the resend carries her own sign-up link');
+const n1 = globalThis.__mail.length;
+r = await call(orphans, 'POST', founderTok, { resend: 'all' });
+ok(globalThis.__mail.length === n1 && (r.body.results || []).every(x => x.result !== 'sent'), 'a second tap in the same hour sends nothing twice', JSON.stringify(r.body.results));
+r = await call(orphans, 'GET', founderTok);
+ok(((r.body.people || []).find(p => p.email === 'jill@stuck.com') || {}).resentAt, 'the list shows when it was sent again');
+
 let all = true; for (const x of results) { console.log((x.p ? 'PASS ' : 'FAIL ') + x.n + (x.p ? '' : ' :: ' + (x.d || ''))); all = all && x.p; }
+
 console.log(all ? 'ALL PASS' : 'FAILURES'); process.exit(all ? 0 : 1);
