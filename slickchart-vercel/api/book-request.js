@@ -224,16 +224,16 @@ export default async function handler(req, res) {
     // devices only (sendNativeToProvider, by HER provider id from the slug). Never affects the booking.
     if (firstTime) {
       try {
-        const { sendNativeToProvider } = await import('../lib/fcm.js');
+        const { alertProvider } = await import('../lib/booking-alerts.js');
         const id = String((logged && logged.id) || '');
-        const sent = await sendNativeToProvider(prov.id, {
-          title: (confirmed ? 'New booking: ' : 'Booking request: ') + name,
-          body: treatment + ', ' + when + '. Tap to see it in SlickChart.',
+        // Phone app AND web push, her own switch in Notification preferences, once per booking.
+        await alertProvider(prov.id, {
+          event: confirmed ? 'new' : 'request', who: name,
+          detail: [treatment, when].filter(Boolean).join(', '),
           url: '/slickchart?n=booking&c=' + encodeURIComponent(String(clientId)) + '&i=' + encodeURIComponent(id),
-          tag: 'client-' + clientId,
-          kind: 'booking', clientId: String(clientId), itemId: id
+          tag: 'client-' + clientId, kind: 'booking', clientId: String(clientId), itemId: id,
+          key: id ? ('link:' + id) : ''
         });
-        if (!sent) console.warn('[book-request] push reached 0 devices for provider=' + prov.id);
       } catch (e) { console.error('[book-request] push failed:', e && e.message); }
     }
 

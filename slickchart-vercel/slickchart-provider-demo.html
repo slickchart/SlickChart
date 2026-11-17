@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-17a';
+const APP_BUILD='2026-11-17b';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -7557,6 +7557,17 @@ let notifSettings={
   newMessage:true,
   rebookReminder:false,
   weeklyReport:true,
+  // Booking alerts to her own devices (lib/booking-alerts.js reads these on the server; a missing key
+  // counts as ON there too, so a device that never saw a switch still gets the alert).
+  bookingNew:true,
+  bookingRequest:true,
+  bookingChanged:true,
+  bookingCancelled:true,
+  consultRequest:true,
+  paymentReceived:true,
+  refundProcessed:true,
+  productRequest:true,
+  clientDetails:true,
 };
 // Whether a given push/email notification category is enabled. The Notification-preferences screen
 // governs PUSH/EMAIL delivery (per its own header) — the in-app bell log always keeps the record, so
@@ -9020,7 +9031,9 @@ async function _initCapturedPhotos(){
 function persistAutos(){_stampRows('sc_autos',autos);try{(function(_v){localStorage.setItem('sc_autos',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_autos',_v);return _v;})(JSON.stringify(autos));}catch(e){}}
 function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))autos=arr;}}catch(e){}}
 function persistNotifSettings(){try{const v=JSON.stringify(notifSettings);localStorage.setItem('sc_notif_settings',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_notif_settings',v);}catch(e){}}
-function loadNotifSettings(){try{const raw=localStorage.getItem('sc_notif_settings');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')notifSettings=v;}}catch(e){}}
+const _NOTIF_NEW_DEFAULTS={bookingNew:true,bookingRequest:true,bookingChanged:true,bookingCancelled:true,consultRequest:true,paymentReceived:true,refundProcessed:true,productRequest:true,clientDetails:true};
+// A switch added after her settings were saved shows as ON (as the server treats it), not as off.
+function loadNotifSettings(){try{const raw=localStorage.getItem('sc_notif_settings');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object'){Object.keys(_NOTIF_NEW_DEFAULTS).forEach(function(k){if(v[k]===undefined)v[k]=_NOTIF_NEW_DEFAULTS[k];});notifSettings=v;}}}catch(e){}}
 // Check-in photos are already filed on the client's photo chart (and backed up to the server one by one),
 // so the check-in log refers to them by photo id instead of carrying a second base64 copy. With the copy,
 // a busy practice's log passed the 4.5 MB request limit and stopped syncing at all: every new check-in
@@ -16960,6 +16973,9 @@ function _routeDeepLink(kind,cid,itemId){
     }
     if(kind==='message'){if(cid&&CL[cid]){nav('chat',cid);return true;}return false;}
     if(kind==='booking'){nav('requests');return true;}
+    if(kind==='calendar'){nav('calendar');return true;}
+    if(kind==='payments'){nav('payments');return true;}   // a Square payment or refund (lib/booking-alerts)   // a Square booking a client made, moved or cancelled (lib/booking-alerts)
+    if(kind==='consult'){try{activeVirtualTab='upload';}catch(e){}nav('virtual');return true;}   // a consult request from her public link
     if(kind==='news'){nav('whats-new');return true;}   // a "What's new" update she posted (api/announcements)
     // A screen named in one of our emails (lib/nurture.js: /slickchart?n=go&i=import-clients). Allow-listed:
     // a link can only open one of these screens, never run anything.
@@ -30065,7 +30081,9 @@ function renderNotifications(){
   
   <div style="margin:10px 16px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-blue);">Notifications are sent via push notification and email. You can customize below.</div>
   ${[
-    {section:'Client activity',items:[['newCheckin','New Check-In Submitted','Before appointments'],['formSigned','Consent Form Signed','When a client signs'],['photoUploaded','Photos Uploaded','Photo consult']]},
+    {section:'Bookings',items:[['bookingNew','New Booking','A client books a time, on your link or in Square'],['bookingRequest','Booking Request','A client asks for a time you approve'],['bookingChanged','Booking Moved','A client changes their time in Square'],['bookingCancelled','Booking Cancelled','A client cancels in Square'],['consultRequest','Consult Request','Someone fills in your consult link']]},
+    {section:'Payments',items:[['paymentReceived','Payment Received','Any payment through your Square, deposits included'],['refundProcessed','Refund Processed','When a refund goes through in Square']]},
+    {section:'Client activity',items:[['newCheckin','New Check-In Submitted','Before appointments'],['formSigned','Consent Form Signed','When a client signs'],['photoUploaded','Photos Uploaded','Photo consult'],['productRequest','Product Request','A client asks you to set a product aside'],['clientDetails','Client Details Changed','A new email or phone, or a client removes their app account']]},
     {section:'Business alerts',items:[['ownReminders','My reminders','Anything you set yourself'],['consultFollowUp','Consult follow-up due','On the date you set when you send a review'],['docExpiring','Document Expiring','90 & 30 days before'],['lowInventory','Low Inventory Alert','When items hit reorder threshold'],['newMessage','New Message Received','All client messages']]},
     {section:'Reports',items:[['rebookReminder','Rebook Reminders','When clients are overdue'],['weeklyReport','Weekly Summary','Every Monday morning']]},
   ].map(group=>`

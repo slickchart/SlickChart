@@ -27,6 +27,11 @@ export default async function handler(req, res) {
     await deleteClientData(c.id);
     // Best-effort: let the provider know, so they can action their own retained record.
     try { await logEvent(c.provider_id, c.id, 'delete-request', { at: Date.now() }); } catch (e) {}
+    // Tell her: a client removing their own account is something she needs to know (lib/booking-alerts).
+    try {
+      const { alertProvider } = await import('../lib/booking-alerts.js');
+      await alertProvider(c.provider_id, { event: 'account_deleted', who: (c.name && String(c.name).trim()) || 'A client', url: '/slickchart', kind: 'client', key: 'del:' + String(c.id) });
+    } catch (e) {}
     res.status(200).json({ ok: true });
   } catch (e) { console.error('[client-delete] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

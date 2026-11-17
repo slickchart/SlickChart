@@ -62,6 +62,11 @@ export default async function handler(req, res) {
         });
       } catch (e) { try { console.error('[consult-request] notify failed', e && e.message || e); } catch (_) {} }
     }
+    // Her phone too (lib/booking-alerts, her "Consult requests" switch). Email alone is easy to miss.
+    try {
+      const { alertProvider } = await import('../lib/booking-alerts.js');
+      await alertProvider(prov.id, { event: 'consult', who: name, url: '/slickchart?n=consult', kind: 'consult', tag: 'consult-request' });
+    } catch (e) { try { console.error('[consult-request] push failed', e && e.message || e); } catch (_) {} }
     res.status(200).json({ ok: true });
   } catch (e) { try{console.error('[consult-request]', e && e.stack || e);}catch(_){} res.status(500).json({ error: 'Something went wrong — please try again.' }); }
 }

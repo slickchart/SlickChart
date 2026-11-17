@@ -14,6 +14,7 @@
 // that is gone. Don't add a feature back whose working state depends on an event arriving.
 import crypto from 'crypto';
 import { dbEnabled, sql } from '../../lib/db.js';
+import { handleSquareBookingEvent, handleSquarePaymentEvent, noteWebhookSeen, webhookSeenSummary } from '../../lib/booking-alerts.js';
 
 // Vercel parses JSON bodies by default; we need the RAW bytes to verify the signature.
 export const config = { api: { bodyParser: false } };
@@ -50,6 +51,10 @@ export default async function handler(req, res) {
     const host = req.headers['host'] || '';
     const derived = proto + '://' + host + '/api/square/webhook';
     res.setHeader('Cache-Control', 'no-store');
+    // When each kind of event last arrived (type and time only). No booking.* here means Square is not
+    // sending booking events, so a provider is not being told about bookings clients make in Square.
+    let lastSeen = [];
+    try { if (dbEnabled()) lastSeen = await webhookSeenSummary(); } catch (e) {}
     // What matters is that `signatureCheckedAgainst` equals the Notification URL registered in
     // Square, character for character. It has NOT got to match the domain this check was opened on:
     // this deployment answers on more than one hostname, and an earlier version of this reply
@@ -60,7 +65,9 @@ export default async function handler(req, res) {
       signingKeySet: hasKey,
       signatureCheckedAgainst: pinned || derived,
       pinnedUrlSet: !!pinned,
-      subscribeTo: ['payment.created', 'payment.updated'],
+      subscribeTo: ['booking.created', 'booking.updated', 'payment.created', 'payment.updated', 'refund.created', 'refund.updated'],
+      lastSeen: lastSeen.map(x => ({ type: x.type, at: x.at ? new Date(x.at).toISOString() : null })),
+      bookingEventsArriving: lastSeen.some(x => /^booking\./.test(x.type)),
       note: !hasKey
         ? 'SQUARE_WEBHOOK_SIGNATURE_KEY is NOT set in Vercel — every Square event is being ignored.'
         : (pinned
@@ -95,7 +102,8 @@ export default async function handler(req, res) {
   try {
     if (dbEnabled() && merchantId) {
       const q = sql();
-      const rows = await q`SELECT provider_id FROM square_connections WHERE merchant_id = ${merchantId} LIMIT 1`;
+      try { await noteWebhookSeen(type); } catch (e) {}
+      const rows = await q`SELECT provider_id FROM square_connections WHERE merchant_id = ${merchantId} LIMIT 2`;
       const providerId = rows[0] && rows[0].provider_id;
       if (providerId) {
         // A friendly summary the app can toast.
@@ -109,6 +117,15 @@ export default async function handler(req, res) {
         // it can't clobber the app's own data. ensureTable is a no-op if the table already exists.
         await q`INSERT INTO kv (owner, k, v) VALUES (${providerId}, 'sc_square_activity', ${activity})
           ON CONFLICT (owner, k) DO UPDATE SET v = EXCLUDED.v, updated_at = now()`;   // the app's changed-only read keys on updated_at
+        // Tell her phone about a booking a CLIENT made, cancelled or moved in Square (lib/booking-alerts).
+        // Only when exactly one SlickChart account holds this Square merchant: if two accounts ever
+        // shared one (the 2026-10 shared-token incident), a client's name must not reach the wrong one.
+        if (/^(booking|payment|refund)\./.test(type)) {
+          if (rows.length === 1) {
+            try { const r = /^booking\./.test(type) ? await handleSquareBookingEvent(providerId, evt) : await handleSquarePaymentEvent(providerId, evt); if (r && r.event) console.log('[square webhook] booking alert ' + r.event + ' sent=' + r.sent + (r.skipped ? ' skipped=' + r.skipped : '')); }
+            catch (e) { console.error('[square webhook] alert failed:', e && e.message); }
+          } else console.warn('[square webhook] merchant held by more than one account, no alert');
+        }
       }
     }
   } catch (e) { console.error('[square webhook] record failed:', e && e.message); }

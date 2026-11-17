@@ -3,6 +3,7 @@
 // Square: PUT /v2/bookings/{booking_id} with { booking: { version, start_at, appointment_segments } }.
 // startAt must be RFC3339 (e.g. "2026-07-15T17:00:00Z").
 import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
+import { noteOwnReschedule } from '../../lib/booking-alerts.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -32,7 +33,11 @@ export default async function handler(req, res) {
     const booking = { start_at: startAt };
     if (version != null) booking.version = version;
     if (segments.length) booking.appointment_segments = segments;
+    // She is moving it herself: remember the new time first, so Square's "booking updated" event for
+    // this change does not send her a "Booking moved" alert about her own edit (lib/booking-alerts).
+    try { await noteOwnReschedule(ctx.providerId, bookingId, startAt, null); } catch (e) {}
     const r = await sf('/v2/bookings/' + encodeURIComponent(bookingId), { method: 'PUT', body: { booking } });
+    try { if (r && r.booking) await noteOwnReschedule(ctx.providerId, bookingId, r.booking.start_at || startAt, r.booking.version); } catch (e) {}
     res.status(200).json({ ok: true, startAt: (r.booking && r.booking.start_at) || startAt, status: (r.booking && r.booking.status) || '' });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message, details: e.squareErrors || null, code: e.status === 403 ? 'reconnect' : undefined });

@@ -63,37 +63,39 @@ export default async function handler(req, res) {
     const idem = payload && payload._idem;
     if (payload && payload._idem) { delete payload._idem; }
     const id = await logEvent(c.provider_id, c.id, kind, payload, idem);
-    // Best-effort: nudge the provider's native app that a client did something worth a look.
+    // Best-effort: tell the provider's devices that a client did something worth a look.
     // Never let a push failure affect the client's submit result.
     try {
-      const LABEL = {
-        message: 'sent you a message',
-        booking: 'requested a booking',
-        checkin: 'submitted a check-in',
-        contact: 'sent you a request',
-        vc_submit: 'submitted a consult',
-        form: 'completed a form'
-      };
-      if (LABEL[kind] && c.provider_id) {
+      if (kind === 'booking' && c.provider_id) {
+        // A booking request from the client's own app goes through the shared booking alert
+        // (lib/booking-alerts): her "Booking requests" switch, phone app AND web push, and it says
+        // what and when instead of only "requested a booking".
         const who = (c.name && String(c.name).trim()) || 'A client';
-        const { sendNativeToProvider } = await import('../lib/fcm.js');
-        // Deep-link target: tapping the push should open the exact item (this client's check-in, the
-        // form they just submitted, their message, etc.) rather than dumping the provider on Home.
-        // clientId is the server client id (the app maps it to its own roster key); itemId is this
-        // event's id (which the app stores as the check-in / submitted-form id). A same-origin url with
-        // the same three params lets a web-push tap route through the app's boot-time deep-link parser.
-        const deepUrl = '/slickchart?n=' + encodeURIComponent(kind) + '&c=' + encodeURIComponent(String(c.id)) + '&i=' + encodeURIComponent(String(id));
-        const sent = await sendNativeToProvider(c.provider_id, {
-          title: who + ' ' + LABEL[kind],
-          body: 'Tap to review in SlickChart.',
-          url: deepUrl, tag: 'client-' + c.id,
-          kind, clientId: String(c.id), itemId: String(id)
+        const p = payload || {};
+        const whenTxt = [String(p.dateLabel || p.date || '').slice(0, 60), String(p.time || '').slice(0, 20)].filter(Boolean).join(' at ');
+        const { alertProvider } = await import('../lib/booking-alerts.js');
+        await alertProvider(c.provider_id, {
+          event: 'request', who,
+          detail: [String(p.treatment || '').slice(0, 80), whenTxt].filter(Boolean).join(', '),
+          url: '/slickchart?n=booking&c=' + encodeURIComponent(String(c.id)) + '&i=' + encodeURIComponent(String(id)),
+          tag: 'client-' + c.id, kind: 'booking', clientId: String(c.id), itemId: String(id),
+          key: 'app:' + String(id)
         });
-        // sendNativeToProvider returns how many devices it reached, and returns 0 for
-        // "no FCM service account" and "no registered device" alike. Silence there is why a
-        // provider can stop getting pushes and have nothing to look at. Say so in the log.
-        if (!sent) console.warn('[client-submit] push reached 0 devices for kind=' + kind +
-          ' provider=' + c.provider_id + ' (no registered device token, or FCM not configured)');
+      } else if (c.provider_id) {
+        // Messages (and product requests), check-ins, forms, photo consults and contact changes: the
+        // shared alert (lib/booking-alerts) so it reaches web push as well as the phone app, honours
+        // her switches in Notification preferences, and buzzes once for a retried submission.
+        const { alertProvider, clientActivityAlert } = await import('../lib/booking-alerts.js');
+        const a = clientActivityAlert(kind, payload);
+        if (a) {
+          const who = (c.name && String(c.name).trim()) || 'A client';
+          const deepUrl = '/slickchart?n=' + encodeURIComponent(kind) + '&c=' + encodeURIComponent(String(c.id)) + '&i=' + encodeURIComponent(String(id));
+          await alertProvider(c.provider_id, {
+            event: a.event, titleAs: a.titleAs, who, detail: a.detail,
+            url: deepUrl, tag: 'client-' + c.id, kind, clientId: String(c.id), itemId: String(id),
+            key: id ? ('ev:' + String(id)) : ''
+          });
+        }
       }
     } catch (e) {
       // Still never fails the client's submit, but no longer vanishes.
