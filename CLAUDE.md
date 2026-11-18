@@ -673,13 +673,34 @@ listing anything for Etsy:
    and the Seller Policy. Quote the line that allows the item in the reply to her.
 2. **Not allowed:** AI prompt lists or prompt packs, services, and anything that sends a buyer off Etsy:
    no web address, link or **QR code** to slickchart.app or any outside site in the title, description,
-   photos or the downloaded files. (The Open Your Own Suite Kit was cleaned of these the same night.)
-   Links INTO Etsy from her own site are fine.
+   photos or the downloaded files. (The Open Your Own Suite Kit was cleaned of these the same night.
+   Also on 2026-11-15: the "RATHER GO PAPERLESS ... SlickChart (slickchart.app)" paragraph was removed
+   from all 209 form listing descriptions, every public listing page re-checked clean, and the
+   slickchart.app box was taken off page 1 of all 8 Complete Collection PDFs, 18 zips re-uploaded.
+   A promo for the app is a promotion of an off-Etsy purchase: keep it out of every listing and file.)
+   Links INTO Etsy from her own site are fine. Her shop name "SlickChart" is fine.
 3. **Never suggest a way around a removal** (renaming, unticking the AI disclosure, relisting). The AI
    disclosure must stay truthful.
 4. **Her Etsy listing links (Share & Save):** Full Suite Kit https://slickchart.etsy.com/listing/4618269102,
    Starter https://slickchart.etsy.com/listing/4618263805. Use them exactly as given anywhere outside
    Etsy; do not add tracking parameters.
+
+## 4g. Pinterest pins (@slickchart2026): the rules every session follows (2026-11-15)
+
+1. **Forms pins link to Etsy** with the Share & Save form `https://slickchart.etsy.com/listing/<id>`,
+   no extra parameters. Pin images may show "slickchart.etsy.com" but never slickchart.app.
+2. **Build pins link to her own site** (`/build`, `/build-any-business`, `/free`, `/build/blog/<slug>`)
+   with `?utm_source=pinterest&utm_medium=pin&utm_campaign=build`. Every claim on a Build pin must
+   already be on that landing page. **No income claims, ever** (same FTC rule as the Build blog).
+   No AI-generated people; images are real screenshots of the pages and the app.
+3. **Cadence (her choice 2026-11-15):** 4 forms pins + 2 Build pins a day. Pinterest allows 100
+   scheduled pins at a time, so weekly top-ups fill the free slots. Boards: one per profession for
+   forms ("<Profession> Forms & Templates"), "Build Your Own Booking App" and "Build an App With AI".
+4. **When a product's photos or page count change, rebuild its pin images and reschedule** so no pin
+   shows an outdated cover (done for the Suite Kits 2026-11-15).
+5. Wording: made by "a licensed esthetician and salon owner" (tattoo: "licensed business owner").
+6. Working files (generators, schedule, 47 Build pin images, plan) are in the Pinterest session's
+   scratchpad and on her Desktop under `Etsy Guides/Pinterest Pins/`.
 
 ## 5. Tone with the owner
 
