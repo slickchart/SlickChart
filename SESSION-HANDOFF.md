@@ -9919,3 +9919,47 @@ health check reads it exactly as before.
   it; 6.5M-character list with quotes/emoji saves identically, never half a list, another account
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
+
+## 2026-11-18 — Build 2026-11-18g: what tripped up Frances, and a computer/iPad sweep for new sign-ups (PREVIEW)
+
+**Observed (ground truth, from her emails and her account's logs, read-only):** Frances Parker (fpa…),
+trial started 2026-11-13, cancelled 2026-11-17 via Stripe ("there were several options that I couldnt
+get to work properly"). Square connected, 293 clients imported. Devices: Mac Safari (her main one, an
+iMac), iPad app (build 12c), iPhone app. She wrote "I bought an iMac and didn't realize this wasn't
+compatible" and "Will it be the size of a phone on my iMac? That's what I'm seeing now".
+- iPhone launch log 2026-11-17: `store-413 sc_autos 11-14 MB` three times while on Payments and Messages,
+  i.e. the "photo too large" popup over and over (the huge-list bug, fixed 18a/18b; her sc_autos is now
+  818 bytes on the server, a `dedupe` event on 11-18).
+- iPad 2026-11-13: Messages, Clients, Photo consults, Calendar, a client, Photos (71 s, and her account
+  has NO photo: `sc_photo_index` is `{}`), Payments, Build invoice (128 s, then back to Payments), Account.
+- Mac Safari: no log at all (only the apps kept one). Device report `unsent 1` on 16m.
+- No page error in any log. No in-app feedback from her.
+
+**Sweep:** `scratchpad/sweep-new-provider-wide.mjs` (real page, signed in, new account, Square
+connected, SIZE=mac|ipad|imac|phone, WebKit by default) crawls 124 screens and taps every control on a
+fresh copy, flagging page errors, do-nothing taps, sheets outside the window and sideways overflow.
+Mac and iPad: 0 errors, 0 broken sheets, 2 harmless no-ops. So the problems were not crashes; they were:
+1. **Home told a computer to go download a phone app** ("Now on iPhone & Android"). On a Mac/Windows
+   browser (`_onComputer()`) it now says SlickChart works right here; setup's "Get the app" step too.
+2. **Calendar on a wide screen**: tall square days pushed the picked day below the window, so clicking a
+   day looked like nothing happened. Month and day now sit side by side (`.cal-split`, container query
+   at 760px); phones unchanged.
+3. **iPad/iPhone camera could do nothing**: `_ncPhotoDataUrl` swallowed every error, so a refused camera
+   or a missing plugin left the Camera button silent. Now: cancel stays silent, refused says how to turn
+   it on in Settings, anything else opens the browser picker (`_ncCameraFailed`, logs `camera-fail`).
+4. Setup: profession names were `#ccc` on a light card (unreadable), and Next was under 20+ cards. All
+   `'#ccc'` text colours are now `var(--p-mut2)`; the setup footer is sticky.
+5. Blank icons: `ti-brand-square` (the Square logo on setup), `ti-mustache`, `ti-nail-polish`,
+   `ti-eyebrow` are not Tabler names. Replaced; `check-icon-subset.cjs` now fails on any icon name Tabler
+   does not have (its old check only looked at real names).
+6. The "See what your clients see" card's X sat on its link icon.
+
+**So the next one leaves a trace:** a signed-in provider's BROWSER now keeps the launch log too
+(platform `web-mac` / `web-windows` / `web-ipad` / ...), and every "did not work" message she is shown
+(error toasts, payment errors, Square errors) is logged as `toast-err` with the screen, client names,
+emails and phone numbers taken out (`_alScrub`). health-sweep `app-logs` lists 3+ of them per device,
+and skips crash counting for browsers. Read `new-providers` / `app-launches` first.
+
+Test `scratchpad/test-new-provider-wide.mjs` (SIZE=mac|imac|ipad|phone): WebKit 4/4 sizes ALL PASS,
+Chromium mac+phone ALL PASS. `test-onboard-resume` passes. WebKit installed this session at
+`/tmp/claude-0/pw-webkit` (`PLAYWRIGHT_BROWSERS_PATH`).

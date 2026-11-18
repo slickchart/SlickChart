@@ -23,4 +23,11 @@ for (const m of scan.matchAll(/ti-([a-z0-9]+(?:-[a-z0-9]+)*)/g)) if (all.has(m[1
 for (const m of scan.matchAll(/['"`]([a-z0-9]+(?:-[a-z0-9]+)*)['"`]/g)) if (all.has(m[1])) used.add(m[1]);
 const missing = [...used].filter(n => !have.has(n)).sort();
 if (missing.length) { console.error('icon-subset: ' + missing.length + ' icon(s) used but not in the subset, so they would draw blank: ' + missing.join(', ') + '\nRebuild: python3 scratchpad/fonts/build-icon-subset.py <tabler-icons.min.css> <tabler-icons.woff2> (Tabler Icons 3.19.0)'); process.exit(1); }
+// An icon name Tabler does not have at all draws blank too, and the checks above cannot see it, because
+// they only look at real Tabler names (2026-11-18: the Square logo on setup's "I use Square" card was
+// an empty white box for weeks, from ti-brand-square). Names written as icons that Tabler lacks fail here.
+const unknown = new Set();
+for (const m of scan.matchAll(/\bti (ti-[a-z0-9]+(?:-[a-z0-9]+)*)(?![-a-z0-9$])/g)) { const n = m[1].slice(3); if (!all.has(n)) unknown.add(n); }
+for (const m of scan.matchAll(/(?:icon|ic)\s*:\s*['"`](ti-[a-z0-9]+(?:-[a-z0-9]+)*)['"`]/g)) { const n = m[1].slice(3); if (!all.has(n)) unknown.add(n); }
+if (unknown.size) { console.error('icon-subset: ' + unknown.size + ' icon name(s) that Tabler Icons 3.19.0 does not have, so they draw blank: ' + [...unknown].sort().join(', ') + '\nPick a real name from scratchpad/fonts/tabler-3.19.0-names.txt.'); process.exit(1); }
 console.log('icon-subset: all ' + used.size + ' icons the app uses are in ' + font);

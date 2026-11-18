@@ -437,10 +437,15 @@ export async function runSweep(q) {
       if (dropped) bits.push('signed out by the app ' + dropped + 'x');
       if (errs) bits.push(errs + ' error(s)');
       if (offline) bits.push('offline page shown ' + offline + 'x');
-      if (cut > 1) bits.push('app closed mid-launch ' + cut + 'x');
+      // Browsers log too since 2026-11-18 (web-*); a closed tab is not a crash, so only the apps count cut-offs.
+      const web = /^web/.test(String(r.platform || ''));
+      if (cut > 1 && !web) bits.push('app closed mid-launch ' + cut + 'x');
+      // Messages that told her something did not work, so "several things didn't work" has names.
+      const te = ev.filter(e => e.e === 'toast-err');
+      if (te.length >= 3) bits.push(te.length + ' "did not work" messages, e.g. ' + [...new Set(te.map(e => String(e.d || '').slice(0, 70)))].slice(0, 3).map(x => '"' + x + '"').join(', '));
       // Closed after it had fully opened (swiped away, or the phone reclaimed it while she used it):
       // only worth a line when it keeps happening.
-      if (whileOpen > 3) bits.push('app closed while open ' + whileOpen + 'x (it had finished opening)');
+      if (whileOpen > 3 && !web) bits.push('app closed while open ' + whileOpen + 'x (it had finished opening)');
       if (bits.length) items.push((maskEmail(r.email) || '(not signed in)') + ', ' + r.platform + ' ' + (r.build || '') + ': ' + bits.join(', '));
     }
     return { items };
