@@ -63,7 +63,9 @@ export function dueOccurrence(rem, now) {
     // UTC throughout, so the day is derived on the same basis as the stored instant and the reminder
     // keeps arriving at the same local time each month.
     const d0 = new Date(at);
-    const day = d0.getUTCDate(), hh = d0.getUTCHours(), mm = d0.getUTCMinutes(), ss = d0.getUTCSeconds();
+    // domUtc: the day she first picked, kept by the app when Done moves a reminder past a short month.
+    const du = Number(rem && rem.domUtc);
+    const day = (du >= 1 && du <= 31) ? du : d0.getUTCDate(), hh = d0.getUTCHours(), mm = d0.getUTCMinutes(), ss = d0.getUTCSeconds();
     const mk = (y, m) => {
       const dim = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();   // last day of that month
       return Date.UTC(y, m, Math.min(day, dim), hh, mm, ss);

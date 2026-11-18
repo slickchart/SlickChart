@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18t';
+const APP_BUILD='2026-11-18u';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -18074,7 +18074,16 @@ function _remDone(id){
   if(r.repeat){
     const step=r.repeat==='daily'?86400000:r.repeat==='weekly'?604800000:0;
     if(step){let at=+r.at;const now=Date.now();while(at<=now)at+=step;reminders[i]={...r,at,_ts:Date.now()};}
-    else{const d=new Date(+r.at);while(d.getTime()<=Date.now())d.setMonth(d.getMonth()+1);reminders[i]={...r,at:d.getTime(),_ts:Date.now()};}
+    else{
+      // From the ORIGINAL day of the month, clamped to each month's length. Stepping setMonth() rolled
+      // Jan 31 to Mar 3, and from then on it was "the 3rd" for good (2026-11-18 sweep). dom/domUtc keep
+      // that day across a short month (Feb 28 -> Mar 31); the server's cron reads domUtc the same way.
+      const d0=new Date(+r.at);const dom=(+r.dom>=1&&+r.dom<=31)?+r.dom:d0.getDate();const domUtc=(+r.domUtc>=1&&+r.domUtc<=31)?+r.domUtc:d0.getUTCDate();
+      const hh=d0.getHours(),mi=d0.getMinutes();let y=d0.getFullYear(),mo=d0.getMonth(),at=+r.at,g=0;
+      const mk=function(y,mo){const dim=new Date(y,mo+1,0).getDate();return new Date(y,mo,Math.min(dom,dim),hh,mi,0,0).getTime();};
+      while(at<=Date.now()&&g++<1200){mo++;if(mo>11){mo=0;y++;}at=mk(y,mo);}
+      reminders[i]={...r,at,dom,domUtc,_ts:Date.now()};
+    }
   }else{
     reminders[i]={...r,done:Date.now(),_ts:Date.now()};
   }
@@ -18263,7 +18272,7 @@ function _remSaveFromSheet(){
   if(!at||isNaN(at)){if(typeof proToast==='function')proToast('Pick a date and time');return;}
   const id=_remEditing||('rm_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6));
   _remSave({id,title,note:String((n&&n.value)||'').trim().slice(0,400),at,
-    repeat:String((rp&&rp.value)||''),clientId:String((cl&&cl.value)||''),done:0,off:0});
+    repeat:String((rp&&rp.value)||''),clientId:String((cl&&cl.value)||''),done:0,off:0,dom:0,domUtc:0});   // a new date sets a new day of the month
   const sh=document.getElementById('rem-sheet');if(sh)sh.remove();
   if(typeof proToast==='function')proToast(_pushDevices>0?'Saved, we\u2019ll buzz you':'Saved');
   try{renderReminders();}catch(e){}

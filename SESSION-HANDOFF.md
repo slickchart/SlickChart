@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18u: monthly reminders on the 29th-31st keep their day
+
+"Done" on a monthly reminder stepped `setMonth()`, so one set for Jan 31 became Mar 3 and stayed on
+the 3rd for good, and the cron then derived every later occurrence from that moved date. `_remDone`
+now computes the next month from the ORIGINAL day, clamped to short months (Jan 31 -> Feb 28 -> Mar
+31), and keeps it as `dom` (local) and `domUtc` (the UTC day the cron already used). Editing the date
+clears both. `api/cron-provider-reminders.js` `dueOccurrence` reads `domUtc` when present; a reminder
+without it is unchanged. New fields only, so an old build still reads it. Test:
+`scratchpad/test-reminder-monthly-31.mjs`, both engines + the cron function; fails on the old build.
+
 ## 2026-11-18 — build 2026-11-18t: "Text it" on a Windows/Linux computer
 
 A Windows, Linux or Chromebook computer has no texting app behind an `sms:` link, so "Text it" (the
