@@ -9768,3 +9768,11 @@ had no way in for 3 hours.
   founders, anyone with an account). Rows show "Sent again <time>". Asked for by Ashley for the 4 above,
   whose full addresses are only visible to her founder session. Tests: `test-orphan-settings` 29/29,
   `test-orphans-ui` 12/12 Chromium (WebKit not installed in this container).
+
+### 2026-11-18 — dedupe-kv cleanup RUN on live (Ashley chose "push it live and run it now")
+- Shipped cd96d69 to main by dispatch (her yes on the card). Dry run, then `POST ?apply=1`.
+- 18 values in 17 accounts: 16 sc_autos (2,610-23,040 rows -> 5-9), 2 sc_imported_products
+  (30,168 -> 1, 16,920 -> 36). 47.34 MB removed. Earlier copies are in kv_history (reason 'dedupe').
+- Re-run finds 0. health-sweep kv-size now lists only real data: woo… sc_clients 2.9 MB,
+  hea… sc_brand_colors 2.6 MB (likely a big logo), est… sc_msgstore 1.7 MB. None are repeats; all under 4.5 MB.
+- Devices still holding a big local copy shrink it themselves on open (18a loader dedupe / 18b 413 self-heal).
