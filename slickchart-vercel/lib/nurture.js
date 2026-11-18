@@ -343,7 +343,8 @@ export async function runNurture() {
     WHERE created_at >= ${startTs}
       AND lower(email) NOT IN (SELECT lower(email) FROM providers)
       AND lower(email) NOT IN (SELECT email FROM nurture_optout)`;
-  for (const row of leads) { if (unsub.has(String(row.email || '').toLowerCase())) continue; await processContact(q, 'lead', LEAD_SEQUENCE, row, {}, summary); }
+  const sentLead = await loadSentSteps(q, 'lead');
+  for (const row of leads) { if (unsub.has(String(row.email || '').toLowerCase())) continue; await processContact(q, 'lead', LEAD_SEQUENCE, row, {}, summary, undefined, sentLead); }
 
   // Providers created since start, not opted out.
   const providers = await q`
@@ -359,12 +360,13 @@ export async function runNurture() {
   let gs = null;
   try { gs = await getReferralSettings(q); } catch (e) { gs = null; }
   const settings = gs || { grow_import_below: 5, grow_trial_end_days: 3, grow_import_offer: 1, grow_winback_on: 0 };
+  const sentFounder = await loadSentSteps(q, 'founder');
   for (const row of providers) {
     if (unsub.has(String(row.email || '').toLowerCase())) continue;
     // What she has done, read only if a step that needs it is due (lib/nurture.js providerFacts).
     let memo;
     const facts = async () => (memo !== undefined ? memo : (memo = await providerFacts(q, row.id)));
-    await processContact(q, 'founder', PROVIDER_SEQUENCE, row, { factsFn: facts, settings }, summary);
+    await processContact(q, 'founder', PROVIDER_SEQUENCE, row, { factsFn: facts, settings }, summary, undefined, sentFounder);
   }
 
   // Trials ending in the next N days (her setting). One email per trial, ever.
@@ -520,7 +522,25 @@ async function runTrialEnding(q, unsub, settings, summary) {
 // `sender` overrides who it comes from — the free starter funnel is a different product with a
 // different audience, so it sends as Ashley rather than as SlickChart. Exported so that funnel can
 // reuse this loop (the once-only claim and the one-per-run pacing) rather than copying it.
-export async function processContact(q, seq, sequence, row, ctx, summary, sender) {
+// Every step already sent for one sequence, read in ONE query at the start of a run (2026-11-18,
+// capacity review). Without it each contact paid two queries per step it had ALREADY had, on every
+// hourly run, forever: about 20 per provider, so 600 providers plus the waitlist would have taken the
+// run past Vercel's 300 s limit. Map email -> Map(step -> sent_at ms). Only a hint: a step missing
+// here still goes through the atomic INSERT claim below, so two overlapping runs still cannot both send.
+export async function loadSentSteps(q, seq) {
+  const out = new Map();
+  try {
+    const rows = await q`SELECT email, step, extract(epoch from sent_at)*1000 AS sent_ms FROM nurture_sends WHERE seq = ${seq}`;
+    for (const r of rows) {
+      const e = String(r.email || '').toLowerCase();
+      if (!out.has(e)) out.set(e, new Map());
+      out.get(e).set(Number(r.step), Number(r.sent_ms) || 0);
+    }
+  } catch (e) { return null; }   // unknown: fall back to claiming every step, as before
+  return out;
+}
+
+export async function processContact(q, seq, sequence, row, ctx, summary, sender, sent) {
   const email = String(row.email || '').trim().toLowerCase();
   if (!email) return;
   const daysSince = (Date.now() - Number(row.ts)) / 86400000;
@@ -533,6 +553,13 @@ export async function processContact(q, seq, sequence, row, ctx, summary, sender
     const step = sequence[i];
     if (daysSince < step.day) break;              // not due yet — later steps aren't either
     if (step.since && Number(row.ts) < step.since) continue;   // she joined before this step existed
+    // Already sent (read once at the start of the run): no query. Sent in the last 10 minutes means
+    // another run is mid-flight for this contact, same as the check below.
+    const had = sent && sent.get(email);
+    if (had && had.has(i)) {
+      if (Date.now() - had.get(i) < 600000) return;
+      continue;
+    }
     // Claim atomically. If nothing returned, this step was already sent → try the next.
     const claimed = await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, ${seq}, ${i})
       ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`;

@@ -8,7 +8,7 @@
 // signed unsubscribe token and the nurture_optout / nurture_sends tables, so one opt-out silences
 // every kind of email and no step can ever be sent twice.
 import { sql, ensureBuildPurchasesTable } from './db.js';
-import { unsubToken, ensureNurtureTables, processContact } from './nurture.js';
+import { unsubToken, ensureNurtureTables, processContact, loadSentSteps } from './nurture.js';
 
 const SITE = (process.env.APP_ORIGIN || 'https://slickchart.app').replace(/\/+$/, '');
 // Her own doc says these come from "Ashley <hello@slickchart.app>" — a different sender from the
@@ -297,8 +297,9 @@ export async function runFreeFunnel() {
       AND lower(email) NOT IN (SELECT lower(email) FROM build_purchases WHERE email IS NOT NULL)`;
 
   const sender = freeSender();
+  const sent = await loadSentSteps(q, 'free');
   for (const row of rows) {
-    await processContact(q, 'free', FREE_SEQUENCE, row, {}, summary, sender);
+    await processContact(q, 'free', FREE_SEQUENCE, row, {}, summary, sender, sent);
   }
   return summary;
 }
