@@ -9920,6 +9920,15 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Build 2026-11-18m: settings/billing sweep (rotation area 12) (PREVIEW)
+
+- **Billing said "No subscription found" when the billing check failed.** `_loadBillingStatus` parsed a
+  500 answer as data, so `_billingHTML(null)` told a PAYING provider she had no subscription and showed
+  Subscribe. A non-OK answer now shows "Couldn't load your billing info just now. Your plan is not
+  affected." with Try again. Test: `scratchpad/test-billing-fail.mjs` (BILL=500|offline|ok), both engines.
+- Checked: the app has no client-side paywall/lock, so a failed billing check cannot lock anyone out;
+  `_checkBillingBanner` already ignores failures.
+
 ## 2026-11-18 — Build 2026-11-18l: bad-network sweep (rotation area 14) (PREVIEW)
 
 `sweep-new-provider-wide.mjs` now takes `NET=500|offline`: after boot every /api call (except the
