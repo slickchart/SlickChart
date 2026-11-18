@@ -9920,6 +9920,29 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Build 2026-11-18o: the old sweep library re-run (114 files) + Square re-link fix (PREVIEW)
+
+Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/claude-0/runall.sh`).
+- **Fixed: reconnecting a DIFFERENT Square account duplicated every client.** Charts keep the old
+  account's customer ids, and `_sqChartFor` never contact-matches a chart tied to another Square id.
+  Now `_sqFetch` records every id in a COMPLETE customer list (`_sqLiveIds`; not when `truncated`);
+  a chart whose squareId is not in it is a dead link (`_sqDeadLink`) and may be matched by email or
+  phone+first name, **only with the same first name** (families share emails), and re-linked
+  (`_sqNeedsLink` at all four import paths). A live link is never moved. Tests:
+  `sweep2-square-reconnect-dup` SOUND, `scratchpad/test-square-relink.mjs` both engines;
+  booker/readd/rebook/instant-square tests pass.
+- Stale sweeps corrected, the bugs were already fixed: `sweep2-sec-square-state-as-session` (state now
+  carries `k:'sq'`, callback verifies scope `sq`) and `sweep2-square-instant-doublebook` (its fake DB
+  answered [] to the busyRanges step-4 query). NOTE: two instant bookings for one slot submitted at the
+  SAME moment can still both pass the re-check (check-then-insert, no lock); sequential ones are refused.
+- Still reported, NOT yet triaged (next pass): `sweep3-recs-client-shop` / `v-recs-wide` (a renamed or
+  deleted library product shows on the latest summary under its old name), `sweep3-pc-review-ui` (top
+  "Send review" with nothing to send refuses but still navigates away), `sweep2-client-settings-persist`
+  (notification toggle after a PUT), `sweep2-square-appts-client` C (two Pat Lees), `sweep3-pc-ingest-push`
+  (localStorage copy gone once IndexedDB holds it: likely by design, see §3 offload).
+- Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
+  `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
+
 ## 2026-11-18 — Sync sweep (rotation area 11): sound; one test harness fixed
 
 `sweep-sync-growth` (Chromium): growth, echo, exact dups all clean; edit-dups only in the `unkeyed`

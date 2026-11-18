@@ -19,12 +19,14 @@ export const KV = {};
 export function dbEnabled(){ return true; }
 export async function getKVValue(o,k){ return KV[o+'|'+k] ?? null; }
 export async function ensureProvidersTable(){} export async function ensureSquareCreateLog(){} export async function logSquareCreate(){}
-export function sql(){ return () => Promise.resolve([]); }
+// 2026-11-18: answers the busyRanges step-4 query (instant bookings already given away) from the logged
+// events, like Postgres would; it used to answer [] to everything, so the fix could never be seen.
+export function sql(){ return (s, ...v) => Promise.resolve(/client_events/.test(s.join('')) ? (globalThis.__EV || []).filter(e => e.k === 'booking' && e.p === v[0] && e.pl && e.pl.date === v[1] && e.pl.autoConfirmed).map(e => ({ payload: e.pl })) : []); }
 `);
 fs.writeFileSync(path.join(root, 'lib', 'auth.js'), 'export function verifyToken(){return null;}\nexport async function sessionFromReq(){return null;}\nexport async function isSessionValid(){return true;}\nexport async function sessionOk(){return true;}\n');
 fs.writeFileSync(path.join(root, 'lib', 'crypto.js'), 'export const encrypt=x=>x; export const decrypt=x=>x;\n');
 fs.writeFileSync(path.join(root, 'lib', 'consult.js'), "export async function getProviderBySlug(s){ return s==='ashley'?{id:'p1',email:'a@x.com',name:'A'}:null; }\n");
-fs.writeFileSync(path.join(root, 'lib', 'clients.js'), "export const EVENTS=[]; export async function ensureClientTables(){} export async function upsertClient(p,r){ return {}; } export async function logEvent(p,c,k,pl){ EVENTS.push({p,c,k,pl}); } export async function logEventOnce(p,c,k,pl,key){ if(EVENTS.some(e=>e.key&&e.key===key)) return {id:key,inserted:false}; EVENTS.push({p,c,k,pl,key}); return {id:key,inserted:true}; } export function genToken(){ return Math.random().toString(36).slice(2); }\n");
+fs.writeFileSync(path.join(root, 'lib', 'clients.js'), "export const EVENTS=(globalThis.__EV=[]); export async function ensureClientTables(){} export async function upsertClient(p,r){ return {}; } export async function logEvent(p,c,k,pl){ EVENTS.push({p,c,k,pl}); } export async function logEventOnce(p,c,k,pl,key){ if(EVENTS.some(e=>e.key&&e.key===key)) return {id:key,inserted:false}; EVENTS.push({p,c,k,pl,key}); return {id:key,inserted:true}; } export function genToken(){ return Math.random().toString(36).slice(2); }\n");
 fs.writeFileSync(path.join(root, 'lib', 'email.js'), "export const SENT=[]; export async function sendEmail(m){ SENT.push(m.subject); } export const trustedOrigin=()=>'https://x'; export const bookingGuestEmailHtml=()=>''; export const bookingGuestEmailText=()=>''; export const bookingProviderEmailHtml=()=>''; export const bookingProviderEmailText=()=>'';\n");
 globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '{}', json: async () => ({}) });
 

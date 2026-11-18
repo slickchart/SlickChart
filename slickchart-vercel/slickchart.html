@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18n';
+const APP_BUILD='2026-11-18o';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -2490,6 +2490,14 @@ function _sqLocalId(sqid){return 'sq_'+String(sqid||'').slice(0,10).toLowerCase(
 // customer list synced. Order: the canonical sq_ id, where it was merged to, any chart carrying that
 // Square id, then one unique chart with the same email, or the same phone AND first name (families
 // share phones). A chart already tied to a DIFFERENT Square customer is never matched by contact.
+// Every customer id in her CURRENT Square, from the last complete customer list (null until one is
+// read, or when the list was cut short). A chart whose squareId is not in it belongs to a Square account
+// she has since left (reconnected a different one) or a customer removed from Square: that link is dead,
+// so the chart may be matched by contact and re-linked. Without this, reconnecting a different Square
+// account gave every client a second chart (2026-11-18 sweep, sweep2-square-reconnect-dup).
+let _sqLiveIds=null;
+function _sqDeadLink(cid){try{const s=String((CL[cid]&&CL[cid].squareId)||'');return !!(s&&_sqLiveIds&&_sqLiveIds.size&&!_sqLiveIds.has(s));}catch(e){return false;}}
+function _sqNeedsLink(cid){return !!(CL[cid]&&(!CL[cid].squareId||_sqDeadLink(cid)));}
 function _sqChartFor(sqid,email,phone,name){
   try{
     sqid=String(sqid||'');
@@ -2504,7 +2512,9 @@ function _sqChartFor(sqid,email,phone,name){
     const first=v=>String(v||'').trim().toLowerCase().split(/\s+/)[0]||'';
     const fn=first(name);
     const hits=Object.keys(CL).filter(id=>{const c=CL[id];if(!c||c.ownerId||c.isAnimal)return false;
-      if(sqid&&c.squareId&&String(c.squareId)!==sqid)return false;
+      if(sqid&&c.squareId&&String(c.squareId)!==sqid&&!_sqDeadLink(id))return false;
+      // A dead link is re-matched only to the same first name (a family can share one email).
+      if(sqid&&c.squareId&&String(c.squareId)!==sqid&&fn&&first(c.name)!==fn)return false;
       if(em&&String(c.email||'').trim().toLowerCase()===em)return true;
       return !!(ph.length>=7&&fn&&dg(c.phone)===ph&&first(c.name)===fn);});
     return hits.length===1?hits[0]:null;
@@ -33135,6 +33145,7 @@ async function _sqFetch(path,opts){
   }
   let data={};try{data=await resp.json();}catch(_){}
   if(resp.status===401){const e=new Error(data.error||'Square isn\u2019t connected yet.');e.code=(data&&data.code==='nosquare')?'nosquare':'auth';throw e;}
+  try{if(/^\/api\/square\/customers(\?|$)/.test(path)&&!/[?&]email=/.test(path)&&resp.ok&&Array.isArray(data.customers)&&!data.truncated)_sqLiveIds=new Set(data.customers.map(c=>String((c&&c.id)||'')).filter(Boolean));}catch(_){}
   if(!resp.ok){try{console.error('[square] '+resp.status,data);}catch(_){}const e=new Error(data.error||'Something went wrong on Square’s side. Please try again in a moment.');if(data&&data.code)e.code=data.code;throw e;}
   return data;
 }
@@ -33379,7 +33390,7 @@ function _sqImportOne(i){
   if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id]){if(btn){btn.textContent='Merged';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';btn.disabled=true;}return;}
   if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet()){if(typeof proToast==='function')proToast('Your clients are still loading. Try again in a moment.');return;}
   const _have=_sqChartFor(c.id,c.email,c.phone,c.name);
-  if(_have){if(!CL[_have].squareId&&c.id){CL[_have].squareId=c.id;if(typeof saveClients==='function')saveClients();}if(btn){btn.textContent='Imported';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';}return;}
+  if(_have){if(_sqNeedsLink(_have)&&c.id){CL[_have].squareId=c.id;if(typeof saveClients==='function')saveClients();}if(btn){btn.textContent='Imported';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';}return;}
   CL[id]=_sqMakeClient(c);
   if(typeof saveClients==='function')saveClients();
   if(btn){btn.textContent='Imported ✓';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';btn.disabled=true;}
@@ -33387,7 +33398,7 @@ function _sqImportOne(i){
 function _sqImportAll(){
   if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet()){if(typeof proToast==='function')proToast('Your clients are still loading. Try again in a moment.');return;}
   const list=window._sqCust||[];let n=0;
-  list.forEach((c,i)=>{const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;const _have=_sqChartFor(c.id,c.email,c.phone,c.name);if(_have){if(!CL[_have].squareId&&c.id)CL[_have].squareId=c.id;}else{CL[id]=_sqMakeClient(c);n++;}const btn=document.getElementById('sqimp-'+i);if(btn){btn.textContent='Imported ✓';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';btn.disabled=true;}});
+  list.forEach((c,i)=>{const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;const _have=_sqChartFor(c.id,c.email,c.phone,c.name);if(_have){if(_sqNeedsLink(_have)&&c.id)CL[_have].squareId=c.id;}else{CL[id]=_sqMakeClient(c);n++;}const btn=document.getElementById('sqimp-'+i);if(btn){btn.textContent='Imported ✓';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';btn.disabled=true;}});
   if(typeof saveClients==='function')saveClients();
   proToast(n?`Imported ${n} client${n===1?'':'s'}`:'All already imported');
 }
@@ -33512,7 +33523,7 @@ async function _autoSyncCustomers(opts){
       if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;   // was merged into another chart, don't re-add
       if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[id])return;   // provider removed them, don't resurrect
       const _have=_sqChartFor(c.id,c.email,c.phone,c.name);
-      if(_have){if(!CL[_have].squareId&&c.id){CL[_have].squareId=c.id;_linked=true;}return;}   // already on a chart under another id
+      if(_have){if(_sqNeedsLink(_have)&&c.id){CL[_have].squareId=c.id;_linked=true;}return;}   // already on a chart under another id
       // The app MIRRORS your Square customer directory: every customer in your own connected Square syncs
       // in. The only exclusions are the guards above — already on the chart, merged into another chart, or
       // one you explicitly removed (tombstoned). Cross-account safety is enforced at the SOURCE now (one
@@ -37619,7 +37630,7 @@ async function _syncSquareClientsNow(){
       if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;
       if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[id])return;
       const _have=_sqChartFor(c.id,c.email,c.phone,c.name);
-      if(_have){if(!CL[_have].squareId&&c.id)CL[_have].squareId=c.id;return;}
+      if(_have){if(_sqNeedsLink(_have)&&c.id)CL[_have].squareId=c.id;return;}
       CL[id]=_sqMakeClient(c);added++;
     });
   }catch(e){err=e;}

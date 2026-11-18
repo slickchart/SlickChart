@@ -4,7 +4,7 @@
 // full 10-minute provider session. store.js's isSessionValid(undefined sid) returns true.
 const A = await import('/home/user/SlickChart/slickchart-vercel/lib/auth.js');
 const secret = 'sess';
-const state = A.signToken({ u: 'p_victim', p: 'sq' }, secret, 600);          // exactly what connect.js mints
+const state = A.signToken({ u: 'p_victim', p: 'sq', k: 'sq' }, secret, 600); // exactly what connect.js mints (scoped since the fix)
 const asSession = A.verifyToken(state, secret);                               // what store.js / clients.js / sqContext call
 const gcal = A.signToken({ u: 'p_victim', k: 'gcal' }, secret, 600);          // the Google state, for contrast
 console.log('square state accepted as a session token ->', JSON.stringify(asSession));
