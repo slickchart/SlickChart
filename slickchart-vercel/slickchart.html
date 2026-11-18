@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18r';
+const APP_BUILD='2026-11-18s';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -32856,14 +32856,18 @@ async function _checkDepositOnboarding(invoices){
   const handled=_loadDepositHandled();
   const cands=_depositOnboardCandidates(invoices,CL,handled,Date.now());
   if(!cands.length)return;
-  // Mark these seen now so we don't prompt again next sync, whether or not they get sent.
+  // Automatic: mark a deposit handled only once its forms actually went. It was marked BEFORE the
+  // send, so one send with no signal meant that client never got her intake and consent, and nobody
+  // was told (2026-11-18 sweep). The delete record is grow-only, so an entry cannot be taken back.
+  if(mode==='auto'){if(_depositSending)return;_depositSending=true;_sendDepositForms(cands,true).finally(()=>{_depositSending=false;});return;}
+  // Asking: mark these seen now so she is not asked again next sync, whatever she answers.
   const stamp=Date.now();cands.forEach(x=>{handled[x.invoiceId]=stamp;});_saveDepositHandled();
-  if(mode==='auto'){_sendDepositForms(cands,true);return;}
   const names=cands.map(x=>x.name);
   const list=names.length===1?names[0]:(names.slice(0,2).join(', ')+(names.length>2?(' +'+(names.length-2)+' more'):''));
   const one=names.length===1;
   confirmModal({title:'Deposit paid \ud83d\udcb3',body:list+' paid a deposit in Square. Send '+(one?'their':'their')+' tattoo intake & consent link'+(one?'':'s')+' now?',action:one?'Send link':'Send links'},function(){_sendDepositForms(cands,false);});
 }
+let _depositSending=false;
 async function _sendDepositForms(cands,silent){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok){if(!silent&&typeof proToast==='function')proToast('Please sign in first');return;}
   const ids=cands.map(x=>x.clientId);if(!ids.length)return;
@@ -32873,6 +32877,7 @@ async function _sendDepositForms(cands,silent){
     const j=await r.json().catch(()=>({}));
     if(j&&j.ok){
       const invited=Array.isArray(j.invitedIds)?j.invitedIds:ids;invited.forEach(id=>{if(CL[id])CL[id].appInvited=true;});try{saveClients();}catch(e){}
+      try{const h=_loadDepositHandled(),st=Date.now();let any=false;cands.forEach(x=>{if(invited.indexOf(x.clientId)>=0&&!h[x.invoiceId]){h[x.invoiceId]=st;any=true;}});if(any)_saveDepositHandled();}catch(e){}
       const n=(+j.sent)||ids.length;
       if(typeof proToast==='function')proToast('Sent intake & consent to '+n+' client'+(n===1?'':'s')+' \ud83d\udcb3');
       _depositNotify(cands);

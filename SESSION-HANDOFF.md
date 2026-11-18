@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18s: automatic deposit forms retry after a failed send
+
+Tattoo "send intake & consent when a deposit is paid" in AUTOMATIC mode stamped the invoice in
+`sc_deposit_handled` BEFORE sending, and the send is silent. One send with no signal (or a 5xx) meant
+that client never got her intake and consent, and nobody was told. `sc_deposit_handled` is a grow-only
+union (`_TOMB_OBJ`), so an entry cannot be taken back once synced: automatic mode now stamps only the
+invoices whose client the server confirms invited (`invitedIds`), and `_depositSending` stops two
+checks sending at once. Asking mode is unchanged (stamped when she is asked). Test:
+`scratchpad/test-deposit-forms-retry.mjs`, both engines; fails on the old build.
+
 ## 2026-11-18 — build 2026-11-18r: the front door with no signal or a server error
 
 - Log in and Sign up showed the browser's own words when the request never arrived ("Failed to
