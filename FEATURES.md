@@ -760,6 +760,8 @@ saved anywhere", not "does this always call that".
 | `_syncSquareClientsNow` | `/api/clients` | via `_serverMergeClients` |
 | `_syncSquareClientsNow` | `/api/square/appointments` | direct |
 | `_syncSquareClientsNow` | `/api/square/customers` | direct |
+| `_tabGoPassive` | `/api/store` | via `_pushFlushNow` |
+| `_tabGuardStart` | `/api/store` | via `_pushFlushNow` |
 | `_takeBackFormFrom` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_takeBackSave` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_takeBackSent` | `/api/clients` | via `_syncSpecificClientsToServer` |

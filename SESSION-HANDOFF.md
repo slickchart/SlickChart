@@ -9629,6 +9629,65 @@ Ashley: *"since we added in the free trial not every sign up is a paid provider 
 - New **"💰 Trial converted to paid!"** push + email to every founder device on the FIRST real payment of a trial (`notifyFounderTrialConverted` in `api/stripe-webhook.js`, claim `claimTrialConversion` in `lib/trial-outcomes.js`: once per subscription via `trial_outcomes.converted_notified_at`, only when `first_paid_at` is within 3 days, so old conversions and renewals stay silent). Fires from `invoice.paid` or the subscription event, whichever lands second. Logged as `notify_log` kind `trial-converted`. Test: `scratchpad/founder-push/trial-converted.mjs` (in CI).
 - Daily brief: health-sweep `trials.convertedLast24h` / `convertedLast30d`, and `trials.summary` opens with "N trials became paying in the last 24 hours."
 
+## 2026-11-18 — Build 2026-11-18d: the "huge list" sweep (PREVIEW, on release for overnight)
+
+Ashley 2026-11-18: *"lets do some sweeps today that check for things like the huge list problem ... do as
+many sweeps as needed to make sure things like this dont happen again."* Five sweeps (every merge run
+against itself; every append site and cap; boot repairs and races; the server; and an every-key growth
+test through the real Cloud.pull). Repros and what each showed: `scratchpad/sweep-1118/README.md`.
+
+**Fixed (app):**
+- `_mergeThreads`: newer `ts` wins per thread; read only sticks against the same or older activity (a new
+  client message used to be marked read by a stale device); one order on every device (local-only and
+  newer-here threads first, then the account's), so no push on every pull.
+- `_mergeBookings`: one order (local-only first, then the account's), `seen` only added when a side had
+  it. Pushed on every pull before.
+- `_unionClientForms`: an in-person form without `evId` pairs with the uploaded copy that has it (same
+  formId/signed/date/title, same `at` when both have one). Showed twice before.
+- `sc_autos` natural key (name + trigger) in `_LIB_NATURAL`; an edited starter takes that key as its id;
+  `_dedupeAutos` collapses by it, newer `_ts` wins. Toggle left on+off copies, delete came back, edit left a ghost.
+- New inventory items get an id (two "HA Serum" sizes merged into one). Old id-less rows unchanged.
+- `_applyImportedProducts`: by id, and honours `sc_deleted_products`. A deleted CSV product came back on
+  every shop render; a renamed one showed twice.
+- `_TOMB_ARR_CAP`: the device caps are applied in the merge too (the union grew past them); ci_cleared
+  800, ci_read 1200, flag_dismissed 500 raised to 5000; `sc_photo_backed` 6000 -> 60000 (past 6000 photos
+  every launch re-uploaded hundreds).
+- `sc_summary_guide_optout`: the account's list wins a shared client (two devices flipped it forever).
+- `_unionEntryLists`: keyless entries dedupe by content (latent doubling, 37 -> 1513 in the harness).
+- `_healGhostForms`: re-keyed id derived from the old id + `_ts`, a copy already re-keyed elsewhere is
+  dropped. One form became one per device.
+- **Edit during a slow account read** (`_markSent` / `Cloud._sentAt`, `_sentDuring` in `_pullInner`): a key
+  sent after the read started counts as a pending local write and its `_serverSeen` is not set from the
+  older answer. Before: a booking note typed during a 2.5 s read reverted and the next save pushed it over the account.
+- **One active tab per account** (`_tabGuardStart`, BroadcastChannel `sc-tab-<owner>`, started in
+  `bootDone`): the newest tab wins; an older one flushes what it had, stops pull/push (`Cloud._passive`)
+  and shows "SlickChart is open in another tab" with **Use it here** (reloads). Before: an older tab's save
+  removed a form made in the newer one, from the account too. Not in the demo.
+
+**Fixed (server):** cron-automations / cron-events send a repeated automation once (`dueSeen`/`seenAuto`;
+the other thread's 18c already moved them to `readKeyAllOwners`); `listReminderOwners` reads one owner at
+a time and only client NAMES (via jsonb_each); guide-file chunks: `files.staging_next` (additive) so a
+retried piece is acknowledged, not appended twice, out-of-order refused, 7.5 MB cap; consult requests:
+content-derived id + ON CONFLICT, a double tap is one request and one email; kv_history skips a non-daily
+copy identical (md5) to the newest; health-sweep data-shrink and admin/client-forms read values one row at
+a time; `login_attempts` (email, ts) and (ip, ts) indexes.
+
+**Guards:** `scripts/check-merge-growth.cjs` in CI (lifts every merge out of slickchart.html into Node:
+merge(X,X)=X, two devices settle, no repeat rows; 111 cases; on the 2026-11-17 build it reports 194
+problems). `scratchpad/sweep-sync-growth.mjs` (140 keys, Chromium + WebKit, CONTROL=1 must fail).
+`scratchpad/test-growth-server-pg.mjs` 19/19. CLAUDE.md §0.9. `scratchpad/with-static.mjs` runs the
+localhost:8899 tests without a separate server; `sweep-dup-xdevice-lib` launch falls back to chromium-1243.
+
+**Left for Ashley / later (not done, on purpose):**
+- Message photos are stored inline in `sc_msgstore` (~60-150 KB each, never slimmed like check-ins). At 3
+  photo messages a week it passes the 4.5 MB save limit in months. The fix changes the key's shape
+  (old builds would show those messages without the photo), so it wants its own change. The health
+  sweep's kv-size / first-read checks will show it first.
+- Deleting old rows: kv_history reasons `before-restore`/`dedupe`/`before-purge` are never pruned;
+  reminder_log, sessions, login_attempts, beta_events grow forever. All deletes, so they wait for her yes.
+- `sc_ci_cleared` is a grow-only union, so Undo of a cleared check-in can come back on the next pull.
+- A tap made in the first seconds of a cold open is dropped with boot's own writes (`_bootQueued`), by design.
+
 ## 2026-11-18 — Account clean-up for repeated lists: /api/admin/dedupe-kv (PREVIEW)
 
 Ashley 2026-11-18 8:46am PT: "lets get this fixed" about the oversized saved lists across accounts.

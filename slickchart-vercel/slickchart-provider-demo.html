@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18c';
+const APP_BUILD='2026-11-18d';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -3505,6 +3505,7 @@ const _TOMB_OBJ={sc_deleted_svc:1,sc_deleted_msg_tmpls:1,sc_deleted_starters:1,s
   // note draft from that device reached the account either. Ids are "nd:<clientId>" so that a client
   // id here never reads as "this client was deleted" to the guard on every other per-client key.
   sc_deleted_note_drafts:1};
+const _TOMB_ARR_CAP={sc_flag_dismissed:5000,sc_ci_cleared:5000,sc_ci_read:5000,sc_notif_cleared:5000,sc_notif_read:5000,sc_paper_removed:5000,sc_form_flag_dismissed:5000,sc_photo_backed:60000};
 const _TOMB_ARR={sc_photo_backed:1,
   // Paper forms she removed from a client's file (2026-11-16). Union, so a removal on the iPad holds
   // on the phone; the scanned bytes stay on her account.
@@ -3573,7 +3574,12 @@ const _MAP_LIB_TOMB={sc_routines:'sc_deleted_routines'};
 const _LIB_NATURAL={
   sc_vendors:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase();},
   sc_partners:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase();},
-  sc_inventory:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase()+'|'+String((v&&v.sku)||'');}
+  sc_inventory:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase()+'|'+String((v&&v.sku)||'');},
+  // The five starter automations carry no id. Matched by content, turning one off left BOTH the on
+  // and the off copy, deleting one wrote no delete record (it came back), and editing one left a
+  // ghost (2026-11-18 sweep). Name + trigger is the identity; saveAuto gives an edited starter this
+  // same key as its id, so the account's id-less copy and the edited one are recognised as one.
+  sc_autos:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase()+'|'+String((v&&v.trigger)||'').trim().toLowerCase();}
 };
 function _libKeyFn(libKey){
   const nat=_LIB_NATURAL[libKey];
@@ -3667,12 +3673,20 @@ function _unionClientForms(winner,other){
   var w=Array.isArray(winner.submittedForms)?winner.submittedForms:[];
   var o=Array.isArray(other.submittedForms)?other.submittedForms:[];
   if(o.length){
-    var seen={};w.forEach(function(f){var k=sfKey(f);if(k)seen[k]=f;});
+    // A form signed in person is saved on one device WITHOUT evId and gets its evId once uploaded,
+    // so the two copies of the SAME form were keyed differently and the client showed it twice
+    // (2026-11-18 sweep). Index by the content key too, and pair a copy that lacks evId with one
+    // that has it when they are the same form at the same moment (`at`, when both carry one).
+    var fbKey=function(f){return f?('f:'+(f.formId||'')+'|'+(f.signed?1:0)+'|'+(f.date||'')+'|'+(f.title||'')):'';};
+    var seen={},fb={};w.forEach(function(f){var k=sfKey(f);if(k)seen[k]=f;var b=fbKey(f);if(f&&b&&!(b in fb))fb[b]=f;});
+    var _same=function(a,b){return !(a.evId&&b.evId)&&(!a.at||!b.at||String(a.at)===String(b.at));};
     // Carry a reviewed stamp across when both sides hold the same form: the winner's copy is kept, so
     // without this a merge silently drops the "already handled" mark and resurrects the card.
     var add=[];o.forEach(function(f){var k=sfKey(f);if(!k)return;
-      if(seen[k]){if(f.reviewedAt&&!seen[k].reviewedAt){seen[k].reviewedAt=f.reviewedAt;grew=true;}return;}
-      seen[k]=f;add.push(f);});
+      var m=seen[k];
+      if(!m){var c=fb[fbKey(f)];if(c&&_same(c,f)){m=c;if(f.evId&&!c.evId){c.evId=f.evId;grew=true;}}}
+      if(m){if(f.reviewedAt&&!m.reviewedAt){m.reviewedAt=f.reviewedAt;grew=true;}return;}
+      seen[k]=f;var b=fbKey(f);if(!(b in fb))fb[b]=f;add.push(f);});
     if(add.length){winner.submittedForms=w.concat(add);grew=true;}
   }
   // summaries: the client-facing copy of each visit, which lives ONLY here. _mergeClients picks a
@@ -3861,7 +3875,14 @@ function _mergeTombstone(k,serverStr,localStr){
       const sv=JSON.parse(serverStr||'[]'),lv=JSON.parse(localStr||'[]');
       // A Set only dedupes strings. sc_imported_products holds OBJECTS, so every pull appended the
       // server's whole list to the device's and it grew by megabytes per sync (2026-11-17).
-      return JSON.stringify(_dedupeList([].concat(Array.isArray(sv)?sv:[],Array.isArray(lv)?lv:[])));
+      let u=_dedupeList([].concat(Array.isArray(sv)?sv:[],Array.isArray(lv)?lv:[]));
+      // The device trims these logs when it writes them, but the union had no limit, so two devices
+      // at the cap merged to twice the cap and kept growing (2026-11-18 sweep). Same limit here,
+      // newest kept. Lists that are records or delete marks (imported products, deleted Square
+      // items, Home dismissals) have no entry and are never trimmed.
+      const cap=_TOMB_ARR_CAP[k];
+      if(cap&&u.length>cap)u=u.slice(u.length-cap);
+      return JSON.stringify(u);
     }
     const sv=JSON.parse(serverStr||'{}'),lv=JSON.parse(localStr||'{}');
     // local wins on a key collision (its timestamp is this device's), but every id from both survives.
@@ -3873,6 +3894,12 @@ function _mergeTombstone(k,serverStr,localStr){
     // Every other dated record: the more recent decision wins (a restore is a negative stamp).
     else if(sv&&typeof sv==='object'&&lv&&typeof lv==='object')
       Object.keys(sv).forEach(function(i){if(typeof sv[i]==='number'&&typeof lv[i]==='number')out[i]=_tombPick(sv[i],lv[i]);});
+    // The guide opt-outs are LISTS she edits both ways (remove a guide, put it back). Local winning a
+    // collision meant two devices flipped the account between their copies on every pull and each
+    // undid the other's edit (2026-11-18 sweep). The account's copy wins a shared client; a change
+    // made here that has not reached the account yet is protected by the pending-write skip.
+    if(k==='sc_summary_guide_optout'&&sv&&typeof sv==='object'&&lv&&typeof lv==='object')
+      Object.keys(sv).forEach(function(i){if(i in lv&&typeof sv[i]==='object')out[i]=sv[i];});
     return JSON.stringify(out);
   }catch(e){return null;}
 }
@@ -3935,7 +3962,8 @@ function _mergeBookings(serverStr,localStr){
       if(newD&&!curD)win=b;                                          // a decision beats "pending"
       else if(newD&&curD&&(Number(b.decidedAt)||0)>(Number(cur.decidedAt)||0))win=b;
       const merged=Object.assign({},win);
-      merged.seen=!!(cur.seen||b.seen);                              // cleared anywhere = cleared
+      if(cur.seen||b.seen)merged.seen=true;                          // cleared anywhere = cleared
+      else if('seen' in cur||'seen' in b)merged.seen=false;
       // Sent out to Square/Google anywhere = sent (an instant booking from her link, _instantBookingsOut).
       // Without this a stale device would clear the mark and the next poll would offer it again.
       if(cur.outSent||b.outSent)merged.outSent=true;
@@ -3943,8 +3971,18 @@ function _mergeBookings(serverStr,localStr){
       out[idx[b.id]]=merged;
     };
     lv.forEach(take);sv.forEach(take);
-    const str=JSON.stringify(out);
-    return {str:str,changed:str!==JSON.stringify(sv)};
+    // ONE order on every device: bookings only this device has first (newest, as upsertBooking puts
+    // them), then the account's order. Local order throughout made two devices re-send their own
+    // order to each other on every pull, forever (2026-11-18 sweep).
+    const svIds={};sv.forEach(function(b){if(b&&b.id)svIds[b.id]=1;});
+    const ord=[],inOrd={};const add=function(id){if(!inOrd[id]&&id in idx){inOrd[id]=1;ord.push(id);}};
+    lv.forEach(function(b){if(b&&b.id&&!svIds[b.id])add(b.id);});
+    sv.forEach(function(b){if(b&&b.id)add(b.id);});
+    const final=ord.map(function(id){return out[idx[id]];});
+    const str=JSON.stringify(final);
+    let changed=str!==JSON.stringify(sv);
+    if(changed){try{if(_sameSyncValue(str,serverStr))changed=false;}catch(e){}}
+    return {str:str,changed:changed};
   }catch(e){return null;}
 }
 // Merge sc_threads by id. Read state is STICKY: once a thread is read (unread=false) on any device it
@@ -3955,19 +3993,35 @@ function _mergeThreads(serverStr,localStr){
     if(localStr==null)return null;
     var sv=JSON.parse(serverStr||'[]'),lv=JSON.parse(localStr||'[]');
     if(!Array.isArray(sv)||!Array.isArray(lv))return null;
-    var byId={},order=[];
-    lv.forEach(function(t){if(t&&t.id){byId[t.id]=Object.assign({},t);order.push(t.id);}});
-    sv.forEach(function(t){if(!t||!t.id)return;
-      if(byId[t.id]){var cur=byId[t.id];
-        if(cur.unread===false||t.unread===false)cur.unread=false;   // sticky read
-      }else{byId[t.id]=Object.assign({},t);order.push(t.id);}
+    // Per thread, the copy with the NEWER activity (ts) wins; a tie keeps the account's copy. Read is
+    // sticky only against the same or older activity: a read copy from before a new client message
+    // used to mark that new message read, and a phone holding an older preview kept it for good.
+    // (2026-11-18 sweep: also, the local-first order made the two devices disagree about the ORDER
+    // and push on every single pull, forever.)
+    var byId={},base=[],front=[];
+    var tsOf=function(t){return Number(t&&t.ts)||0;};
+    sv.forEach(function(t){if(!t||!t.id||byId[t.id])return;byId[t.id]=Object.assign({},t);base.push(t.id);});
+    lv.forEach(function(t){if(!t||!t.id)return;
+      var cur=byId[t.id];
+      if(!cur){byId[t.id]=Object.assign({},t);front.push(t.id);return;}
+      if(tsOf(t)>tsOf(cur)&&front.indexOf(t.id)<0)front.push(t.id);   // newer activity here: to the top
+      var win=tsOf(t)>tsOf(cur)?Object.assign({},t):cur,other=(win===cur)?t:cur;
+      if(other.unread===false&&tsOf(other)>=tsOf(win))win.unread=false;
+      else if(win.unread!==false&&cur.unread===false&&t.unread===false)win.unread=false;
+      byId[t.id]=win;
     });
     var gone={};try{gone=_goneClientIds();}catch(e){}
-    var out=order.filter(function(id){return !(gone[id]&&!_mergeTargetOf(id,gone));}).map(function(id){return byId[id];});   // removed clients' threads stay gone
+    // Array order IS the list order. Threads only this device has, or with newer activity here, go
+    // first (as this device had them); everything else keeps the ACCOUNT's order. Then a device that
+    // has nothing newer adopts the account's order and stops re-sending its own.
+    var inFront={};front.forEach(function(id){inFront[id]=1;});
+    var ids=front.concat(base.filter(function(id){return !inFront[id];}))
+      .filter(function(id){return !(gone[id]&&!_mergeTargetOf(id,gone));});   // removed clients' threads stay gone
+    var out=ids.map(function(id){return byId[id];});
     var str=JSON.stringify(out);
-    // Push the merged superset back only when it actually differs from what the server sent, so two
-    // devices don't ping-pong identical blobs forever.
-    return {str:str,changed:(str!==(serverStr||'[]'))};
+    var changed=(str!==(serverStr||'[]'));
+    if(changed){try{if(typeof _sameSyncValue==='function'&&_sameSyncValue(str,serverStr||'[]'))changed=false;}catch(e){}}
+    return {str:str,changed:changed};
   }catch(e){return null;}
 }
 // Merge sc_seen_events: union of both id lists (capped), never shrink. A pull that replaced this with a
@@ -4244,7 +4298,9 @@ function _unionEntryLists(keyFn,aArr,bArr){
   const out=[],idx={};let changed=false;
   const take=function(x,fromLocal){
     const k=keyFn(x);
-    if(!k){out.push(x);if(fromLocal)changed=true;return;}
+    // No key: matched by content, so the same entry on both sides is ONE entry. Pushing every one
+    // doubled the list on each merge, the sc_autos bug of 2026-11-17 (2026-11-18 sweep, latent).
+    if(!k){const sg='u:'+_rowSig(x);if(sg in idx)return;idx[sg]=out.length;out.push(x);if(fromLocal)changed=true;return;}
     if(!(k in idx)){idx[k]=out.length;out.push(x);if(fromLocal)changed=true;return;}
     const cur=out[idx[k]];
     // The EDIT stamp decides, not ts: ts is also the visit's sort date, and editing a note after its
@@ -4606,7 +4662,7 @@ const Cloud={
   // flight, and those keys are last-writer-wins on the server. Not held when no pull is involved at
   // all (a brand-new signup, a local-only device), so nothing can be stuck behind this forever.
   _holdUploads(){return !!(this.token&&!this._pulledOnce&&(this._pulling||this._pullFailed));},
-  async pull(){this._pulling=true;try{return await this._pullInner();}finally{this._pulling=false;}},
+  async pull(){if(this._passive)return -1;this._pulling=true;try{return await this._pullInner();}finally{this._pulling=false;}},
   // Boot asks for the account at the same moment it asks /api/cloud-status, instead of after it
   // (2026-11-07, "app load times are still quite slow"): two round trips one after the other were the
   // longest wait between Home drawing and her real data arriving. Read-only, same pass, same answer
@@ -4657,7 +4713,7 @@ const Cloud={
   },
   _baseDrop(){this._pullBase=null;try{localStorage.removeItem('scl_pull_asof');}catch(e){}try{localStorage.removeItem('scl_ev_asof');}catch(e){}try{if(typeof _idb!=='undefined')_idb.del('pull_base');}catch(e){}},
   async _takePrefetch(tok){try{const pre=this._storePre;if(!pre)return null;this._storePre=null;if(pre.tok!==tok||Date.now()-pre.at>60000)return null;return await pre.p;}catch(e){return null;}},
-  async _pullInner(){if(!this.token)return -1;const _pullTok=this.token;let r=await this._takePrefetch(_pullTok);let _full=false;let j=null;
+  async _pullInner(){if(!this.token)return -1;const _pullTok=this.token;const _readT0=(this._storePre&&this._storePre.tok===_pullTok&&this._storePre.at)?this._storePre.at:Date.now();const _sentDuring=function(k){try{return !!(Cloud._sentAt&&Cloud._sentAt[k]>=_readT0);}catch(e){return false;}};let r=await this._takePrefetch(_pullTok);let _full=false;let j=null;
     /* Up to two reads: the changed-only one, and a full one if the saved answer could not be used. */
     for(let _try=0;_try<2;_try++){
       if(!r){try{r=await fetch(_full?'/api/store':this._storeUrl(),{headers:{'Authorization':'Bearer '+_pullTok}});}catch(e){this._pullFailed=true;return -1;}}
@@ -4677,7 +4733,7 @@ const Cloud={
     // What the account holds, as of right now. Boot re-persists a lot of what it just read (a
     // normalised list, a re-seeded default), and each of those used to be its own upload. Knowing
     // the account's copy means an echo of the pull costs nothing instead of a round trip.
-    try{if(!this._serverSeen)this._serverSeen=Object.create(null);keys.forEach(k=>{this._serverSeen[k]=data[k];});}catch(e){}
+    try{if(!this._serverSeen)this._serverSeen=Object.create(null);keys.forEach(k=>{if(_sentDuring(k))return;this._serverSeen[k]=data[k];});}catch(e){}   /* a key sent while this read was out: the answer is older than the account */
     const set=(k,v)=>{_lsPersist(k,v);};
   // THE LAST LINE BEFORE DATA LOSS. Every merge below bails out with `return null` when it can't
   // make sense of a side — and "I can't tell" then fell through to this plain overwrite, which is
@@ -4732,7 +4788,7 @@ const Cloud={
     // them keeps the pending edit AND absorbs the account's data. Only the plain overwrite, which
     // means "take the server's copy", can actually lose it — so only that is gated now.
     const _pendingLocal=!!(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k)
-       &&!(this._bootQueued&&this._bootQueued[k]));
+       &&!(this._bootQueued&&this._bootQueued[k]))||_sentDuring(k);
     // ...but only sc_clients is let through, deliberately. Its merge is a TRUE UNION: per client,
     // with the newer _uAt winning, so it cannot drop the queued edit (verified — the edit survives
     // and the account's clients arrive). The other merges are not all safe to run here:
@@ -5001,6 +5057,7 @@ const Cloud={
   bootDone(){
     if(!this._booting)return;
     this._booting=false;
+    try{_tabGuardStart();}catch(e){}
     try{clearTimeout(this._bootFailsafe);}catch(e){}
     // The immediate-push batch was held open through boot carrying values computed BEFORE the pull.
     // Send what the key holds NOW (after the account was merged in), or a launch put this device's
@@ -5022,7 +5079,7 @@ const Cloud={
     try{_outboxSettle();}catch(e){}
   },
   push(k,v){
-    if(!this.token)return;
+    if(!this.token||this._passive)return;
     // Before status() has answered, "not enabled" only means "we have not asked yet". Dropping the
     // save here lost anything typed in the first seconds of a cold open — a window that got easier
     // to hit once Home started drawing before the network answered. Queue it instead; if cloud sync
@@ -5091,6 +5148,7 @@ const Cloud={
   // loop, never syncing at all. Batching was right; batching without a ceiling was not.
   _MAX_BATCH:350000,
   _flush(retryCount){
+    if(this._passive)return Promise.resolve();
     if(!this.token)return;
     const items=this._queue;this._queue={};
     if(!Object.keys(items).length)return;
@@ -5122,6 +5180,7 @@ const Cloud={
     }
     try{items=_dropBootShrinks(items,'queue');if(!Object.keys(items).length)return Promise.resolve();}catch(e){}
     if(!this.token)return;
+    _markSent(items);
     fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})})
       .then(r=>{
         // Confirmed on the account, so an identical push later is a no-op rather than a round trip.
@@ -8062,7 +8121,9 @@ function _markPhotoBackedUp(pid){
   const s=_loadPhotoBackedUp();
   if(s.has(pid))return;
   s.add(pid);
-  let v='';try{v=JSON.stringify([...s].slice(-6000));}catch(e){return;}
+  // Was 6000: past that, the oldest ids fell off the saved list while their photos were still on the
+  // device, so every launch uploaded hundreds of them again (2026-11-18 sweep). Ids are ~25 bytes.
+  let v='';try{v=JSON.stringify([...s].slice(-60000));}catch(e){return;}
   try{localStorage.setItem('sc_photo_backed',v);}catch(e){}          // may fail on a full device — fine
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_photo_backed',v);}catch(e){}   // this must run regardless
 }
@@ -9070,7 +9131,7 @@ function persistAutos(){_stampRows('sc_autos',autos);try{(function(_v){localStor
 function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){autos=_dedupeAutos(arr);if(autos.length!==arr.length)_shrinkDoubled('sc_autos',JSON.stringify(autos));}}}catch(e){}}
 // sc_autos doubled on every sync before 2026-11-17 (see _mergeAuthoredById). Keyed rows by id, the
 // rest by content: the same thing the merge now does, applied once to what is already on the device.
-function _dedupeAutos(arr){const seen={},out=[];(arr||[]).forEach(function(a){if(!a)return;const k=a.id?'i:'+a.id:_rowSig(a);if(k in seen)return;seen[k]=1;out.push(a);});return out;}
+function _dedupeAutos(arr){const seen={},out=[];const kf=_libKeyFn('sc_autos');(arr||[]).forEach(function(a){if(!a)return;const k=kf(a)||_rowSig(a);if(k in seen){const j=seen[k];if((Number(a._ts)||0)>(Number(out[j]._ts)||0))out[j]=a;return;}seen[k]=out.length;out.push(a);});return out;}
 // Store the de-duplicated copy and send it up. Only exact repeats were removed, nothing she made.
 function _shrinkDoubled(key,val){try{localStorage.setItem(key,val);if(typeof _alAdd==='function')_alAdd('dedupe',key+' '+Math.round(val.length/1024)+'KB');if(typeof _pushKeyNow==='function')_pushKeyNow(key,val);}catch(e){}}
 function persistNotifSettings(){try{const v=JSON.stringify(notifSettings);localStorage.setItem('sc_notif_settings',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_notif_settings',v);}catch(e){}}
@@ -9112,14 +9173,14 @@ function _persistCheckinsNow(){try{_slimCheckins(checkins);const v=JSON.stringif
 // Durable record of check-ins the provider has cleared from the log, so a re-processed check-in
 // event can never re-add one they already dealt with (the "cleared check-ins keep coming back" bug).
 function _clearedCheckinsLog(){try{return JSON.parse(localStorage.getItem('sc_ci_cleared')||'[]');}catch(e){return [];}}
-function _markCheckinClearedLog(id){if(!id)return;try{var a=_clearedCheckinsLog();if(a.indexOf(id)<0){a.push(id);if(a.length>800)a.splice(0,a.length-800);var v=JSON.stringify(a);localStorage.setItem('sc_ci_cleared',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_cleared',v);}}catch(e){}}
+function _markCheckinClearedLog(id){if(!id)return;try{var a=_clearedCheckinsLog();if(a.indexOf(id)<0){a.push(id);if(a.length>5000)a.splice(0,a.length-5000);var v=JSON.stringify(a);localStorage.setItem('sc_ci_cleared',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_cleared',v);}}catch(e){}}
 function _unmarkCheckinClearedLog(id){if(!id)return;try{var a=_clearedCheckinsLog();var i=a.indexOf(id);if(i>=0){a.splice(i,1);var v=JSON.stringify(a);localStorage.setItem('sc_ci_cleared',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_cleared',v);}}catch(e){}}
 function _isCheckinClearedLog(id){return !!id&&_clearedCheckinsLog().indexOf(id)>=0;}
 // Which check-ins the provider has READ, tracked in a tiny id-only key that always syncs reliably
 // (the full sc_checkins blob can be large — photos — and a failed/oversized push would lose the
 // read flag; this small set is the durable source of truth so "reviewed" sticks across refresh).
 function _readCheckinsLog(){try{return JSON.parse(localStorage.getItem('sc_ci_read')||'[]');}catch(e){return [];}}
-function _markCheckinReadLog(id){if(!id)return;try{var a=_readCheckinsLog();if(a.indexOf(id)<0){a.push(id);if(a.length>1200)a.splice(0,a.length-1200);var v=JSON.stringify(a);localStorage.setItem('sc_ci_read',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_read',v);}}catch(e){}}
+function _markCheckinReadLog(id){if(!id)return;try{var a=_readCheckinsLog();if(a.indexOf(id)<0){a.push(id);if(a.length>5000)a.splice(0,a.length-5000);var v=JSON.stringify(a);localStorage.setItem('sc_ci_read',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_read',v);}}catch(e){}}
 function _isCheckinReadLog(id){return !!id&&_readCheckinsLog().indexOf(id)>=0;}
 function loadCheckins(){try{const raw=localStorage.getItem('sc_checkins');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))checkins=arr;}}catch(e){}
   // Reconcile against the tiny, always-synced state keys so a reverted sc_checkins blob can't
@@ -9856,7 +9917,7 @@ function _fcOpenAction(id,c){
 // event is ever re-processed after a refresh, we never re-create a flag the provider already
 // cleared. This is the belt-and-suspenders guard behind "cleared check-in keeps coming back".
 function _dismissedCheckins(){try{return JSON.parse(localStorage.getItem('sc_flag_dismissed')||'[]');}catch(e){return [];}}
-function _markCheckinDismissed(cid){if(!cid)return;try{var a=_dismissedCheckins();if(a.indexOf(cid)<0){a.push(cid);if(a.length>500)a.splice(0,a.length-500);var v=JSON.stringify(a);localStorage.setItem('sc_flag_dismissed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_flag_dismissed',v);}}catch(e){}}
+function _markCheckinDismissed(cid){if(!cid)return;try{var a=_dismissedCheckins();if(a.indexOf(cid)<0){a.push(cid);if(a.length>5000)a.splice(0,a.length-5000);var v=JSON.stringify(a);localStorage.setItem('sc_flag_dismissed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_flag_dismissed',v);}}catch(e){}}
 function _isCheckinDismissed(cid){return !!cid&&_dismissedCheckins().indexOf(cid)>=0;}
 // Durable record of FORM / intake contraindication flags the provider has ALREADY reviewed, keyed by the
 // submission's event id. The check-in guard above only covers check-in flags; an intake flag had no
@@ -23072,8 +23133,13 @@ function _healGhostForms(){
     let n=0;
     customForms.forEach(function(f){
       if(!f||!f.id||!hid[f.id])return;
-      const oldId=f.id,newId=_newCustomFormId();
-      f.id=newId;f._ts=Date.now();
+      // The SAME new id on every device: a random one per device turned one form into one copy per
+      // device that opened (2026-11-18 sweep: three devices, three "Brow Lamination Consent").
+      const oldId=f.id;let newId=oldId+'_r'+(Number(f._ts)||0).toString(36);
+      while(hid[newId])newId+='r';
+      // Another device already re-keyed it and that copy has arrived here: this one is the same form.
+      if(customForms.some(function(o){return o&&o!==f&&o.id===newId;})){f._drop=1;n++;return;}
+      f.id=newId;f._ts=(Number(f._ts)||0)+1;
       const move=function(m){try{if(m&&Object.prototype.hasOwnProperty.call(m,oldId)){m[newId]=m[oldId];delete m[oldId];}}catch(e){}};
       try{move(formTmpls);}catch(e){}
       try{move(formGuides);}catch(e){}
@@ -23081,7 +23147,10 @@ function _healGhostForms(){
       n++;
       try{console.warn('[SlickChart] form "'+(f.name||newId)+'" was carrying a deleted id ('+oldId+') \u2014 re-keyed to '+newId+' so it can sync again');}catch(e){}
     });
-    if(n){try{persistForms();}catch(e){}}
+    if(n){
+      for(let i=customForms.length-1;i>=0;i--)if(customForms[i]&&customForms[i]._drop)customForms.splice(i,1);
+      try{persistForms();}catch(e){}
+    }
     return n;
   }catch(e){return 0;}
 }
@@ -25752,7 +25821,7 @@ function saveInventoryItem(i){
   // When editing, keep fields the form doesn't expose (Square link + retail data) \u2014 rebuilding the item
   // from just the form fields used to drop squareVarId/sku/price, so the next Square sync couldn't match
   // it and re-added a duplicate row with the price lost.
-  if(i!=null&&inv[i]){const _old=Object.assign({},inv[i]);inv[i]=Object.assign({},inv[i],item);try{if(_libKeyFn('sc_inventory')(_old)!==_libKeyFn('sc_inventory')(inv[i]))_libForget('sc_inventory',_old);}catch(e){}}else inv.push(item);   // a rename retires the old name, or another device shows both
+  if(i!=null&&inv[i]){const _old=Object.assign({},inv[i]);inv[i]=Object.assign({},inv[i],item);try{if(_libKeyFn('sc_inventory')(_old)!==_libKeyFn('sc_inventory')(inv[i]))_libForget('sc_inventory',_old);}catch(e){}}else{if(!item.id)item.id='inv_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);inv.push(item);}   // own id: two items with one name (1oz, 2oz) used to merge into one. A rename retires the old name, or another device shows both
   saveInv();
   if(typeof proToast==='function')proToast(i!=null?'Item updated \u2713':'Item added \u2713');
   nav('inventory');
@@ -26610,9 +26679,52 @@ function _pushState(){
   if(!Cloud._serverSeen)Cloud._serverSeen=Object.create(null);   // what this device knows the account holds
   return Cloud;
 }
+// ONE ACTIVE TAB PER ACCOUNT (2026-11-18 sweep). Two tabs of the app on one computer each keep their
+// own copy of the libraries in memory, and nothing told one about the other's saves. A tab left open
+// since the morning saved its old copy over the newer one: a form made in tab A vanished from the
+// account the moment tab B renamed a different form (proven). The newest tab to open wins; an older
+// one stops saving and covers itself with a notice until she taps to use it there, which reloads it
+// with the account's current copy (and quiets the other tab the same way).
+function _tabGuardStart(){
+  try{
+    if(window.__SC_DEMO__||typeof BroadcastChannel==='undefined'||!Cloud||!Cloud.token||window._scTabCh)return;
+    const own=(typeof _tokenOwner==='function'&&_tokenOwner())||'';if(!own)return;
+    const ch=new BroadcastChannel('sc-tab-'+own),me=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+    ch.onmessage=function(e){const m=e&&e.data;if(!m||m.from===me)return;if(m.t==='hello')_tabGoPassive();};
+    ch.postMessage({t:'hello',from:me});
+    window._scTabCh=ch;
+  }catch(e){}
+}
+function _tabGoPassive(){
+  try{
+    if(Cloud._passive)return;
+    // Anything this tab already had on its way goes out first: it was typed before the other tab opened.
+    try{if(typeof _pushFlushNow==='function')_pushFlushNow();}catch(e){}
+    try{if(Cloud._queue&&Object.keys(Cloud._queue).length)Cloud._flush(0);}catch(e){}
+    Cloud._passive=true;
+    try{if(typeof _alAdd==='function')_alAdd('tab-passive','another tab opened');}catch(e){}
+    if(document.getElementById('sc-tab-passive'))return;
+    const d=document.createElement('div');d.id='sc-tab-passive';
+    d.setAttribute('role','dialog');d.setAttribute('aria-modal','true');
+    d.style.cssText='position:fixed;inset:0;z-index:2147483000;background:rgba(20,18,16,.72);display:flex;align-items:center;justify-content:center;padding:24px;';
+    d.innerHTML='<div style="background:#fff;color:#222;border-radius:16px;max-width:360px;width:100%;padding:22px;text-align:center;font-family:inherit;box-shadow:0 10px 40px rgba(0,0,0,.3)">'
+      +'<div style="font-size:17px;font-weight:600;margin-bottom:8px">SlickChart is open in another tab</div>'
+      +'<div style="font-size:14px;line-height:1.45;color:#555;margin-bottom:16px">To keep your work safe, it saves in one tab at a time.</div>'
+      +'<button type="button" id="sc-tab-here" style="background:#222;color:#fff;border:0;border-radius:10px;padding:12px 18px;font-size:15px;font-weight:600;cursor:pointer;width:100%">Use it here</button></div>';
+    document.body.appendChild(d);
+    const b=document.getElementById('sc-tab-here');if(b)b.onclick=function(){try{location.reload();}catch(e){}};
+  }catch(e){}
+}
+// When this device last SENT each key. An account read that was already on its way when a save went
+// out answers with the value from BEFORE that save; storing it put the old value back on screen and
+// the next save pushed it over the account, so the edit was lost (2026-11-18 sweep, proven with a
+// 2.5 s read: a booking note typed during it reverted). Cloud.pull treats such a key as a pending
+// local write.
+function _markSent(items){try{if(!Cloud._sentAt)Cloud._sentAt=Object.create(null);const n=Date.now();Object.keys(items||{}).forEach(function(k){Cloud._sentAt[k]=n;});}catch(e){}}
 function _pushFlushNow(){
   const batch=Cloud._pushBatch; Cloud._pushBatch=null;
   if(!batch)return;
+  if(Cloud._passive){try{clearTimeout(batch.timer);batch.waiters.forEach(function(w){try{w({ok:false,reason:'passive'});}catch(e){}});}catch(e){}return;}
   clearTimeout(batch.timer);
   const items=batch.items, waiters=batch.waiters;
   const settle=function(r){ waiters.forEach(function(w){try{w(r);}catch(e){}}); };
@@ -26652,6 +26764,7 @@ function _pushFlushNow(){
     for(const k in items){ if(!(k in Cloud._queue))Cloud._queue[k]=items[k]; }
     if(!Cloud._booting){clearTimeout(Cloud._timer);Cloud._timer=setTimeout(function(){Cloud._flush(1);},1500);}
   }catch(e){}};
+  _markSent(items);
   fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
     body:JSON.stringify({items:items})})
     .then(function(r){
@@ -26666,6 +26779,7 @@ function _pushFlushNow(){
 function _pushKeyNow(k,v){
   try{
     if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return Promise.resolve({ok:false,reason:'nocloud'});
+    if(Cloud._passive)return Promise.resolve({ok:false,reason:'passive'});
     // The same rule the patched setItem follows, and the hole that made it useless: this key's real
     // value is still in IndexedDB, unread, so whatever is being pushed was computed from a hole.
     // setItem refused the LOCAL write while this pushed the same bad value straight to the ACCOUNT,
@@ -30150,7 +30264,10 @@ function renderNotifications(){
 // ── Bring-your-data-in: bulk CSV import for providers switching from another system ──
 let _csvKind='clients';
 let _importedProducts=(function(){try{const a=JSON.parse(localStorage.getItem('sc_imported_products')||'[]');return Array.isArray(a)?_dedupeList(a):[];}catch(e){return [];}})();
-function _applyImportedProducts(){try{(_importedProducts||[]).forEach(pr=>{if(!affiliateLinks.some(a=>(a.name||'').toLowerCase()===(pr.name||'').toLowerCase()))affiliateLinks.push(pr);});}catch(e){}}
+// The imported list is a grow-only record of what a CSV brought in, so a product she DELETED or
+// RENAMED is still in it. Matching by name alone put a deleted one back on every shop render and a
+// renamed one in twice (2026-11-18 sweep). Same id = already there; a delete record = stays gone.
+function _applyImportedProducts(){try{const del=_tombSet(['sc_deleted_products']);(_importedProducts||[]).forEach(pr=>{if(!pr)return;if(pr.id&&_tombHides(del[String(pr.id)],pr._ts))return;if(affiliateLinks.some(a=>(pr.id&&a&&a.id===pr.id)||(a.name||'').toLowerCase()===(pr.name||'').toLowerCase()))return;affiliateLinks.push(pr);});}catch(e){}}
 function _parseCSV(text){
   const rows=[];let i=0,field='',row=[],inQ=false;text=String(text||'').replace(/\r\n?/g,'\n');
   while(i<text.length){const ch=text[i];
@@ -40051,8 +40168,9 @@ function saveAuto(idx){
   const _newId='a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   const commit=function(){
     if(idx>=0){
+      let _nk='';try{if(autos[idx]&&!autos[idx].id)_nk=_libKeyFn('sc_autos')(autos[idx]);}catch(e){}
       Object.assign(autos[idx],{name,trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz,clientIds});
-      if(!autos[idx].id)autos[idx].id=_newId;
+      if(!autos[idx].id)autos[idx].id=_nk||_newId;
     } else {
       autos.push({id:_newId,name,icon:'📅',col:'var(--p-blue-bg)',trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz,clientIds,on:true,sent:0,opened:0,bdg:'bb'});
     }

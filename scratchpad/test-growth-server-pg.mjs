@@ -26,6 +26,12 @@ stub = stub.replace('export async function ensureFilesTable() {}', `export async
   await sql()\`ALTER TABLE files ADD COLUMN IF NOT EXISTS staging text\`;
   await sql()\`ALTER TABLE files ADD COLUMN IF NOT EXISTS staging_next integer\`;
 }
+export async function readKeyAllOwners(q, key) {
+  const rows = await q\`SELECT owner, v FROM kv WHERE k = \${key} AND coalesce(octet_length(v), 0) <= 1000000\`;
+  const big = await q\`SELECT owner FROM kv WHERE k = \${key} AND octet_length(v) > 1000000\`;
+  for (const b of big) { const r = await q\`SELECT owner, v FROM kv WHERE owner = \${b.owner} AND k = \${key}\`; if (r[0]) rows.push(r[0]); }
+  return rows;
+}
 export async function getFileRow(owner, id) { const r = await sql()\`SELECT id, name, type, data FROM files WHERE owner = \${owner} AND id = \${id} AND complete IS NOT FALSE\`; return r[0] || null; }`);
 const lib = path.join(root, 'lib'), api = path.join(root, 'api'); fs.mkdirSync(lib); fs.mkdirSync(api);
 fs.writeFileSync(path.join(lib, 'db.js'), stub);
