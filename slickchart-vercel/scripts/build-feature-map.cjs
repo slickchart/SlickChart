@@ -87,7 +87,7 @@ const callees = new Map();  // fn -> Set(fn)
 for (const fn of known) {
   const body = bodyLines.get(fn).map(i => lines[i]).join('\n');
   const eps = new Set();
-  for (const m of body.matchAll(/(?:fetch|_sqFetch)\(\s*['"`](\/api\/[A-Za-z0-9/_-]+)/g)) eps.add(m[1]);
+  for (const m of body.matchAll(/(?:fetch|_sqFetch|_authFetch)\(\s*['"`](\/api\/[A-Za-z0-9/_-]+)/g)) eps.add(m[1]);
   direct.set(fn, eps);
   const cs = new Set();
   for (const m of body.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) {
