@@ -280,6 +280,17 @@ export async function runSweep(q) {
     return { items, level: rows.some(r => Number(r.bytes) > 4300000) ? 'warn' : (rows.length ? 'warn' : 'ok') };
   });
 
+  // A new device (or one whose saved copy is stale) reads the WHOLE account in one response, and
+  // Vercel refuses a response over 4.5 MB. Measured as JSON-escaped, the form the response carries.
+  // 2026-11-18 capacity review: the busiest account's client list alone was 2.9 MB.
+  await check('first-read', 'Every account fits in one first read on a new device', async () => {
+    const rows = await q`SELECT owner, sum(octet_length(to_json(v)::text))::bigint AS bytes FROM kv
+      GROUP BY owner HAVING sum(octet_length(to_json(v)::text)) > 3000000 ORDER BY 2 DESC LIMIT 20`;
+    const items = rows.map(r => who(r.owner) + ': whole account is ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB'
+      + (Number(r.bytes) > 4500000 ? ' (over the 4.5 MB limit: a new device cannot open it)' : ' of the 4.5 MB a new device can read at once'));
+    return { items, level: rows.some(r => Number(r.bytes) > 4500000) ? 'alert' : (rows.length ? 'warn' : 'ok') };
+  });
+
   await check('events-size', 'Client submissions fit in one download', async () => {
     const rows = await q`SELECT provider_id, count(*)::int AS n, sum(octet_length(payload::text))::bigint AS bytes FROM (
         SELECT provider_id, payload, row_number() OVER (PARTITION BY provider_id ORDER BY created_at DESC) AS rn FROM client_events) t

@@ -1,0 +1,63 @@
+// api/admin/capacity.js against a real PostgreSQL 16 (2026-11-18): every section runs, sizes are
+// per account, the first-read size flags an account over 4.5 MB, and no stored value is returned.
+import { execFileSync } from 'child_process';
+import fs from 'fs'; import os from 'os'; import path from 'path';
+const src = fs.readFileSync(new URL('./sweep-dup-server-pg.mjs', import.meta.url), 'utf8');
+const PGBIN = '/usr/lib/postgresql/16/bin';
+if (!fs.existsSync(PGBIN)) { console.log('SKIP: no PostgreSQL 16'); process.exit(0); }
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-')), sock = fs.mkdtempSync(path.join(os.tmpdir(), 'capsock-'));
+const PORT = '55498', asRoot = process.getuid() === 0, USER = asRoot ? 'pgtest' : os.userInfo().username;
+const sh = c => execFileSync('/bin/sh', ['-c', c], { encoding: 'utf8' });
+const pg = c => sh(asRoot ? "su " + USER + " -c '" + c.replace(/'/g, "'\\''") + "'" : c);
+if (asRoot) { try { sh('id ' + USER); } catch (e) { sh('useradd -m ' + USER); } sh('chown -R ' + USER + ' ' + root + ' ' + sock + ' && chmod 777 ' + sock); }
+let started = false;
+process.on('exit', () => { if (started) { try { pg(PGBIN + '/pg_ctl -D ' + root + '/data stop -m immediate'); } catch (e) {} } });
+pg(PGBIN + '/initdb -D ' + root + '/data -U ' + USER + ' --auth=trust >/dev/null');
+pg(PGBIN + "/pg_ctl -D " + root + "/data -o '-k " + sock + " -p " + PORT + " -c listen_addresses=' -l " + root + "/log start -w >/dev/null");
+started = true;
+const stub = src.slice(src.indexOf('const DBSTUB = `') + 16, src.indexOf('`;\nconst AUTHSTUB')).replace(/\$\{PGBIN\}/g, PGBIN).replace(/\$\{sock\}/g, sock).replace(/\$\{PORT\}/g, PORT).replace(/\$\{USER\}/g, USER).replace(/\\`/g, '`').replace(/\\\$/g, '$').replace(/\\\\/g, '\\');
+fs.mkdirSync(path.join(root, 'lib')); fs.mkdirSync(path.join(root, 'api', 'admin'), { recursive: true });
+fs.writeFileSync(path.join(root, 'lib', 'db.js'), stub);
+fs.writeFileSync(path.join(root, 'lib', 'auth.js'), 'export const verifyToken=()=>null; export const isSessionValid=async()=>true;');
+fs.writeFileSync(path.join(root, 'lib', 'app-launch-log.js'), "export const maskEmail=e=>String(e).slice(0,3)+'…'+String(e).slice(String(e).indexOf('@'));");
+fs.writeFileSync(path.join(root, 'api', 'feedback.js'), 'export const monitorKeyOk=async()=>true;');
+fs.copyFileSync(new URL('../slickchart-vercel/api/admin/capacity.js', import.meta.url), path.join(root, 'api', 'admin', 'capacity.js'));
+const D = await import(path.join(root, 'lib', 'db.js'));
+const q = D.sql(); await D.ensureTable();
+await q`CREATE TABLE providers (id text PRIMARY KEY, email text, created_at timestamptz DEFAULT now())`;
+await q`CREATE TABLE subscriptions (email text PRIMARY KEY, status text)`;
+await q`CREATE TABLE kv_history (id bigserial PRIMARY KEY, owner text, k text, v text, bytes int, items int, reason text, saved_at timestamptz DEFAULT now())`;
+await q`CREATE TABLE files (owner text, id text, name text, type text, data text, staging text, updated_at timestamptz DEFAULT now(), complete boolean DEFAULT true, PRIMARY KEY (owner,id))`;
+await q`CREATE TABLE client_events (id text PRIMARY KEY, client_id text, provider_id text, kind text, payload jsonb, seen int, created_at bigint)`;
+await q`CREATE TABLE cron_runs (id bigserial PRIMARY KEY, name text, started_at timestamptz, finished_at timestamptz, status int, ok boolean, summary jsonb)`;
+await q`INSERT INTO cron_runs (name, started_at, finished_at, ok) VALUES ('cron-checkins', now() - interval '1 hour', now() - interval '1 hour' + interval '12 seconds', true), ('cron-checkins', now() - interval '2 hours', NULL, NULL)`;
+await q`INSERT INTO providers (id,email) VALUES ('pA','alice@x.com'),('pB','bob@y.com')`;
+await q`INSERT INTO subscriptions VALUES ('alice@x.com','active'),('bob@y.com','trialing')`;
+const SECRET = 'SECRET-NOTE-TEXT';
+// 2.4 MB raw of quote marks, ~4.8 MB once JSON-escaped: the raw size alone would miss it.
+await q`INSERT INTO kv (owner,k,v) VALUES ('pA','sc_clients','{"c1":{"notes":"' || ${SECRET} || repeat('\\"', 1200000) || '"}}')`;
+await q`INSERT INTO kv (owner,k,v) VALUES ('pB','sc_clients',${JSON.stringify({ c1: { n: SECRET } })}),('pA','aiusage:' || to_char(now(),'YYYY-MM-DD'),'7')`;
+await q`INSERT INTO kv_history (owner,k,v,reason) VALUES ('pA','sc_clients','x','daily')`;
+await q`INSERT INTO files (owner,id,data) VALUES ('pB','ph1',repeat('a',500000)),('pB','ph2',repeat('a',300000))`;
+await q`INSERT INTO client_events VALUES ('e1','c1','pA','form','{"a":1}',0,${Date.now()})`;
+const { capacityReport, project } = await import(path.join(root, 'api', 'admin', 'capacity.js'));
+const r = await capacityReport(q, 600);
+const S = r.sections, txt = JSON.stringify(r);
+let pass = 0, fail = 0; const check = (n, ok, d) => { console.log((ok ? 'PASS ' : 'FAIL ') + n + (ok ? '' : '  — ' + JSON.stringify(d))); ok ? pass++ : fail++; };
+Object.values(S).forEach(s=>{if(s.error)console.log(s.error.slice(-300))});check('no section failed', Object.values(S).every(s => !s.error), Object.entries(S).filter(([k, s]) => s.error));
+check('database size and tables listed', S.database.totalMB > 0 && S.database.tables.some(t => t.table === 'kv'), S.database);
+check('accounts counted', S.accounts.providers === 2 && S.accounts.activeOrTrialing === 2, S.accounts);
+check('files per account', S.perAccount.files.accounts === 1 && S.perAccount.files.totalMB === 0.8, S.perAccount.files);
+check('account A first read is over the 4.5 MB limit (escaping counted)', S.perAccount.firstReadOverLimit.length === 1 && /^ali/.test(S.perAccount.firstReadOverLimit[0]), S.perAccount);
+check('account B is not flagged', !txt.includes('bob…@y.com: 0') || !S.perAccount.firstReadOverLimit.some(x => /^bob/.test(x)));
+check('job timings read', S.jobs[0] && S.jobs[0].job === 'cron-checkins' && S.jobs[0].typicalSeconds === 12 && S.jobs[0].neverFinished === 1, S.jobs);
+check('AI calls counted', S.monthly.aiCalls === 7, S.monthly);
+check('projection scales to 600', S.perAccount.all.atN_likeTodayMB > 0, S.perAccount.all);
+check('no stored content leaves', !txt.includes(SECRET) && !txt.includes('alice@x.com') && !txt.includes('"c1"'));
+const hs = fs.readFileSync(new URL('../slickchart-vercel/api/admin/health-sweep.js', import.meta.url), 'utf8');
+const fr = /check\('first-read'[\s\S]*?q`([\s\S]*?)`/.exec(hs)[1];
+const frRows = await q([fr]);
+check('health sweep first-read query runs and finds the big account', frRows.length === 1 && frRows[0].owner === 'pA' && Number(frRows[0].bytes) > 4.5e6, frRows);
+const p = project([1e6, 2e6, 3e6, 0], 600);
+check('project(): skips empty, median/p90/scale', p.accounts === 3 && p.medianMB === 2 && p.p90MB === 3 && p.atN_likeTodayMB === 1200 && p.atN_ifAllP90MB === 1800, p);
+console.log('\n' + pass + '/' + (pass + fail) + ' passed'); process.exit(fail ? 1 : 0);

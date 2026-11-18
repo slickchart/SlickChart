@@ -17,7 +17,7 @@
 // automations (birthday / "X hours after service" / "hasn't visited in 90 days") are NOT handled here —
 // they need per-client event evaluation and are left for a future job; they carry no `sendAt`, so they
 // are skipped safely.
-import { dbEnabled, sql, ensureTable } from '../lib/db.js';
+import { dbEnabled, sql, ensureTable, readKeyAllOwners } from '../lib/db.js';
 import { ensureClientTables, listClients, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, getClientToken, wantsPush } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
@@ -77,7 +77,7 @@ async function handler(req, res) {
     await ensureClientTables();
     await ensureTable();                // kv table
     const q = sql();
-    const rows = await q`SELECT owner, v FROM kv WHERE k = 'sc_autos'`;
+    const rows = await readKeyAllOwners(q, 'sc_autos');
     for (const row of rows) {
       const owner = row.owner;
       let autos = [];

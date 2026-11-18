@@ -400,3 +400,18 @@ export async function hasActiveSubscription(email) {
   const s = await getSubscription(email);
   return !!(s && (s.status === 'active' || s.status === 'trialing'));
 }
+
+// One key for EVERY account (e.g. each provider's sc_autos, for the hourly automation jobs), without
+// one answer that can pass the database driver's 64 MB limit. Normal-size values come back together;
+// any over 1 MB (a runaway list once reached 85 MB) is read on its own, so one oversized account can
+// never stop the job for everyone else (2026-11-18 capacity review). Same rows, same shape.
+export async function readKeyAllOwners(q, key) {
+  const rows = await q`SELECT owner, v FROM kv WHERE k = ${key} AND coalesce(octet_length(v), 0) <= 1000000`;
+  let big = [];
+  try { big = await q`SELECT owner FROM kv WHERE k = ${key} AND octet_length(v) > 1000000`; } catch (e) { big = []; }
+  for (const b of big) {
+    try { const r = await q`SELECT owner, v FROM kv WHERE owner = ${b.owner} AND k = ${key}`; if (r[0]) rows.push(r[0]); }
+    catch (e) { console.error('[db] could not read one oversized ' + key + ':', e && e.message); }
+  }
+  return rows;
+}

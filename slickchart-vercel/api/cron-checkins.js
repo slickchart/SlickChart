@@ -47,6 +47,8 @@ function authorized(req) {
 }
 
 // Does this provider have check-in auto-send on? Defaults ON to match the app default.
+const CHECKIN_CONCURRENCY = 6;
+
 async function autoSendOn(providerId) {
   try {
     let v = await getKVValue(providerId, 'sc_checkin_cfg');
@@ -68,16 +70,20 @@ async function handler(req, res) {
     // Square sign-ins near expiry are renewed whether or not this provider uses check-ins.
     try { summary.squareRefresh = await refreshExpiringConnections(); } catch (e) {}
     const conns = await q`SELECT provider_id FROM square_connections`;
-    for (const row of (conns || [])) {
+    // Providers are worked through a few at a time instead of one after another (2026-11-18 capacity
+    // review). Each one costs 2-4 Square calls even on a quiet day, so one-by-one at 600 providers is
+    // past the platform's 5-minute limit and the providers late in the list would get no check-ins.
+    // Each provider's work is unchanged and still isolated: its own token, its own clients.
+    const one = async (row) => {
       const provider = row.provider_id;
-      if (!provider) continue;
+      if (!provider) return;
       // One provider's failure (a DB hiccup, a hung Square call) must not cost every provider after it
       // their check-ins this hour.
       try {
-      if (!(await autoSendOn(provider))) continue;
+      if (!(await autoSendOn(provider))) return;
       let conn = null;
       try { conn = await getConnection(provider); } catch (e) {}
-      if (!conn || !conn.token) continue;
+      if (!conn || !conn.token) return;
 
       // Upcoming bookings in the next ~26h (a little past 24 so nothing near the edge is missed).
       const startMin = new Date(now).toISOString();
@@ -99,18 +105,18 @@ async function handler(req, res) {
       for (const lid of locIds) await pull(new URLSearchParams({ location_id: lid, start_at_min: startMin, start_at_max: startMax, limit: '100' }));
       await pull(new URLSearchParams({ start_at_min: startMin, start_at_max: startMax, limit: '100' }));
       const live = bookings.filter(b => b && !DEAD.includes(b.status) && b.customer_id && b.start_at);
-      if (!live.length) continue;
+      if (!live.length) return;
 
       // Only appointments inside the ~24h-before window. Dedup makes it fire once, at the first hourly
       // run after the appointment crosses 24h away (or immediately for a same-day booking).
       const due = live.filter(b => { const t = new Date(b.start_at).getTime() || 0; const hrs = (t - now) / HOUR; return hrs > 0 && hrs <= 24; });
-      if (!due.length) continue;
+      if (!due.length) return;
       summary.providers++;
 
       // The provider's own client roster, once, so we can match a Square customer to a SlickChart
       // client record (with a link token) by email or phone without a query per booking.
       let clients = [];
-      try { clients = await q`SELECT id, token, email, phone, opened_at FROM clients WHERE provider_id = ${provider} AND deleted_at IS NULL`; } catch (e) { continue; }
+      try { clients = await q`SELECT id, token, email, phone, opened_at FROM clients WHERE provider_id = ${provider} AND deleted_at IS NULL`; } catch (e) { return; }
       const byEmail = new Map(), byPhone = new Map();
       for (const c of (clients || [])) {
         const em = String(c.email || '').trim().toLowerCase(); if (em && !byEmail.has(em)) byEmail.set(em, c);
@@ -162,7 +168,11 @@ async function handler(req, res) {
         summary.devices += n;
       }
       } catch (e) { console.error('[cron-checkins] provider failed:', provider, e && e.message); }
-    }
+    };
+    const list = conns || [];
+    let next = 0;
+    const worker = async () => { while (next < list.length) { const row = list[next++]; await one(row); } };
+    await Promise.all(Array.from({ length: Math.min(CHECKIN_CONCURRENCY, list.length) }, worker));
     res.status(200).json({ ok: true, ...summary });
   } catch (e) {
     console.error('[cron-checkins] failed:', e && e.stack || e);

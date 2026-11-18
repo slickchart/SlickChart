@@ -11,7 +11,7 @@
 // Data comes from the provider's own KV blobs (the same store the date cron reads): `sc_autos` for the
 // automations and `sc_clients` for the client charts (which carry birthday + last-visit). Each send is
 // claimed atomically (reminder_log) so overlapping/hourly runs can't double-send.
-import { dbEnabled, sql, ensureTable } from '../lib/db.js';
+import { dbEnabled, sql, ensureTable, readKeyAllOwners } from '../lib/db.js';
 import { ensureClientTables, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, wantsPush } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
@@ -100,19 +100,27 @@ async function handler(req, res) {
     await ensureClientTables();
     await ensureTable();                       // kv table
     const q = sql();
-    const autoRows = await q`SELECT owner, v FROM kv WHERE k = 'sc_autos'`;
+    const autoRows = await readKeyAllOwners(q, 'sc_autos');
     if (!autoRows.length) { res.status(200).json({ ok: true, ...summary }); return; }
-    // Pull every provider's client charts once, keyed by owner.
-    const clientRows = await q`SELECT owner, v FROM kv WHERE k = 'sc_clients'`;
-    const chartsByOwner = {};
-    for (const row of clientRows) { try { chartsByOwner[row.owner] = JSON.parse(row.v || '{}') || {}; } catch (e) { chartsByOwner[row.owner] = {}; } }
+    // Each provider's client charts are read ONE account at a time, and only when one of her event
+    // automations can send this hour. This used to read every account's whole client list in one
+    // query; at 600 providers that is hundreds of MB in one answer, past the database driver's 64 MB
+    // limit, and the job would stop for everyone (2026-11-18 capacity review).
+    const willRun = a => {
+      if (!a || a.on === false || a.sendAt || !String(a.msg || '').trim() || !classify(a)) return false;
+      const h = localParts(a.tz || 'UTC', now).hour;
+      return !(h < MORNING_LO || h > MORNING_HI);
+    };
 
     for (const row of autoRows) {
       const owner = row.owner;
       let autos = [];
       try { autos = JSON.parse(row.v || '[]'); } catch (e) { autos = []; }
       if (!Array.isArray(autos) || !autos.length) continue;
-      const charts = chartsByOwner[owner] || {};
+      if (!autos.some(willRun)) continue;
+      let charts = {};
+      try { const cr = await q`SELECT v FROM kv WHERE owner = ${owner} AND k = 'sc_clients'`; charts = (cr[0] && JSON.parse(cr[0].v || '{}')) || {}; } catch (e) { charts = {}; }
+      if (!charts || typeof charts !== 'object') charts = {};
       // §0.1: the ids come from the provider's own synced blob, which she can write freely. Only her
       // OWN live client rows may be messaged — an id that collides with (or was typed to match) another
       // account's client used to push her text, with that client's own link, to their phone.

@@ -65,6 +65,7 @@ const ALLOW={
   // only counts and masked emails, never a client's name, contact, note or message. Re-read it if it
   // changes.
   'admin/health-sweep.js':'founder/Monitor-key gated cross-account sweep; counts and masked emails only',
+  'admin/capacity.js':'founder/Monitor-key gated, read-only capacity report (2026-11-18): sizes and counts per table and per account, masked emails only, never a stored value',
   'admin/dedupe-kv.js':'Monitor-key gated founder clean-up (2026-11-18): removes only byte-identical repeat rows from top-level lists, each earlier copy kept in kv_history; reads providers for masked emails only',
   'login.js':'looks up the account by the email being signed in with; generic failure, rate-limited',
   'signup.js':'checks the email is free and creates the account; count is for a launch cap',
