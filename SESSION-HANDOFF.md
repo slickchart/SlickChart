@@ -9629,6 +9629,16 @@ Ashley: *"since we added in the free trial not every sign up is a paid provider 
 - New **"💰 Trial converted to paid!"** push + email to every founder device on the FIRST real payment of a trial (`notifyFounderTrialConverted` in `api/stripe-webhook.js`, claim `claimTrialConversion` in `lib/trial-outcomes.js`: once per subscription via `trial_outcomes.converted_notified_at`, only when `first_paid_at` is within 3 days, so old conversions and renewals stay silent). Fires from `invoice.paid` or the subscription event, whichever lands second. Logged as `notify_log` kind `trial-converted`. Test: `scratchpad/founder-push/trial-converted.mjs` (in CI).
 - Daily brief: health-sweep `trials.convertedLast24h` / `convertedLast30d`, and `trials.summary` opens with "N trials became paying in the last 24 hours."
 
+## 2026-11-18 — Account clean-up for repeated lists: /api/admin/dedupe-kv (PREVIEW)
+
+Ashley 2026-11-18 8:46am PT: "lets get this fixed" about the oversized saved lists across accounts.
+`lib/kv-dedupe.js` + `api/admin/dedupe-kv.js` (Monitor key). GET = report only (masked emails, sizes
+and row counts before/after). POST `?apply=1` = for every TOP-LEVEL LIST of 100 KB+ holding byte-identical
+repeat rows: copy the old value to kv_history (reason 'dedupe'), then write the de-duplicated value
+only if md5(v) still matches what was read (a provider editing mid-run is never overwritten), with
+updated_at moved. Maps (messages, summaries) are never touched. Test `scratchpad/test-kv-dedupe-pg.mjs`
+11/11 on a real PostgreSQL 16. Running `apply` touches every account's live data, so it waits for her yes.
+
 ## 2026-11-18 — kv-size health check: count in the database (PREVIEW)
 
 Its first live run (brief 2026-11-18 14:41Z) failed: "response is too large (max is 67108864 bytes)",
