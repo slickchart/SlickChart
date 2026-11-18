@@ -119,7 +119,7 @@ export default async function handler(req, res) {
       <input class="f" id="f-time" type="time" style="display:none;">
     </div>
     <div class="hours"><div style="margin-bottom:5px;"><b>Hours</b></div>${hoursHtml}</div>
-    <label for="f-note">Anything they should know (optional)</label>
+    <label for="f-note">Anything to share before your visit (optional)</label>
     <textarea class="f" id="f-note" placeholder="First time, something you're working on, a question…"></textarea>
     <button class="btn" id="go" type="button">Request this time</button>
   </div>
@@ -180,11 +180,11 @@ function loadSlots(v){
   $('f-time').style.display='none';
   $('slots').innerHTML='<div class="muted">Finding open times\\u2026</div>';
   fetch('/api/book-slots?slug='+encodeURIComponent(SLUG)+'&date='+encodeURIComponent(v)+'&service='+encodeURIComponent($('f-svc').value))
-    .then(function(r){return r.json();}).then(function(j){
+    .then(function(r){if(!r.ok)throw new Error('slots '+r.status);return r.json();}).then(function(j){
       if(slotsFor!==v+'|'+$('f-svc').value)return;   // a later day or service was picked while this was in flight
       // The server could not see the whole calendar, so it will not promise a slot is free.
       // Fall back to asking, rather than offering a time that might already be taken.
-      if(j&&j.unknown){ MODE='request'; $('go').textContent='Request this time'; freeTime(); return; }
+      if(j&&j.unknown){ askInstead(); return; }
       var s=(j&&j.slots)||[];
       if(!s.length){ $('slots').innerHTML='<div class="muted">Nothing open that day \\u2014 try another.</div>'; return; }
       $('slots').innerHTML=s.map(function(t){return '<button type="button" class="slot" aria-pressed="false" data-t="'+t.replace(/"/g,'')+'">'+t+'</button>';}).join('');
@@ -194,8 +194,11 @@ function loadSlots(v){
           Array.prototype.forEach.call($('slots').querySelectorAll('.slot'),function(x){x.setAttribute('aria-pressed',x===b?'true':'false');});
         });
       });
-    }).catch(function(){ MODE='request'; freeTime(); });
+    }).catch(function(){ if(slotsFor===v+'|'+$('f-svc').value)askInstead(); });
 }
+// The open times could not be read (offline, or the server failed). Never say "nothing open":
+// she would lose the booking. Let them ask for a time inside her hours instead, and she confirms.
+function askInstead(){ MODE='request'; $('go').textContent='Request this time'; freeTime(); }
 function timeValue(){
   if(MODE==='instant')return picked;
   var v=$('f-time').value; if(!v)return '';
@@ -214,7 +217,7 @@ $('go').addEventListener('click',function(){
   fetch('/api/book-request',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({slug:SLUG,name:name,email:email,phone:phone,service:$('f-svc').value,
       date:$('f-date').value,time:t,note:$('f-note').value.trim()})})
-    .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+    .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j||{}};},function(){return {ok:false,j:{}};});})
     .then(function(x){
       if(!x.ok||!x.j.ok){
         b.disabled=false; b.textContent=MODE==='instant'?'Book this time':'Request this time';

@@ -9920,6 +9920,23 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Public booking page sweep (rotation area 3) (PREVIEW, api/book-page.js)
+
+`scratchpad/sweep-book-page.mjs` (MODE=request|instant, SIZE=phone|mac, SLOTS=ok|500|offline,
+REQ=ok|500|offline|taken|html) renders the real page and books through it. Fixed:
+- On instant booking, if /api/book-slots answered with an error the page said "Nothing open that day,
+  try another", so a stranger would give up and she would lose the booking. Any failure to read the
+  open times (error, offline, "unknown") now lets them ask for a time inside her hours instead
+  (`askInstead()`), and the button says "Request this time".
+- A non-JSON answer from /api/book-request (a timeout page) said "Couldn't reach the server"; now
+  "Something went wrong. Please try again."
+- The note box said "Anything they should know"; now "Anything to share before your visit".
+WebKit + Chromium, every combination; `test-book-lead-notice` 8/8.
+Test-env note: `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` is a symlink made in this
+container to `/opt/pw-browsers/chromium` (tests hard-code the old path). `test-square-booking-page`
+and `test-instant-booking-app` need a server on :8899; `sweep2-sec-bookpage-xss` needs
+`logSquareCreate` in its db stub (already broken before this change).
+
 ## 2026-11-18 — Build 2026-11-18i: Square sweep (rotation area 2) (PREVIEW)
 
 Ran `scratchpad/sweep-square-states.mjs` (SQ=none|expired|err500|nosquare|offline) on every Square
