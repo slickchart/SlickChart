@@ -9943,6 +9943,20 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18r: the front door with no signal or a server error
+
+- Log in and Sign up showed the browser's own words when the request never arrived ("Failed to
+  fetch" on a computer, "Load failed" on an iPhone), and a 5xx with no JSON read "Login failed".
+  `Cloud.login/signup/resetPw/requestReset` now go through `_authFetch`: no signal reads "Couldn't
+  reach SlickChart. Check your internet connection and try again."; a 5xx reads "Something went wrong
+  on our side." The server's own message (wrong password, account exists, subscribe link) is unchanged.
+- Sign up / Log in tapped several times sent several requests; `_authOnce` sends one and disables the
+  button until the answer.
+- Forgot password with no signal used to say "sent". It now says it could not reach SlickChart. Still
+  non-enumerable: any answer that ARRIVES (found or not, rate-limited) still shows "sent" (§0.4).
+- Test: `scratchpad/test-front-door-net.mjs`, both engines; 6 fail on the old build. Founder-push
+  `ui-*` tests all pass.
+
 ## 2026-11-18 — build 2026-11-18q: client/product import reads semicolon and tab files
 
 `_parseCSV` only split on commas. Excel in many countries saves "CSV" with semicolons, and cells

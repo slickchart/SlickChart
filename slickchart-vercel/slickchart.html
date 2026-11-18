@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18q';
+const APP_BUILD='2026-11-18r';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -4430,10 +4430,10 @@ const Cloud={
     this.enabled=false;this.statusUnknown=true;this._statusKnown=true;
     return this.enabled;
   },
-  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
-  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;this._pulledOnce=true;/* a brand-new account has nothing to read */try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
-  async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
-  async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
+  async login(email,pw,totpCode){const r=await _authFetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':(r.status>=500?_AUTH_5XX:'Login failed')));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
+  async signup(email,pw,name,optIn){const r=await _authFetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||(r.status>=500?_AUTH_5XX:'Sign up failed'));err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;this._pulledOnce=true;/* a brand-new account has nothing to read */try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async requestReset(email){await _authFetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});return true;},
+  async resetPw(token,pw){const r=await _authFetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
   logout(){try{if(this.token&&typeof _alAdd==='function')_alAdd('token-dropped',(this._dropWhy?'server said '+this._dropWhy+': ':'')+(new Error().stack||'').split('\n').slice(1,4).map(function(x){return x.trim().replace(/^at /,'').replace(/\s*\(.*$/,'').replace(/@.*$/,'');}).join(' < '));}catch(e){}this._dropWhy='';this.token='';try{localStorage.removeItem('sc_token');}catch(e){}try{this._baseDrop();}catch(e){}},
   // Device-local keys the server is still holding from before they were excluded. Cleared out of the
@@ -6857,12 +6857,21 @@ async function _signedInAsSomeoneElse(){
     location.reload();return true;
   }catch(e){return false;}
 }
+// The sign-in front door showed the browser's own words when there was no signal: "Failed to fetch"
+// on a computer, "Load failed" on an iPhone. A new provider reads that as SlickChart being broken.
+const _AUTH_NET='Couldn\u2019t reach SlickChart. Check your internet connection and try again.';
+const _AUTH_5XX='Something went wrong on our side. Please try again in a minute.';
+async function _authFetch(u,o){try{return await fetch(u,o);}catch(e){throw new Error(_AUTH_NET);}}
+// One tap, one request: a second tap while the first is still on its way does nothing.
+let _authBusy=false;
+function _authOnce(p){if(_authBusy)return null;_authBusy=true;const b=document.querySelector('#login-screen button[onclick^="doLogin"],#login-screen button[onclick^="doSignup"]');if(b)b.disabled=true;const done=()=>{_authBusy=false;if(b)b.disabled=false;};return p().then(v=>{done();return v;},e=>{done();throw e;});}
 function doLogin(){
   const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';
   const er=document.getElementById('login-err');if(er)er.textContent='';
   if(!email||!pw){if(er)er.textContent='Enter your email and password.';return;}
   try{_alAdd('signin-tap');}catch(e){}
-  Cloud.login(email,pw).then(async()=>{
+  const _lp=_authOnce(()=>Cloud.login(email,pw));if(!_lp)return;
+  _lp.then(async()=>{
     try{_alAdd('signin-ok');_alSend(true);}catch(e){}
     if(await _signedInAsSomeoneElse())return;
     _restoreUnsent();
@@ -6893,7 +6902,8 @@ function doSignup(){
   const er=document.getElementById('login-err');if(er)er.textContent='';
   if(!name){if(er)er.textContent='Enter your name.';return;}
   if(!email||!pw){if(er)er.textContent='Enter your email and a password.';return;}
-  Cloud.signup(email,pw,name,optIn).then(async()=>{
+  const _sp=_authOnce(()=>Cloud.signup(email,pw,name,optIn));if(!_sp)return;
+  _sp.then(async()=>{
     try{await Cloud.pushAllLocal();}catch(e){}
     try{if(name&&typeof bizInfo!=='undefined'){if(!bizInfo.ownerName||bizInfo.ownerName===_LEGACY_DEMO_OWNER)bizInfo.ownerName=name;if(typeof saveBizInfo==='function')saveBizInfo();if(typeof _syncProviderAvatar==='function')_syncProviderAvatar();}}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
@@ -6908,7 +6918,7 @@ function doSignup(){
 function doRequestReset(){
   const email=_loginVal('login-email');const er=document.getElementById('login-err');if(er)er.textContent='';
   if(!email){if(er)er.textContent='Enter your email.';return;}
-  Cloud.requestReset(email).then(()=>{_resetSentTo=email;_loginMode='sent';renderLogin();});
+  Cloud.requestReset(email).then(()=>{_resetSentTo=email;_loginMode='sent';renderLogin();},e=>{const er2=document.getElementById('login-err');if(er2)er2.textContent=(e&&e.message)||_AUTH_NET;});
 }
 function doResetPw(){
   const pw=(document.getElementById('login-pw')||{}).value||'';const er=document.getElementById('login-err');if(er)er.textContent='';
