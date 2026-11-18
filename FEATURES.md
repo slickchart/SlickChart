@@ -689,6 +689,7 @@ saved anywhere", not "does this always call that".
 | `_shareGuideLink` | `/api/provider-push` | via `_doLogout` |
 | `_signedOutBannerHTML` | `/api/client-code` | via `_clientSendCode` |
 | `_sqApptsErrHTML` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_sqApptsErrHTML` | `/api/square/connect` | via `_sqConnect` |
 | `_sqCheckExpiry` | `/api/square/connect` | via `_sqConnect` |
 | `_sqCheckExpiry` | `/api/square/connection` | via `_sqConnState` |
 | `_sqCheckPerms` | `/api/square/token-status` | direct |
@@ -703,7 +704,6 @@ saved anywhere", not "does this always call that".
 | `_sqDoBook` | `/api/square/booking-options` | via `openSquareBook` |
 | `_sqExpiredBannerHTML` | `/api/square/connect` | via `_sqConnect` |
 | `_sqExpiredPaint` | `/api/square/connect` | via `_sqConnect` |
-| `_sqGuideStatus` | `/api/health` | direct |
 | `_sqLoadAppointments` | `/api/square/appointments` | direct |
 | `_sqLoadCatalog` | `/api/square/catalog` | direct |
 | `_sqLoadCustomers` | `/api/square/customers` | direct |
@@ -1057,7 +1057,6 @@ saved anywhere", not "does this always call that".
 | `renderSessionDetail` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderShop` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `renderSignOnDevice` | `/api/provider-form` | via `_flushInPersonForms` |
-| `renderSquareGuide` | `/api/health` | via `_sqGuideStatus` |
 | `renderSquareGuide` | `/api/square/connect` | via `_sqConnect` |
 | `renderSquareGuide` | `/api/square/connection` | via `_sqConnState` |
 | `renderSquareGuide` | `/api/square/diag` | via `_sqDiag` |
@@ -1072,6 +1071,7 @@ saved anywhere", not "does this always call that".
 | `renderSummaryHistory` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderTapToPay` | `/api/square/mobile-auth` | via `_ttpWarm` |
 | `renderTodayAppts` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `renderTodayAppts` | `/api/square/connect` | via `_sqConnect` |
 | `renderVcInbox` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `renderVirtual` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `renderVirtual` | `/api/consult-slug` | via `_loadConsultLink` |
@@ -1082,6 +1082,7 @@ saved anywhere", not "does this always call that".
 | `renderVirtualClient` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `renderWeekAppts` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderWeekAppts` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `renderWeekAppts` | `/api/square/connect` | via `_sqConnect` |
 | `renderWeekClients` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderWeekClients` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `renderWhatsNew` | `/api/announcements` | via `_sendAnnouncement` |

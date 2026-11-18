@@ -9920,6 +9920,25 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Build 2026-11-18h: Square sweep (rotation area 2) (PREVIEW)
+
+Ran `scratchpad/sweep-square-states.mjs` (SQ=none|expired|err500|nosquare|offline) on every Square
+screen at mac and phone. Fixed:
+- Today's appointments "Reconnect Square" did `nav('settings')`, which is not a route, so the tap did
+  nothing. It now calls `_sqConnect()`.
+- "Sync clients from Square" said "Couldn't reach Square... Settings → Square → Disconnect, then
+  Connect" for every failure. It now says by code: not connected/expired opens Square sync with
+  "Tap Reconnect Square", offline says check your internet, anything else "Square didn't answer".
+- The Connect Square guide (Get set up → I use Square) still showed the old shared-token setup:
+  red "Access token / Access key / Production" badges from /api/health, "Add three secrets in Vercel",
+  Redeploy steps, and FAQs about SQUARE_ACCESS_TOKEN. Following those would re-add the cross-account
+  token (§0.2). Removed. The status is the OAuth card (`_sqRenderConnState`); the permission check and
+  appointment diagnostic stay, under "Something not working? Check my connection". The FAQ that said
+  SlickChart "never edits, deletes, or adds anything" in Square was untrue (it books and invoices);
+  reworded. Other "Vercel" wording on provider screens replaced with plain words.
+Test: `scratchpad/test-square-states.mjs` (SQ=expired|offline|err500|none, SIZE=mac|phone|ipad),
+WebKit + Chromium, all pass.
+
 ## 2026-11-18 — Build 2026-11-18g: what tripped up Frances, and a computer/iPad sweep for new sign-ups (PREVIEW)
 
 **Observed (ground truth, from her emails and her account's logs, read-only):** Frances Parker (fpa…),
