@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18w';
+const APP_BUILD='2026-11-18x';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -33001,7 +33001,9 @@ function _payExportCSV(){
 }
 function _payLogOpen(){
   const ex=document.getElementById('pay-log');if(ex)ex.remove();
-  const opts=Object.entries(CL).map(([cid,c])=>`<option value="${cid}">${String(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
+  // The first client in the roster was preselected, so a payment logged without touching the picker
+  // went on whoever happened to be first (2026-11-18 sweep). Now she picks, from an A-Z list.
+  const opts='<option value="" selected>Choose a client</option>'+Object.entries(CL).filter(([cid,c])=>c&&String(c.name||'').trim()).sort((a,b)=>String(a[1].name||'').localeCompare(String(b[1].name||''),undefined,{sensitivity:'base'})).map(([cid,c])=>`<option value="${_jsAttr(cid)}">${String(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
   const m=document.createElement('div');m.id='pay-log';m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';m.onclick=e=>{if(e.target===m)m.remove();};
   m.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:88%;overflow:auto;"><div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div><div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:12px;">Log a payment</div><span class="fl-lbl">Client</span><select class="fi" id="pl-client" style="margin-bottom:10px;">'+opts+'</select><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Amount</span><input class="fi" id="pl-amt" inputmode="decimal" placeholder="0.00" style="margin-bottom:10px;"></div><div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="pl-date" value="'+_todayISO()+'" style="margin-bottom:10px;"></div></div><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Method</span><select class="fi" id="pl-method" style="margin-bottom:10px;"><option>Cash</option><option>Venmo</option><option>Zelle</option><option>Card</option><option>Stripe</option><option>Square</option><option>Other</option></select></div><div style="flex:1;"><span class="fl-lbl">Status</span><select class="fi" id="pl-status" style="margin-bottom:10px;"><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="partial">Partial</option></select></div></div><span class="fl-lbl">Paid so far (only if Partial)</span><input class="fi" id="pl-partial" inputmode="decimal" placeholder="0.00" style="margin-bottom:10px;"><span class="fl-lbl">Category (for reports)</span><select class="fi" id="pl-category" style="margin-bottom:10px;"><option value="Service">Service</option><option value="Retail">Retail / product</option><option value="Other">Other</option></select><span class="fl-lbl">Note (optional)</span><input class="fi" id="pl-note" placeholder="e.g. Hydrafacial + serum" style="margin-bottom:14px;"><button class="btnp" style="width:100%;border-radius:12px;" onclick="_payLogSave()"><i class="ti ti-check"></i> Save payment</button><button onclick="document.getElementById(\'pay-log\').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button></div>';
   (document.querySelector('.shell')||document.body).appendChild(m);
@@ -33009,6 +33011,7 @@ function _payLogOpen(){
 function _payLogSave(){
   const g=idv=>{const e=document.getElementById(idv);return e?e.value:'';};
   const cid=g('pl-client');const c=CL[cid]||{};const amt=_price(g('pl-amt'));
+  if(!cid||!CL[cid]){if(typeof proToast==='function')proToast('Choose who paid');try{document.getElementById('pl-client').focus();}catch(e){}return;}
   if(!amt||amt<=0){if(typeof proToast==='function')proToast('Enter an amount');return;}
   // Partial: capture how much was collected so far; coerce to unpaid/paid at the boundaries.
   let _st=g('pl-status')||'paid';let _ap;

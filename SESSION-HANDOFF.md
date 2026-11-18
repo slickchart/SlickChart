@@ -9943,6 +9943,13 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18x: Log a payment no longer preselects the first client
+
+Payments → Log a payment preselected whichever client was first in the roster, so a payment saved
+without touching the picker was put on the wrong client (same class as the invoice default fixed in
+build j). The picker now starts on "Choose a client", is A-Z, and saving without one says "Choose who
+paid". Test: `scratchpad/test-input-edges.mjs` (payment cases), both engines.
+
 ## 2026-11-18 — build 2026-11-18w: service prices with $ or commas; Edit details email check
 
 - Service menu price used `parseFloat`, so "$45" saved as 0 and "1,200" as 1 (every other price box

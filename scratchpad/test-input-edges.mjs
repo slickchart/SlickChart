@@ -63,5 +63,13 @@ const ed = await page.evaluate(async () => { window.__said = []; const id = 'sq_
 ok(ed.r1.kept && ed.r1.open && /doesn’t look right/.test(ed.r1.said), 'Edit details: "jane@gmail" is not saved, the box stays open and says why ' + JSON.stringify(ed.r1));
 ok(ed.r2.email === 'jane@gmail.com' && !ed.r2.open, 'a full email saves ' + JSON.stringify(ed.r2));
 ok(ed.r3.email === '', 'clearing the email still works ' + JSON.stringify(ed.r3));
+const pay = await page.evaluate(async () => { window.__said = []; const n0 = (_payments || []).length; _payLogOpen(); await new Promise(r => setTimeout(r, 200));
+  const sel = document.getElementById('pl-client'); const first = sel.options[0].textContent, picked = sel.value, second = sel.options[1] && sel.options[1].textContent;
+  document.getElementById('pl-amt').value = '60'; _payLogSave(); const r1 = { n: (_payments || []).length - n0, open: !!document.getElementById('pay-log'), said: window.__said.join(' | ') };
+  sel.value = 'sq_CUST3'; _payLogSave(); const last = (_payments || [])[0] && (_payments || []).find(p => p.amount === 60);
+  return { first, picked, second, r1, n2: (_payments || []).length - n0, who: last && last.clientId }; });
+ok(pay.first === 'Choose a client' && pay.picked === '', 'Log a payment: nobody is preselected ' + JSON.stringify(pay));
+ok(pay.r1.n === 0 && pay.r1.open && /Choose who paid/.test(pay.r1.said), 'saving without a client asks who paid');
+ok(pay.n2 === 1 && pay.who === 'sq_CUST3', 'with a client picked it logs once, on that client');
 ok(!errs.length, 'no page errors ' + JSON.stringify(errs));
 await browser.close(); srv.close(); console.log(fails ? fails + ' FAILED' : 'ALL PASS'); process.exit(fails ? 1 : 0);
