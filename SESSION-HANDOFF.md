@@ -9957,6 +9957,10 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
   product from a renamed one; left as is. `sweep3-pc-review-ui`: `sendVcReview` returns false on a
   refusal and the caller stays; the sweep's finding is its own stub.
 - Photos (8 sweeps) and courses/shop (6 tests) re-run: all pass.
+- Two more stale sweeps corrected, no app bug: `sweep2-square-appts-client` C (it pinned 3pm as
+  22:00 UTC, which is 2pm once daylight saving ends, so the 3pm stand-in stopped being a duplicate;
+  now 3pm Los Angeles in either season, 5/5) and `sweep2-client-settings-persist` (its last check
+  assumed the first toggle reverted; that was fixed, 0 of 3). That clears the untriaged list.
 
 ## 2026-11-18 — Sync sweep (rotation area 11): sound; one test harness fixed
 

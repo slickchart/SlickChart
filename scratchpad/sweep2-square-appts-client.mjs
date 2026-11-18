@@ -15,7 +15,7 @@
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 const PORT = process.env.PORT || 8899;
 const results = []; const check = (n, p, d) => results.push({ n, pass: !!p, d: d || '' });
-const now = new Date(); const at = new Date(now.getTime() + 3 * 864e5); at.setUTCHours(22, 0, 0, 0); // 3pm PDT in 3 days
+const now = new Date(); const at = new Date(now.getTime() + 3 * 864e5); at.setUTCHours(22, 0, 0, 0); { const h = +new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', hour12: false }).format(at); at.setUTCHours(22 + (15 - h)); } // 3pm Los Angeles in 3 days (PDT or PST)
 const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(at);
 let appts = [
   { id: 'BK1', startAt: at.toISOString(), customerName: 'Pat Lee', customerId: 'SQPAT', durationMinutes: 60, serviceName: 'Facial', status: 'ACCEPTED' },

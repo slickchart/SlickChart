@@ -27,6 +27,8 @@ await page.evaluate(() => { toggleNotif('messagereply'); });
 await page.waitForTimeout(2000);
 await page.reload({ waitUntil: 'load' }); await boot();
 const after2 = await page.evaluate(() => loadNotifPrefs().messagereply);
-check('notification toggle sticks when the PUT got out', after2 !== false, { afterReload: after2 });
+// The first toggle now sticks (false), so this second toggle turns it back ON: it must read true.
+const want2 = !after.messagereply;
+check('notification toggle sticks when the PUT got out', after2 !== want2, { afterReload: after2, want: want2 });
 await browser.close();
 finish();
