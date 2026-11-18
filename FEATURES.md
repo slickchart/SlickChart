@@ -428,10 +428,6 @@ saved anywhere", not "does this always call that".
 | `_mergeClients` | `/api/clients` | via `_wholeSlimEvents` |
 | `_mergeClients` | `/api/provider-form` | via `_flushInPersonForms` |
 | `_mergeSeenEvents` | `/api/cloud-status` | direct |
-| `_mergeSeenEvents` | `/api/login` | direct |
-| `_mergeSeenEvents` | `/api/request-reset` | direct |
-| `_mergeSeenEvents` | `/api/reset` | direct |
-| `_mergeSeenEvents` | `/api/signup` | direct |
 | `_mergeSeenEvents` | `/api/store` | direct |
 | `_mergeSeenEvents` | `/api/verify` | direct |
 | `_mergeSideStores` | `/api/square/charge-card` | via `_loadClientCards` |
