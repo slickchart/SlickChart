@@ -198,11 +198,22 @@ export async function listAllClientPrefs() {
   // hc_count: the routine as the SERVER holds it. The client's own `reminders.hasHomecare` flag is
   // only uploaded when it saves prefs, so it went stale both ways (a routine sent later never got a
   // reminder; a removed routine kept getting one).
-  return await q`SELECT cp.client_id, cp.prefs, c.provider_id, c.heal_started_at,
-    COALESCE(CASE WHEN jsonb_typeof(c.data->'aftercare') = 'array'
-                  THEN jsonb_array_length(c.data->'aftercare') END, 0) AS hc_count
-    FROM client_prefs cp JOIN clients c ON c.id = cp.client_id
-    WHERE c.deleted_at IS NULL ORDER BY cp.client_id LIMIT 20000`;
+  // Read in pages (2026-11-18 capacity review). This was one query capped at 20,000 rows, ordered by
+  // id, so once the whole platform passed 20,000 clients with reminders, every client after the cap
+  // (by id, so a random slice of every provider) silently stopped getting them. Pages of 5,000 also keep
+  // each answer well under the database driver's 64 MB limit.
+  const out = []; let after = '';
+  for (let page = 0; page < 100; page++) {
+    const rows = await q`SELECT cp.client_id, cp.prefs, c.provider_id, c.heal_started_at,
+      COALESCE(CASE WHEN jsonb_typeof(c.data->'aftercare') = 'array'
+                    THEN jsonb_array_length(c.data->'aftercare') END, 0) AS hc_count
+      FROM client_prefs cp JOIN clients c ON c.id = cp.client_id
+      WHERE c.deleted_at IS NULL AND cp.client_id > ${after} ORDER BY cp.client_id LIMIT 5000`;
+    for (const r of rows) out.push(r);
+    if (rows.length < 5000) break;
+    after = String(rows[rows.length - 1].client_id);
+  }
+  return out;
 }
 
 // Aftercare drip: start (or restart) the healing clock for one of a provider's own clients.

@@ -17,7 +17,7 @@
 // automations (birthday / "X hours after service" / "hasn't visited in 90 days") are NOT handled here —
 // they need per-client event evaluation and are left for a future job; they carry no `sendAt`, so they
 // are skipped safely.
-import { dbEnabled, sql, ensureTable } from '../lib/db.js';
+import { dbEnabled, sql, ensureTable, readKeyAllOwners } from '../lib/db.js';
 import { ensureClientTables, listClients, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, getClientToken, wantsPush } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
@@ -77,18 +77,11 @@ async function handler(req, res) {
     await ensureClientTables();
     await ensureTable();                // kv table
     const q = sql();
-    // Owners first, then ONE value at a time. Reading every provider's sc_autos in one query broke
-    // once a few lists had copied themselves to tens of MB (2026-11-17): one answer over the
-    // database's 64 MB limit failed the run for EVERY provider. Smallest lists first, so a bloated
-    // one can never hold up everyone else.
-    const owners = await q`SELECT owner FROM kv WHERE k = 'sc_autos' ORDER BY octet_length(v) ASC`;
-    for (const o of owners) {
-      const owner = o.owner;
+    const rows = await readKeyAllOwners(q, 'sc_autos');
+    for (const row of rows) {
+      const owner = row.owner;
       let autos = [];
-      try {
-        const r = await q`SELECT v FROM kv WHERE owner = ${owner} AND k = 'sc_autos'`;
-        autos = JSON.parse((r[0] && r[0].v) || '[]');
-      } catch (e) { autos = []; }
+      try { autos = JSON.parse(row.v || '[]'); } catch (e) { autos = []; }
       if (!Array.isArray(autos) || !autos.length) continue;
 
       const due = [], dueSeen = new Set();
@@ -102,7 +95,7 @@ async function handler(req, res) {
         // Optional recipient list: [] / missing → all clients; non-empty → only those client ids.
         const clientIds = Array.isArray(a.clientIds) ? a.clientIds.map(String).filter(Boolean) : null;
         // A list that holds repeat copies of one automation must still send it once (and not
-        // claim once per copy per client, which is what timed the run out).
+        // claim once per copy per client, which is what timed the run out). (2026-11-18 sweep)
         const dk = autoId + ':' + occ;
         if (dueSeen.has(dk)) continue;
         dueSeen.add(dk);

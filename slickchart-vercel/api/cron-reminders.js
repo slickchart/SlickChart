@@ -74,7 +74,11 @@ async function handler(req, res) {
   if (new Date().getUTCMinutes() < 15) {
     deleteSync = { accounts: 0, removed: 0, restored: 0 };
     try {
-      const owners = await sql()`SELECT DISTINCT owner FROM kv WHERE k IN ('sc_deleted_clients', 'sc_undeleted_clients') LIMIT 500`;
+      // Every account whose delete record changed in the last 3 hours, plus a different 1/24th of the
+      // rest each hour, so all of them are checked daily. This was the first 500 accounts every hour,
+      // which at 600 providers would never have reached the last hundred (2026-11-18 capacity review).
+      const owners = await sql()`SELECT DISTINCT owner FROM kv WHERE k IN ('sc_deleted_clients', 'sc_undeleted_clients')
+        AND (updated_at > now() - interval '3 hours' OR mod(abs(hashtext(owner)::bigint), 24) = extract(hour from now())::int) LIMIT 1000`;
       for (const o of owners) {
         try { const r = await reconcileDeletedClients(o.owner); deleteSync.accounts++; deleteSync.removed += r.removed; deleteSync.restored += r.restored; }
         catch (e) { console.error('[cron-reminders] delete sync failed for an account:', e && e.message); }

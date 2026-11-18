@@ -13,6 +13,10 @@ export const FOUNDER_SETTINGS = {
   // providers the reminder email to get set up". Off stops only the push + email to her; the
   // provider's own "finish your account" email always goes.
   orphan_alert_on: { def: 0, min: 0, max: 1, label: 'Tell me when someone still has no account' },
+  // Ashley 2026-11-18: "for resend schedule a reminder at 90 providers to upgrade". She is on Resend
+  // Transactional 50,000 emails/month ($20); the next step is 100,000 ($35). The daily health sweep
+  // says so once paying providers reach this many; 0 = off.
+  resend_upgrade_at: { def: 90, min: 0, max: 100000, label: 'Remind me to upgrade the email plan (Resend) at this many paying providers. 0 = off' },
 };
 
 let _ready = false;

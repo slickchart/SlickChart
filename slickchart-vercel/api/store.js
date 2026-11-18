@@ -10,6 +10,21 @@ import { verifyToken, signToken, isSessionValid } from '../lib/auth.js';
 import { snapshotBeforeWrite, rescueDeviceCopy } from '../lib/kv-history.js';
 import { reconcileDeletedClients } from '../lib/clients.js';
 
+// A whole-account read is ONE response, and Vercel refuses a buffered response over 4.5 MB
+// (FUNCTION_RESPONSE_PAYLOAD_TOO_LARGE); a streamed one is exempt. So a busy account (2026-11-18
+// capacity review: the largest client list alone is 2.9 MB) would one day be unable to open on a new
+// phone. Past STREAM_OVER the same JSON goes out in pieces. Same bytes, same shape, so every build
+// reads it unchanged; under it nothing is different from res.json().
+export const STREAM_OVER = 3500000;
+export function sendJson(res, obj) {
+  const body = Buffer.from(JSON.stringify(obj), 'utf8');   // bytes, so an emoji is never cut in half
+  if (body.length <= STREAM_OVER || typeof res.write !== 'function') { res.status(200).json(obj); return; }
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  for (let i = 0; i < body.length; i += 262144) res.write(body.subarray(i, i + 262144));
+  res.end();
+}
+
 async function requireLogin(req, res, q) {
   const secret = process.env.SESSION_SECRET || '';
   const h = req.headers['authorization'] || '';
@@ -133,7 +148,7 @@ export default async function handler(req, res) {
       if (since) out.keep = keep;   // only ever sent to a build that asked for it
       const renew = renewedToken(req._scPayload);
       if (renew) out.renew = renew;   // additive: a build that does not read it is unaffected
-      res.status(200).json(out);
+      sendJson(res, out);
       return;
     }
 

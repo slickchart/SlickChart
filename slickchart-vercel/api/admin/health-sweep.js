@@ -287,23 +287,15 @@ export async function runSweep(q) {
     return { items, level: rows.some(r => Number(r.bytes) > 4300000) ? 'warn' : (rows.length ? 'warn' : 'ok') };
   });
 
-  // The account's FIRST read on a device (sign-in, new phone, cleared storage) is every saved value
-  // in ONE response, and Vercel refuses a response over ~4.5 MB (the events list hit exactly that,
-  // 2026-11-06). Sizes only, summed in the database. Listed early, while there is time to act.
-  await check('kv-total', 'Every account fits in one first download', async () => {
-    const rows = await q`SELECT owner, count(*)::int AS n, sum(octet_length(v))::bigint AS bytes FROM kv
-      GROUP BY owner HAVING sum(octet_length(v)) > 3000000 ORDER BY bytes DESC LIMIT 40`;
-    const items = [];
-    for (const r of rows) {
-      let top = '';
-      try {
-        const t = await q`SELECT k, octet_length(v)::bigint AS b FROM kv WHERE owner = ${r.owner} ORDER BY octet_length(v) DESC LIMIT 3`;
-        top = ' (largest: ' + t.map(x => x.k + ' ' + (Number(x.b) / 1e6).toFixed(1) + ' MB').join(', ') + ')';
-      } catch (e) {}
-      items.push(who(r.owner) + ': ' + r.n + ' saved values, ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB in all' + top
-        + (Number(r.bytes) > 4300000 ? ' — over the 4.5 MB first-download limit' : ''));
-    }
-    return { items, level: rows.length ? 'warn' : 'ok' };
+  // A new device (or one whose saved copy is stale) reads the WHOLE account in one response, and
+  // Vercel refuses a response over 4.5 MB. Measured as JSON-escaped, the form the response carries.
+  // 2026-11-18 capacity review: the busiest account's client list alone was 2.9 MB.
+  await check('first-read', 'Every account fits in one first read on a new device', async () => {
+    const rows = await q`SELECT owner, sum(octet_length(to_json(v)::text))::bigint AS bytes FROM kv
+      GROUP BY owner HAVING sum(octet_length(to_json(v)::text)) > 3000000 ORDER BY 2 DESC LIMIT 20`;
+    const items = rows.map(r => who(r.owner) + ': whole account is ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB'
+      + (Number(r.bytes) > 4500000 ? ' (over the 4.5 MB limit: a new device cannot open it)' : ' of the 4.5 MB a new device can read at once'));
+    return { items, level: rows.some(r => Number(r.bytes) > 4500000) ? 'alert' : (rows.length ? 'warn' : 'ok') };
   });
 
   await check('events-size', 'Client submissions fit in one download', async () => {
@@ -392,6 +384,16 @@ export async function runSweep(q) {
   });
 
   // 8. Billing: a provider using the app on a lapsed plan, or a paid plan with no account to use it.
+  // Ashley 2026-11-18: remind her to upgrade Resend (free plan: 100 emails a day) at 90 paying
+  // providers. The number is hers (founder setting resend_upgrade_at, 0 = off).
+  await check('email-plan', 'The email plan fits how many providers you have', async () => {
+    let at = 90; try { at = (await getFounderSettings(q)).resend_upgrade_at; } catch (e) {}
+    if (!at) return { items: [] };
+    const r = await q`SELECT count(*)::int AS n FROM subscriptions WHERE status = 'active'`;
+    const n = r[0] ? r[0].n : 0;
+    return { items: n >= at ? [n + ' paying providers (your reminder is set at ' + at + '): time to check the Resend plan. You are on Transactional 50,000 emails a month ($20); look at Resend > Settings > Usage and, if this month is near 50,000, move to 100,000 ($35 a month). Once done, set the reminder to 0 (or a higher number) in Admin tools > Paid but no account.'] : [] };
+  });
+
   await check('billing', 'Every paying provider can get in', async () => {
     const items = [];
     const lapsed = await q`SELECT s.email, s.status FROM subscriptions s JOIN providers p ON lower(p.email) = lower(s.email)

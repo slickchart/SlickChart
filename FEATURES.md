@@ -277,6 +277,8 @@ saved anywhere", not "does this always call that".
 | `_founderReferrals` | `/api/admin/referrals` | direct |
 | `_founderStaleSubs` | `/api/admin/stale-subs` | direct |
 | `_founderTestPush` | `/api/admin/test-push` | direct |
+| `_founderTestPush` | `/api/announcements` | via `_checkNews` |
+| `_founderTestPush` | `/api/native-push` | via `_flushNativePushTok` |
 | `_fvpChooseSend` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_fvpChooser` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_fvpClientRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -1172,6 +1174,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/admin-stats` | GET | provider session | GET /api/admin-stats  → owner-only: privacy-safe aggregate adoption metrics. |
 | `/api/admin/app-launches` | GET | founder, provider session | GET /api/admin/app-launches   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/build-buyers` | GET | provider session | GET /api/admin/build-buyers[?format=csv]  → owner-only: the Build Your Own App buyer list. |
+| `/api/admin/capacity` | GET | founder, provider session | GET /api/admin/capacity   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/client-forms` | GET | **public** | GET /api/admin/client-forms?name=<part of a name>   Authorization: Monitor <key> |
 | `/api/admin/client-recover` | POST | founder, provider session | FOUNDER-ONLY. Get a provider's clients back. |
 | `/api/admin/contacts` | GET | provider session | GET /api/admin/contacts[?format=csv][&all=1]  → owner-only: every email address Ashley has, in one |

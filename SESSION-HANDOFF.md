@@ -9768,3 +9768,52 @@ had no way in for 3 hours.
   founders, anyone with an account). Rows show "Sent again <time>". Asked for by Ashley for the 4 above,
   whose full addresses are only visible to her founder session. Tests: `test-orphan-settings` 29/29,
   `test-orphans-ui` 12/12 Chromium (WebKit not installed in this container).
+
+### 2026-11-18 — dedupe-kv cleanup RUN on live (Ashley chose "push it live and run it now")
+- Shipped cd96d69 to main by dispatch (her yes on the card). Dry run, then `POST ?apply=1`.
+- 18 values in 17 accounts: 16 sc_autos (2,610-23,040 rows -> 5-9), 2 sc_imported_products
+  (30,168 -> 1, 16,920 -> 36). 47.34 MB removed. Earlier copies are in kv_history (reason 'dedupe').
+- Re-run finds 0. health-sweep kv-size now lists only real data: woo… sc_clients 2.9 MB,
+  hea… sc_brand_colors 2.6 MB (likely a big logo), est… sc_msgstore 1.7 MB. None are repeats; all under 4.5 MB.
+- Devices still holding a big local copy shrink it themselves on open (18a loader dedupe / 18b 413 self-heal).
+
+### 2026-11-18 — Capacity review for 600 paying providers (build 2026-11-18c)
+Asked by Ashley: "make sure it is ready and able to handle that many providers". Thread "Get the app
+ready for 600 providers".
+- **Measure, don't guess:** `GET /api/admin/capacity?accounts=600` (Monitor key or founder session,
+  read-only, sizes/counts and masked emails only): database size and biggest tables, per-account
+  footprint split into libraries / kv_history safety copies / files (photos, base64 in Postgres) /
+  client submissions, median, p90 and max with a straight-line projection to N, every account's
+  FIRST-READ size (JSON-escaped, the form `/api/store` sends), monthly emails/pushes/AI calls, and
+  each cron's typical/slowest run. Test `scratchpad/test-capacity-pg.mjs` 12/12 on PostgreSQL 16.
+- **Health sweep `first-read`:** warns when an account's whole first read passes 3 MB, alerts past 4.5 MB.
+- **Fixed (all server-side, all keep the same response shapes):**
+  1. `api/store.js` `sendJson`: a whole-account read over 3.5 MB is STREAMED (Vercel's 4.5 MB
+     response limit does not apply to streamed responses). Same bytes. `test-store-stream.mjs` 7/7.
+     Not yet seen working on Vercel itself (no account is that big yet); `first-read` will show the
+     first one that crosses it.
+  2. `api/cron-events.js` read EVERY account's sc_clients in one query (past the driver's 64 MB answer
+     at a few hundred providers, stopping birthday/no-visit/after-visit notes for everyone). Now one
+     account at a time, only when one of its event automations can send this hour. `test-cron-events-scale.mjs` 8/8.
+  3. `lib/db.js readKeyAllOwners`: sc_autos for all accounts without one oversized value (a runaway
+     reached 85 MB) breaking cron-events / cron-automations for everyone.
+  4. `lib/clients.js listAllClientPrefs` was capped at 20,000 clients platform-wide (every client past
+     the cap, by id, silently lost reminders). Now pages of 5,000. `test-client-prefs-paging-pg.mjs` 6/6.
+  5. `api/cron-reminders.js` delete-sync took the first 500 accounts every hour; now recently changed
+     accounts plus a rotating 1/24th, so all are covered daily.
+  6. `api/cron-checkins.js` walks Square-connected providers 6 at a time instead of one by one (2-4
+     Square calls each; one by one passes 300 s around a few hundred providers). `test-cron-checkins-scale.mjs` 7/7.
+  7. `_pickLogo`: an SVG over 150 KB is drawn to the 320px PNG like any picture (hea…'s branding is 2.6 MB
+     and rides along with every client page). Existing logos are untouched. `test-logo-svg-size.mjs` 2/2 Chromium.
+  8. `_evTick`: the 15 s client-submission check runs at most every 2 min while the app is hidden
+     (a computer left open overnight made ~5,800 checks/day); visibilitychange + focus check at once on
+     return. `_pollFounderSignups` on the same timer is untouched (§0b). `test-events-poll-hidden.mjs` 3/3.
+- **Not fixed, needs a project or her decision:** a single synced value (sc_clients) still cannot be
+  SAVED past 4.5 MB (the request limit); the largest is 2.9 MB. Photos live as base64 in Postgres
+  (`files`), which is the main storage cost at scale; Vercel Blob or similar would be cheaper. See the
+  thread's report for plan costs (Neon storage, Resend volume).
+- **Her plans, from her screenshots 2026-11-18:** Neon **Launch** (via Vercel, $0.35/GB-month storage,
+  scale to zero after 5 min) and Resend **Transactional 50,000 emails/month, $20** (renews Dec 3). Next
+  Resend step is 100,000 for $35. Health sweep `email-plan` reminds her at `resend_upgrade_at` paying
+  providers (founder setting, default 90 = her number, 0 = off, editable in Admin tools > Paid but no account).
+

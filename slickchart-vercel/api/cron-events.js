@@ -11,7 +11,7 @@
 // Data comes from the provider's own KV blobs (the same store the date cron reads): `sc_autos` for the
 // automations and `sc_clients` for the client charts (which carry birthday + last-visit). Each send is
 // claimed atomically (reminder_log) so overlapping/hourly runs can't double-send.
-import { dbEnabled, sql, ensureTable } from '../lib/db.js';
+import { dbEnabled, sql, ensureTable, readKeyAllOwners } from '../lib/db.js';
 import { ensureClientTables, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, wantsPush } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
@@ -100,22 +100,27 @@ async function handler(req, res) {
     await ensureClientTables();
     await ensureTable();                       // kv table
     const q = sql();
-    // Owners first, then one provider's values at a time. Reading EVERY provider's sc_autos and
-    // sc_clients in two queries failed the whole run once the total passed the database's 64 MB
-    // answer limit (sc_autos alone reached 85 MB for one account, 2026-11-17). Smallest first.
-    const autoOwners = await q`SELECT owner FROM kv WHERE k = 'sc_autos' ORDER BY octet_length(v) ASC`;
-    if (!autoOwners.length) { res.status(200).json({ ok: true, ...summary }); return; }
+    const autoRows = await readKeyAllOwners(q, 'sc_autos');
+    if (!autoRows.length) { res.status(200).json({ ok: true, ...summary }); return; }
+    // Each provider's client charts are read ONE account at a time, and only when one of her event
+    // automations can send this hour. This used to read every account's whole client list in one
+    // query; at 600 providers that is hundreds of MB in one answer, past the database driver's 64 MB
+    // limit, and the job would stop for everyone (2026-11-18 capacity review).
+    const willRun = a => {
+      if (!a || a.on === false || a.sendAt || !String(a.msg || '').trim() || !classify(a)) return false;
+      const h = localParts(a.tz || 'UTC', now).hour;
+      return !(h < MORNING_LO || h > MORNING_HI);
+    };
 
-    for (const ao of autoOwners) {
-      const owner = ao.owner;
+    for (const row of autoRows) {
+      const owner = row.owner;
       let autos = [];
-      try { const r = await q`SELECT v FROM kv WHERE owner = ${owner} AND k = 'sc_autos'`; autos = JSON.parse((r[0] && r[0].v) || '[]'); } catch (e) { autos = []; }
+      try { autos = JSON.parse(row.v || '[]'); } catch (e) { autos = []; }
       if (!Array.isArray(autos) || !autos.length) continue;
-      // Only read her charts when she has an automation this job handles.
-      if (!autos.some(a => a && a.on !== false && !a.sendAt && String(a.msg || '').trim() && classify(a))) continue;
+      if (!autos.some(willRun)) continue;
       let charts = {};
-      try { const r = await q`SELECT v FROM kv WHERE owner = ${owner} AND k = 'sc_clients'`; charts = JSON.parse((r[0] && r[0].v) || '{}') || {}; } catch (e) { charts = {}; }
-      const seenAuto = new Set();
+      try { const cr = await q`SELECT v FROM kv WHERE owner = ${owner} AND k = 'sc_clients'`; charts = (cr[0] && JSON.parse(cr[0].v || '{}')) || {}; } catch (e) { charts = {}; }
+      if (!charts || typeof charts !== 'object') charts = {};
       // §0.1: the ids come from the provider's own synced blob, which she can write freely. Only her
       // OWN live client rows may be messaged — an id that collides with (or was typed to match) another
       // account's client used to push her text, with that client's own link, to their phone.
@@ -125,6 +130,7 @@ async function handler(req, res) {
       if (!clientIds.length) continue;
 
       let providerCounted = false;
+      const seenAuto = new Set();
       for (const a of autos) {
         if (!a || a.on === false) continue;
         if (a.sendAt) continue;                                  // date-scheduled → handled by cron-automations
@@ -133,7 +139,7 @@ async function handler(req, res) {
         const ev = classify(a);
         if (!ev) continue;
         const autoId = a.id || (String(a.name || 'auto') + ':event');
-        if (seenAuto.has(autoId)) continue;                     // a repeat copy of the same automation
+        if (seenAuto.has(autoId)) continue;                     // a repeat copy of the same automation (2026-11-18 sweep)
         seenAuto.add(autoId);
         const tz = a.tz || 'UTC';
         const nowL = localParts(tz, now);
