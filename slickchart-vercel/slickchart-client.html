@@ -876,7 +876,7 @@ SlickBridge.on('session-summary',s=>{
 
 SlickBridge.on('virtual-consult-invite',d=>{
   // provider-initiated only, this unlocks the client's ability to submit a photo consult
-  vcInvite={kind:d.kind||'skin',title:d.title||'Photo consult',fee:d.fee||'',providerFirst:client.providerFirst,askQuestions:Array.isArray(d.askQuestions)?d.askQuestions:undefined,photoLabels:Array.isArray(d.photoLabels)?d.photoLabels:undefined,refLabels:Array.isArray(d.refLabels)?d.refLabels:undefined,refTitle:d.refTitle||undefined};
+  vcInvite={kind:d.kind||'skin',title:d.title||'Photo consult',fee:d.fee||'',providerFirst:client.providerFirst,askQuestions:Array.isArray(d.askQuestions)?d.askQuestions:undefined,photoLabels:Array.isArray(d.photoLabels)?d.photoLabels:undefined,refLabels:Array.isArray(d.refLabels)?d.refLabels:undefined,refTitle:d.refTitle||undefined,bodyAreas:(typeof d.bodyAreas==='boolean')?d.bodyAreas:undefined};
   _vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};
   try{persistInvite();}catch(e){}
   pushNotify({type:'vcInvite',icon:'ti-camera',col:'#f3eefc',ic:'#8b6fc7',title:_vcInviteTitle(vcInvite),body:_vcInviteBody(vcInvite),onclick:()=>{client.activeProviderId='jess';applyActiveProvider();nav('virtual-submit');}});
@@ -5412,7 +5412,7 @@ function _vcTipsHTML(){
       <i id="vc-tips-caret" class="ti ti-chevron-down" style="font-size:14px;color:var(--c-mut);transform:rotate(${open?180:0}deg);transition:transform .15s;"></i>
     </button>
     <div id="vc-tips-body" style="display:${open?'block':'none'};padding:0 12px 11px;">
-      ${_vcTips().map(function(t){return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:7px;"><i class="ti '+t[0]+'" style="font-size:13px;color:var(--c-mut);flex-shrink:0;margin-top:2px;"></i><span style="font-size:12px;color:var(--c-ink);line-height:1.5;">'+_txt(t[1])+'</span></div>';}).join('')}
+      ${_vcTipsFor().map(function(t){return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:7px;"><i class="ti '+t[0]+'" style="font-size:13px;color:var(--c-mut);flex-shrink:0;margin-top:2px;"></i><span style="font-size:12px;color:var(--c-ink);line-height:1.5;">'+_txt(t[1])+'</span></div>';}).join('')}
       <div style="font-size:11px;color:var(--c-mut);line-height:1.5;padding-top:3px;">Taking these again later? Same room, same time of day, so the two can be compared.</div>
     </div>
   </div>`;
@@ -5424,6 +5424,7 @@ function _vcTipsHTML(){
 function _vcTileHint(label){
   const l=String(label||'').toLowerCase();
   if(/close|closer|macro|detail|zoom/.test(l))return 'About a hand\'s width away';
+  if(/whole area/.test(l))return 'Step back so the whole area shows';
   if(/side|profile|left|right|angle|oblique/.test(l))return 'Turn your head, phone stays straight';
   if(/back|behind|crown|nape/.test(l))return 'Ask someone, or use a mirror';
   if(/relax|open|closed|raised|smile/.test(l))return 'Hold still, eyes level with the lens';
@@ -5488,7 +5489,7 @@ function _vcSyncSubmit(){
   _vcSubmitState.goals=g;try{persistVcDraft();}catch(e){}
   let ok;
   if(window._vcPhotoFree){ok=g.trim().length>0||((typeof _vcRoutineClean==='function'?_vcRoutineClean():[]).length>0)||((typeof _vcAnswerCount==='function')?_vcAnswerCount()>0:false);}
-  else{ok=Object.values(_vcSubmitState.photos).filter(p=>p&&p.src).length>0;}
+  else{let _sl=[];try{_sl=_vcSlots(_vcSets(vcInvite));}catch(e){}ok=_sl.some(function(o){const p=_vcSubmitState.photos[o.key];return p&&p.src;});}
   btn.disabled=!ok;
   btn.style.background=ok?'var(--accent)':'#d9e7e1';
   btn.style.color=ok?'var(--accent-ink)':'var(--c-mut)';
@@ -5586,6 +5587,151 @@ function _vcSetAnswer(i,v){
   try{if(typeof _vcSyncSubmit==='function')_vcSyncSubmit();}catch(e){}
 }
 function _vcAnswerCount(){try{const a=(_vcSubmitState&&_vcSubmitState.answers&&typeof _vcSubmitState.answers==='object')?_vcSubmitState.answers:{};return Object.keys(a).filter(function(k){return String(a[k]||'').trim();}).length;}catch(e){return 0;}}
+// FACE, BODY OR BOTH (2026-11-18). Ashley: "if someone has something like eczema and wants to do a
+// skin analysis, the photos wont necessarily only be of the face." So a skin consult asks WHERE first.
+// Face stays exactly as it was (her provider's own photo list). Body adds two shots per area she
+// ticks, a whole-area shot so the provider can see where it is and a close-up for the detail, which
+// is the overview + close-up pair the patient photo protocols use. Each area has one line of its own
+// coaching. It stays an esthetic consult: nothing here asks what a condition IS.
+// The provider switches this on or off per consult type (bodyAreas); an invite from before that
+// switch existed gets it when it is a skin consult.
+function _vcBodyOn(inv){
+  try{
+    inv=inv||vcInvite;if(!inv)return false;
+    if(_vcPhotoFreeInv(inv))return false;
+    if(inv.bodyAreas===true)return true;
+    if(inv.bodyAreas===false)return false;
+    return (inv.kind||'skin')==='skin';
+  }catch(e){return false;}
+}
+function _vcAreaList(){
+  return [
+    ['neck','Neck & chest','ti-shirt','Chin up a little. Move your top only as far as the area.'],
+    ['back','Back & shoulders','ti-user','Ask someone you trust to take it, or use a mirror and the timer.'],
+    ['arms','Arms','ti-hand-finger','Hold your arm out toward the light. Show the inner elbow if that is the spot.'],
+    ['hands','Hands','ti-hand-stop','Lay your hand flat on a plain surface. Show the palm too if it is there.'],
+    ['torso','Stomach & sides','ti-body-scan','Stand facing the window. Keep your bottoms on.'],
+    ['legs','Legs','ti-walk','Rest your foot on a chair. Show behind the knee if that is the spot.'],
+    ['feet','Feet','ti-shoe','Rest your foot on a towel on the floor, in good light.'],
+    ['other','Somewhere else','ti-dots','Show just that spot and a little skin around it.']
+  ];
+}
+function _vcConcern(){const c=_vcSubmitState&&_vcSubmitState.concern;return (c==='body'||c==='both')?c:'face';}
+function _vcAreas(){
+  const ids={};_vcAreaList().forEach(function(a){ids[a[0]]=1;});
+  return (Array.isArray(_vcSubmitState&&_vcSubmitState.areas)?_vcSubmitState.areas:[]).filter(function(x,i,arr){return ids[x]&&arr.indexOf(x)===i;});
+}
+function _vcAreaName(id){
+  const a=_vcAreaList().find(function(x){return x[0]===id;});
+  if(id==='other'){const t=String((_vcSubmitState&&_vcSubmitState.otherArea)||'').trim().slice(0,40);return t||'Other area';}
+  return a?a[1]:'Other area';
+}
+// The photo slots on screen right now, in order. Body slots are KEYED by the area id so the photo
+// stays put while she types the name of an "other" area; the label she sends carries the name.
+function _vcSlots(sets){
+  const out=[];const c=_vcBodyOn()?_vcConcern():'face';
+  if(c!=='body')(sets.photos||[]).forEach(function(l){out.push({key:l,label:l,area:(c==='both'?'Face':'')});});
+  if(c!=='face')_vcAreas().forEach(function(id){
+    const nm=_vcAreaName(id);
+    out.push({key:'area:'+id+':wide',label:nm+', whole area',area:nm,aid:id,shot:'wide'});
+    out.push({key:'area:'+id+':close',label:nm+', close-up',area:nm,aid:id,shot:'close'});
+  });
+  return out;
+}
+function _vcSetConcern(c){
+  _vcSubmitState.concern=(c==='body'||c==='both')?c:'face';
+  try{persistVcDraft();}catch(e){}
+  renderVirtualSubmit();
+}
+function _vcToggleArea(id,on){
+  const a=_vcAreas().filter(function(x){return x!==id;});
+  if(on)a.push(id);
+  // Keep the order of the list, not the order she tapped, so the screen does not jump about.
+  const order=_vcAreaList().map(function(x){return x[0];});
+  a.sort(function(x,y){return order.indexOf(x)-order.indexOf(y);});
+  _vcSubmitState.areas=a;
+  try{persistVcDraft();}catch(e){}
+  renderVirtualSubmit();
+}
+function _vcSetOtherArea(v){
+  _vcSubmitState.otherArea=String(v||'').slice(0,40);
+  try{persistVcDraft();}catch(e){}
+}
+function _vcWhereHTML(){
+  if(!_vcBodyOn())return '';
+  const c=_vcConcern();const areas=_vcAreas();
+  const pick=function(v,label,icon){const on=c===v;return '<button onclick="_vcSetConcern(\''+v+'\')" aria-pressed="'+on+'" style="flex:1;min-width:0;border:1.5px solid '+(on?'var(--accent)':'var(--c-line)')+';background:'+(on?'var(--accent-lt,#e4f2ee)':'var(--c-card)')+';color:var(--c-ink);border-radius:12px;padding:11px 6px;font-size:13px;font-weight:'+(on?'700':'600')+';cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px;"><i class="ti '+icon+'" style="font-size:19px;color:'+(on?'var(--accent-strong,#4a8c7a)':'var(--c-mut)')+';"></i>'+label+'</button>';};
+  let h='<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Where is your concern?</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:14px;">'+pick('face','Face','ti-mood-smile')+pick('body','Body','ti-body-scan')+pick('both','Face and body','ti-circle-plus')+'</div>';
+  if(c!=='face'){
+    h+='<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Which areas?</div>'
+      +'<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-bottom:8px;">Check every area you want looked at. You will take two photos of each.</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-bottom:10px;">'
+      +_vcAreaList().map(function(a){const on=areas.indexOf(a[0])>=0;return '<label style="display:flex;align-items:center;gap:8px;border:1.5px solid '+(on?'var(--accent)':'var(--c-line)')+';background:var(--c-card);border-radius:10px;padding:9px 10px;cursor:pointer;min-width:0;">'
+        +'<input type="checkbox" class="vc-area-tick" data-area="'+a[0]+'" '+(on?'checked':'')+' onchange="_vcToggleArea(\''+a[0]+'\',this.checked)" style="width:16px;height:16px;flex-shrink:0;accent-color:var(--accent,#4a8c7a);margin:0;">'
+        +'<span style="font-size:13px;color:var(--c-ink);line-height:1.3;">'+_txt(a[1])+'</span></label>';}).join('')
+      +'</div>';
+    if(areas.indexOf('other')>=0)h+='<input id="vc-other-area" value="'+_txt(String(_vcSubmitState.otherArea||''))+'" oninput="_vcSetOtherArea(this.value)" onchange="renderVirtualSubmit()" maxlength="40" placeholder="Where? For example, behind my ears" style="width:100%;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:10px;padding:10px 12px;font-size:15px;color:var(--c-ink);font-family:inherit;box-sizing:border-box;margin-bottom:10px;">';
+    h+='<div style="background:#f6f2fb;border:1px solid #e6dcf5;border-radius:10px;padding:9px 12px;margin-bottom:14px;display:flex;gap:8px;align-items:flex-start;"><i class="ti ti-lock" style="font-size:13px;color:#8b6fc7;flex-shrink:0;margin-top:2px;"></i><span style="font-size:12px;color:var(--c-ink);line-height:1.5;">Show only the area you want looked at, and keep your underwear on. Please do not send photos of private areas. Your photos go only to '+_txt(client.providerFirst||'your provider')+', the same as face photos. This is a skin care consult, not a medical diagnosis.</span></div>';
+  }
+  return h;
+}
+// The six face lines stay exactly as they were for a face consult. A body consult swaps the two that
+// only make sense on a face for ones that make sense on an arm or a back.
+function _vcTipsFor(){
+  const c=_vcBodyOn()?_vcConcern():'face';
+  const face=_vcTips();
+  if(c==='face')return face;
+  const body=[
+    ['ti-sun','Face a window. Daylight is best.'],
+    ['ti-bolt-off','Turn the flash off. No filters.'],
+    ['ti-droplet-off','Clean, dry skin. No cream on the area just before.'],
+    ['ti-device-mobile','Hold the phone straight on to the skin, not at an angle.'],
+    ['ti-arrows-maximize','First a photo from farther back so the whole area shows, then one up close.'],
+    ['ti-eye','Move clothes and jewelry out of the way. A plain background helps.']
+  ];
+  if(c==='body')return body;
+  return face.concat([body[2],body[4]]);
+}
+// Ten or more photos at full size can pass what one submission may carry (4 MB). Shrink them on the
+// way out, only as far as needed, so a client with several areas never sees "too large".
+function _vcShrinkSrc(src,maxDim,q){return new Promise(function(res){
+  try{if(!src||!/^data:image\//i.test(src))return res(src);
+    const img=new Image();img.onload=function(){try{let w=img.width,h=img.height;const s=Math.min(1,maxDim/Math.max(w,h));w=Math.round(w*s);h=Math.round(h*s);
+      const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);const out=cv.toDataURL('image/jpeg',q);res(out&&out.length<src.length?out:src);}catch(e){res(src);}};
+    img.onerror=function(){res(src);};img.src=src;}catch(e){res(src);}
+});}
+const _VC_SEND_BUDGET=3200000;
+async function _vcFitPhotos(list){
+  const total=function(){return list.reduce(function(n,p){return n+String((p&&p.src)||'').length;},0);};
+  const steps=[[860,0.74],[720,0.7],[600,0.66],[480,0.62]];
+  for(let i=0;i<steps.length&&total()>_VC_SEND_BUDGET;i++){
+    for(const p of list){if(p&&p.src)p.src=await _vcShrinkSrc(p.src,steps[i][0],steps[i][1]);}
+  }
+  return list;
+}
+// The photo grid. A face consult draws exactly the grid it always did; with body areas each area gets
+// its own heading and its own line of coaching above its two shots.
+function _vcGridHTML(slots,tile,sets){
+  const head=function(t){return '<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">'+t+'</div>';};
+  const grid=function(arr,mb){return '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:'+mb+'px;">'+arr.map(function(o){return tile(o.label,'photos',o.key);}).join('')+'</div>';};
+  const grouped=slots.some(function(o){return o.area;});
+  const c=_vcBodyOn()?_vcConcern():'face';
+  if(!grouped){
+    if(!slots.length&&c==='body')return head('Your photos')+'<div style="font-size:13px;color:var(--c-mut);line-height:1.6;background:var(--c-card);border:1.5px dashed var(--c-line);border-radius:12px;padding:14px;margin-bottom:12px;text-align:center;">Check an area above to add its photos.</div>';
+    return head('Your photos')+grid(slots,sets.refs?16:12);
+  }
+  const groups=[];slots.forEach(function(o){let g=groups.find(function(x){return x.area===o.area;});if(!g){g={area:o.area,aid:o.aid||'',items:[]};groups.push(g);}g.items.push(o);});
+  let h=head('Your photos');
+  groups.forEach(function(g){
+    const tip=g.aid?((_vcAreaList().find(function(a){return a[0]===g.aid;})||[])[3]||''):'';
+    h+='<div style="font-size:14px;font-weight:700;color:var(--c-ink);margin:2px 0 3px;">'+_txt(g.area)+'</div>'
+      +(tip?'<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-bottom:7px;">'+_txt(tip)+'</div>':'<div style="height:4px;"></div>')
+      +grid(g.items,12);
+  });
+  if(c==='both'&&!_vcAreas().length)h+='<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin:-4px 0 12px;">Check a body area above to add its photos.</div>';
+  return h;
+}
 function renderVirtualSubmit(){
   setNav('journey');
   document.getElementById('tt').textContent=vcInvite?String(vcInvite.title||'Photo consult'):'Photo consult';
@@ -5600,8 +5746,9 @@ function renderVirtualSubmit(){
   }
   const inv=vcInvite;const sets=_vcSets(inv);const photoFree=!!sets.photoFree;
   window._vcPhotoFree=photoFree;
-  const tile=(label,kind)=>{const slot=_vcSubmitState[kind][label];const added=slot&&slot.src;return `<button onclick="_vcCapture('${kind}','${_jsAttr(label)}')" style="border-radius:10px;background:${added?'#000':'#f4faf8'};border:1.5px ${added?'solid var(--accent)':'dashed #d8ccbe'};aspect-ratio:3/4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer;position:relative;font-family:inherit;padding:0;overflow:hidden;">${added?`<img src="${_imgSrc(slot.src)}" alt="${_urlAttr(label)}" style="width:100%;height:100%;object-fit:cover;"><span style="position:absolute;top:4px;right:4px;background:var(--accent);color:var(--accent-ink);border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" style="font-size:11px;"></i></span><span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));color:#fff;font-size:11px;font-weight:600;padding:8px 4px 3px;text-align:center;">${_txt(label)}</span>`:`<i class="ti ti-camera-plus" style="font-size:22px;color:var(--c-mut);"></i><span style="font-size:11px;color:var(--c-mut);font-weight:600;text-align:center;line-height:1.2;padding:0 4px;">${_txt(label)}</span><span style="font-size:11px;color:var(--c-mut);line-height:1.25;text-align:center;padding:2px 3px 0;opacity:.8;">${_txt(kind==='photos'?_vcTileHint(label):'')}</span>`}</button>`;};
-  const photoCount=Object.values(_vcSubmitState.photos).filter(p=>p&&p.src).length;
+  const tile=(label,kind,key)=>{key=key||label;const slot=_vcSubmitState[kind][key];const added=slot&&slot.src;return `<button onclick="_vcCapture('${kind}','${_jsAttr(key)}')" style="border-radius:10px;background:${added?'#000':'#f4faf8'};border:1.5px ${added?'solid var(--accent)':'dashed #d8ccbe'};aspect-ratio:3/4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer;position:relative;font-family:inherit;padding:0;overflow:hidden;">${added?`<img src="${_imgSrc(slot.src)}" alt="${_urlAttr(label)}" style="width:100%;height:100%;object-fit:cover;"><span style="position:absolute;top:4px;right:4px;background:var(--accent);color:var(--accent-ink);border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" style="font-size:11px;"></i></span><span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));color:#fff;font-size:11px;font-weight:600;padding:8px 4px 3px;text-align:center;">${_txt(label)}</span>`:`<i class="ti ti-camera-plus" style="font-size:22px;color:var(--c-mut);"></i><span style="font-size:11px;color:var(--c-mut);font-weight:600;text-align:center;line-height:1.2;padding:0 4px;">${_txt(label)}</span><span style="font-size:11px;color:var(--c-mut);line-height:1.25;text-align:center;padding:2px 3px 0;opacity:.8;">${_txt(kind==='photos'?_vcTileHint(label):'')}</span>`}</button>`;};
+  const _slots=photoFree?[]:_vcSlots(sets);
+  const photoCount=_slots.filter(o=>{const p=_vcSubmitState.photos[o.key];return p&&p.src;}).length;
   const _rtCount=(typeof _vcRoutineClean==='function')?_vcRoutineClean().length:0;
   const _ansCount=(typeof _vcAnswerCount==='function')?_vcAnswerCount():0;
   const canSubmit=photoFree?((((_vcSubmitState||{}).goals||'').trim().length>0)||_rtCount>0||_ansCount>0):(photoCount>0);
@@ -5612,8 +5759,7 @@ function renderVirtualSubmit(){
     <div style="font-size:19px;font-weight:700;color:var(--c-ink);margin-bottom:3px;">${_txt(inv.title)}</div>
     <div style="font-size:13px;color:var(--c-mut);line-height:1.5;margin-bottom:6px;">${_txt(_vcInviteTitle(inv))}.</div>
     <div style="background:var(--c-ai-bg);border:1px solid #e6dcf5;border-radius:10px;padding:9px 12px;margin-bottom:16px;display:flex;gap:7px;align-items:flex-start;"><i class="ti ti-bulb" style="font-size:13px;color:#8b6fc7;flex-shrink:0;margin-top:1px;"></i><span style="font-size:11px;color:var(--c-mut);line-height:1.5;">${photoFree?('Share your goals, habits, and any questions below — no photos needed. '+_txt(client.providerFirst)+' will review and send personalized notes back.'):('Add clear, well-lit photos'+(sets.refs?', plus any inspiration / reference photos of the look you want':'')+'. '+_txt(client.providerFirst)+' reviews and sends expert notes back.')}</span></div>
-    ${photoFree?'':`${_vcTipsHTML()}<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Your photos</div>
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:${sets.refs?'16':'12'}px;">${sets.photos.map(l=>tile(l,'photos')).join('')}</div>
+    ${photoFree?'':`${_vcWhereHTML()}${_vcTipsHTML()}${_vcGridHTML(_slots,tile,sets)}
     ${_vcCheckHTML(photoCount)}
     ${sets.refs?`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-star" style="font-size:13px;color:#8b6fc7;"></i> ${_txt(sets.refTitle||'Inspiration / references')}</div>
     <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:18px;">${sets.refs.map(l=>tile(l,'refs')).join('')}</div>`:''}`}
@@ -5635,7 +5781,12 @@ function submitVirtualConsult(){
   if(_lbl)_lbl.textContent='Sending…';
   const _restoreBtn=function(){ if(_btn){ delete _btn.dataset.sending; _btn.disabled=false; _btn.style.opacity=''; } if(_lbl)_lbl.textContent='Submit to '+(client.providerFirst||'your provider'); };
   const inv=vcInvite;const sets=_vcSets(inv);
-  const photos=sets.photos.map(l=>({label:l,src:(_vcSubmitState.photos[l]||{}).src||''})).filter(p=>p.src);
+  // The slots on screen, not every photo in the draft: a face photo taken before she switched to
+  // Body only must not go. Body photos carry their area so the provider can group them.
+  const _slots=sets.photoFree?[]:_vcSlots(sets);
+  const photos=_slots.map(o=>{const ph={label:o.label,src:(_vcSubmitState.photos[o.key]||{}).src||''};if(o.area)ph.area=o.area;return ph;}).filter(p=>p.src);
+  const _bodyOn=_vcBodyOn(inv);const concern=_bodyOn?_vcConcern():'';
+  const areas=_bodyOn&&concern!=='face'?[].concat(concern==='both'?['Face']:[],_vcAreas().map(_vcAreaName)):null;
   const refs=sets.refs?sets.refs.map(l=>({label:l,src:(_vcSubmitState.refs[l]||{}).src||''})).filter(p=>p.src):null;
   const goals=(document.getElementById('vc-goals')||{}).value||'';
   const date=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
@@ -5647,6 +5798,7 @@ function submitVirtualConsult(){
   const _ans=(_vcSubmitState.answers&&typeof _vcSubmitState.answers==='object')?_vcSubmitState.answers:{};
   const answers=askQs.map(function(q,i){return {q:String(q),a:String(_ans[i]==null?'':_ans[i]).trim()};}).filter(function(x){return x.a;});
   const entry={date,kind:inv.kind,title:inv.title,photos,refs:(refs&&refs.length)?refs:null,goals,routine,flags,answers:answers.length?answers:null};
+  if(areas&&areas.length){entry.areas=areas;entry.concern=concern;}
   // compute real measurements from the first photo, then hand the submission (images + measures) to the provider
   const firstSrc=(photos[0]||{}).src||'';
   // Only consume the invite once the submission is safely away. The old code recorded the
@@ -5663,14 +5815,15 @@ function submitVirtualConsult(){
     nav('journey');
   };
   const fail=()=>{_restoreBtn();if(typeof showToast==='function')showToast('Couldn’t send your consult, please check your connection and try again.',false);};
-  _imgMeasures(firstSrc).catch(()=>null).then(measures=>{
-    try{SlickBridge.post('virtual-consult-submitted',{providerId:'jess',clientId:'maya',kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers});}catch(e){}
+  const _ax=(entry.areas?{areas:entry.areas,concern:entry.concern}:{});
+  _imgMeasures(firstSrc).catch(()=>null).then(measures=>_vcFitPhotos(photos.concat(entry.refs||[])).catch(()=>null).then(()=>measures)).then(measures=>{
+    try{SlickBridge.post('virtual-consult-submitted',Object.assign({providerId:'jess',clientId:'maya',kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers},_ax));}catch(e){}
     if(client._real){
       // One key per invite, kept on the device until the consult is safely in: a retry after a lost
       // reply (or a second tap later) used to mint a new key and store the consult twice.
       let _vk='sc_vcidem_'+String((inv&&inv.invitedAt)||'x'),_vid='';
       try{_vid=localStorage.getItem(_vk)||'';if(!_vid){_vid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));localStorage.setItem(_vk,_vid);}}catch(e){}
-      return _clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers,invitedAt:(inv&&inv.invitedAt)||undefined,_idem:_vid||undefined})
+      return _clientSubmit('vc_submit',Object.assign({kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers,invitedAt:(inv&&inv.invitedAt)||undefined,_idem:_vid||undefined},_ax))
         .then(res=>{if(res&&res.ok)finalize();else if(res&&res.duplicate){/* already sending, ignore double tap */}else fail();})
         .catch(fail);
     }
@@ -5684,8 +5837,10 @@ function loadInvite(){try{const raw=localStorage.getItem('sc_client_invite');if(
 // Persist the in-progress virtual-consult photos so a failed submit + app close doesn't lose every
 // photo the client took (the invite was already persisted; the photos were memory-only, contradicting
 // the "we keep the invite and photos so they can retry" promise). Cleared on successful submit.
-function persistVcDraft(){try{if(_vcSubmitState&&(Object.keys(_vcSubmitState.photos||{}).length||Object.keys(_vcSubmitState.refs||{}).length||String(_vcSubmitState.goals||'').trim()||(_vcSubmitState.routine||[]).length||Object.keys(_vcSubmitState.flags||{}).length||Object.keys(_vcSubmitState.answers||{}).some(function(k){return String(_vcSubmitState.answers[k]||'').trim();})))localStorage.setItem('sc_vc_draft',JSON.stringify(_vcSubmitState));else localStorage.removeItem('sc_vc_draft');}catch(e){}}
-function loadVcDraft(){try{const raw=localStorage.getItem('sc_vc_draft');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object'&&o.photos)_vcSubmitState={photos:o.photos||{},refs:o.refs||{},goals:o.goals||'',routine:Array.isArray(o.routine)?o.routine:[],flags:(o.flags&&typeof o.flags==='object')?o.flags:{},answers:(o.answers&&typeof o.answers==='object')?o.answers:{}};}}catch(e){}}
+function persistVcDraft(){try{if(_vcSubmitState&&(Object.keys(_vcSubmitState.photos||{}).length||Object.keys(_vcSubmitState.refs||{}).length||String(_vcSubmitState.goals||'').trim()||(_vcSubmitState.routine||[]).length||Object.keys(_vcSubmitState.flags||{}).length||Object.keys(_vcSubmitState.answers||{}).some(function(k){return String(_vcSubmitState.answers[k]||'').trim();})||(_vcSubmitState.concern&&_vcSubmitState.concern!=='face')||(_vcSubmitState.areas||[]).length)){const _dj=JSON.stringify(_vcSubmitState);try{localStorage.setItem('sc_vc_draft',_dj);}catch(_q){
+  // Full (a phone's 5 MB): keep everything she typed and chose rather than leave an OLDER draft in place.
+  try{const o=JSON.parse(_dj);['photos','refs'].forEach(function(f){o[f]={};});localStorage.setItem('sc_vc_draft',JSON.stringify(o));}catch(_q2){}}}else localStorage.removeItem('sc_vc_draft');}catch(e){}}
+function loadVcDraft(){try{const raw=localStorage.getItem('sc_vc_draft');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object'&&o.photos)_vcSubmitState={photos:o.photos||{},refs:o.refs||{},goals:o.goals||'',routine:Array.isArray(o.routine)?o.routine:[],flags:(o.flags&&typeof o.flags==='object')?o.flags:{},answers:(o.answers&&typeof o.answers==='object')?o.answers:{},concern:(o.concern==='body'||o.concern==='both')?o.concern:'face',areas:Array.isArray(o.areas)?o.areas.map(String):[],otherArea:String(o.otherArea||'').slice(0,40)};}}catch(e){}}
 function _toggleSummaryGuide(gi){
   var tips=document.getElementById('sg-tips-'+gi);var chev=document.getElementById('sg-chev-'+gi);
   if(!tips)return;
@@ -6751,7 +6906,7 @@ function _applyServerVcInvite(vi){
   // new and wiped the photos, goals and answers the client had already put in.
   if(!vcInvite){try{loadInvite();}catch(e){}}
   if(!vcInvite||String(vcInvite.invitedAt||'')!==iat){
-    vcInvite={kind:vi.kind,title:vi.title||'Photo consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0,askQuestions:Array.isArray(vi.askQuestions)?vi.askQuestions:undefined,routine:vi.routine!==false,photoLabels:Array.isArray(vi.photoLabels)?vi.photoLabels:undefined,refLabels:Array.isArray(vi.refLabels)?vi.refLabels:undefined,refTitle:vi.refTitle||undefined};
+    vcInvite={kind:vi.kind,title:vi.title||'Photo consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0,askQuestions:Array.isArray(vi.askQuestions)?vi.askQuestions:undefined,routine:vi.routine!==false,photoLabels:Array.isArray(vi.photoLabels)?vi.photoLabels:undefined,refLabels:Array.isArray(vi.refLabels)?vi.refLabels:undefined,refTitle:vi.refTitle||undefined,bodyAreas:(typeof vi.bodyAreas==='boolean')?vi.bodyAreas:undefined};
     _vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};
     try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}   // a new invite starts a fresh draft
   } else {
@@ -6760,6 +6915,7 @@ function _applyServerVcInvite(vi){
     let ch=false;
     if(Array.isArray(vi.askQuestions)&&JSON.stringify(vi.askQuestions)!==JSON.stringify(vcInvite.askQuestions||null)){vcInvite.askQuestions=vi.askQuestions;ch=true;}
     if((vi.routine!==false)!==(vcInvite.routine!==false)){vcInvite.routine=vi.routine!==false;ch=true;}
+    if(typeof vi.bodyAreas==='boolean'&&vi.bodyAreas!==vcInvite.bodyAreas){vcInvite.bodyAreas=vi.bodyAreas;ch=true;}
     if(ch){try{persistInvite();}catch(e){}}
   }
   let notified='';try{notified=localStorage.getItem('sc_vc_notified')||'';}catch(e){}
