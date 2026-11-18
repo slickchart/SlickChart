@@ -100,19 +100,22 @@ async function handler(req, res) {
     await ensureClientTables();
     await ensureTable();                       // kv table
     const q = sql();
-    const autoRows = await q`SELECT owner, v FROM kv WHERE k = 'sc_autos'`;
-    if (!autoRows.length) { res.status(200).json({ ok: true, ...summary }); return; }
-    // Pull every provider's client charts once, keyed by owner.
-    const clientRows = await q`SELECT owner, v FROM kv WHERE k = 'sc_clients'`;
-    const chartsByOwner = {};
-    for (const row of clientRows) { try { chartsByOwner[row.owner] = JSON.parse(row.v || '{}') || {}; } catch (e) { chartsByOwner[row.owner] = {}; } }
+    // Owners first, then one provider's values at a time. Reading EVERY provider's sc_autos and
+    // sc_clients in two queries failed the whole run once the total passed the database's 64 MB
+    // answer limit (sc_autos alone reached 85 MB for one account, 2026-11-17). Smallest first.
+    const autoOwners = await q`SELECT owner FROM kv WHERE k = 'sc_autos' ORDER BY octet_length(v) ASC`;
+    if (!autoOwners.length) { res.status(200).json({ ok: true, ...summary }); return; }
 
-    for (const row of autoRows) {
-      const owner = row.owner;
+    for (const ao of autoOwners) {
+      const owner = ao.owner;
       let autos = [];
-      try { autos = JSON.parse(row.v || '[]'); } catch (e) { autos = []; }
+      try { const r = await q`SELECT v FROM kv WHERE owner = ${owner} AND k = 'sc_autos'`; autos = JSON.parse((r[0] && r[0].v) || '[]'); } catch (e) { autos = []; }
       if (!Array.isArray(autos) || !autos.length) continue;
-      const charts = chartsByOwner[owner] || {};
+      // Only read her charts when she has an automation this job handles.
+      if (!autos.some(a => a && a.on !== false && !a.sendAt && String(a.msg || '').trim() && classify(a))) continue;
+      let charts = {};
+      try { const r = await q`SELECT v FROM kv WHERE owner = ${owner} AND k = 'sc_clients'`; charts = JSON.parse((r[0] && r[0].v) || '{}') || {}; } catch (e) { charts = {}; }
+      const seenAuto = new Set();
       // §0.1: the ids come from the provider's own synced blob, which she can write freely. Only her
       // OWN live client rows may be messaged — an id that collides with (or was typed to match) another
       // account's client used to push her text, with that client's own link, to their phone.
@@ -130,6 +133,8 @@ async function handler(req, res) {
         const ev = classify(a);
         if (!ev) continue;
         const autoId = a.id || (String(a.name || 'auto') + ':event');
+        if (seenAuto.has(autoId)) continue;                     // a repeat copy of the same automation
+        seenAuto.add(autoId);
         const tz = a.tz || 'UTC';
         const nowL = localParts(tz, now);
         if (nowL.hour < MORNING_LO || nowL.hour > MORNING_HI) continue;   // only send in the client-local morning

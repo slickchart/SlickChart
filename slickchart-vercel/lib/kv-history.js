@@ -132,6 +132,13 @@ export async function snapshotBeforeWrite(owner, items) {
     const reason = snapshotReason(r.v, items[r.k], lastDaily[r.k], now);
     if (!reason) continue;
     try {
+      // A value flipping back and forth (one device shrinking it, another growing it) used to stack
+      // a full copy of the SAME bytes on every flip. One copy of identical bytes is enough.
+      if (reason !== 'daily') {
+        const prev = await q`SELECT md5(v) AS h FROM kv_history WHERE owner=${owner} AND k=${r.k} ORDER BY saved_at DESC LIMIT 1`;
+        const cur = await q`SELECT md5(${r.v}::text) AS h`;
+        if (prev.length && cur.length && prev[0].h === cur[0].h) continue;
+      }
       await q`INSERT INTO kv_history (owner, k, v, bytes, items, reason)
         VALUES (${owner}, ${r.k}, ${r.v}, ${String(r.v || '').length}, ${itemCount(r.v)}, ${reason})`;
       saved++;

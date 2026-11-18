@@ -57,25 +57,39 @@ export default async function handler(req, res) {
         // the last piece arrives. A brand-new file is simply not served until then (complete=false).
         if (index === 0) {
           if (last) {
-            await q`INSERT INTO files (owner, id, name, type, data, complete, staging, updated_at)
-                    VALUES (${owner}, ${id}, ${name}, ${type}, ${chunk}, true, NULL, now())
+            await q`INSERT INTO files (owner, id, name, type, data, complete, staging, staging_next, updated_at)
+                    VALUES (${owner}, ${id}, ${name}, ${type}, ${chunk}, true, NULL, 1, now())
                     ON CONFLICT (owner, id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type,
-                      data = EXCLUDED.data, complete = true, staging = NULL, updated_at = now()`;
+                      data = EXCLUDED.data, complete = true, staging = NULL, staging_next = 1, updated_at = now()`;
           } else {
-            await q`INSERT INTO files (owner, id, name, type, data, complete, staging, updated_at)
-                    VALUES (${owner}, ${id}, ${name}, ${type}, NULL, false, ${chunk}, now())
-                    ON CONFLICT (owner, id) DO UPDATE SET staging = EXCLUDED.staging, updated_at = now()`;
+            await q`INSERT INTO files (owner, id, name, type, data, complete, staging, staging_next, updated_at)
+                    VALUES (${owner}, ${id}, ${name}, ${type}, NULL, false, ${chunk}, 1, now())
+                    ON CONFLICT (owner, id) DO UPDATE SET staging = EXCLUDED.staging, staging_next = 1, updated_at = now()`;
           }
         } else {
-          // Append only onto an upload in progress. If piece 0 never landed, this writes nothing and
-          // the client restarts, rather than building a corrupt file out of two interleaved attempts.
+          // Append only onto an upload in progress, and only the piece it expects next. If piece 0
+          // never landed, this writes nothing and the client restarts, rather than building a corrupt
+          // file out of two interleaved attempts. A piece sent AGAIN after its first try already
+          // landed (the answer was lost to a timeout) is acknowledged without appending it twice.
+          // staging_next IS NULL = an upload begun before this column existed: appended as before.
+          const MAXC = 7500000;
           const r = last
-            ? await q`UPDATE files SET data = staging || ${chunk}, staging = NULL, complete = true,
+            ? await q`UPDATE files SET data = staging || ${chunk}, staging = NULL, complete = true, staging_next = ${index + 1},
                               name = ${name}, type = ${type}, updated_at = now()
-                        WHERE owner = ${owner} AND id = ${id} AND staging IS NOT NULL RETURNING id`
-            : await q`UPDATE files SET staging = staging || ${chunk}, updated_at = now()
-                        WHERE owner = ${owner} AND id = ${id} AND staging IS NOT NULL RETURNING id`;
-          if (!r.length) { res.status(409).json({ error: 'Upload out of sync. Start this file again.' }); return; }
+                        WHERE owner = ${owner} AND id = ${id} AND staging IS NOT NULL
+                          AND (staging_next IS NULL OR staging_next = ${index})
+                          AND length(staging) + ${chunk.length} <= ${MAXC} RETURNING id`
+            : await q`UPDATE files SET staging = staging || ${chunk}, staging_next = ${index + 1}, updated_at = now()
+                        WHERE owner = ${owner} AND id = ${id} AND staging IS NOT NULL
+                          AND (staging_next IS NULL OR staging_next = ${index})
+                          AND length(staging) + ${chunk.length} <= ${MAXC} RETURNING id`;
+          if (!r.length) {
+            const cur = await q`SELECT staging_next, complete, length(coalesce(staging, '')) AS slen FROM files WHERE owner = ${owner} AND id = ${id}`;
+            const c = cur[0];
+            if (c && Number(c.staging_next) === index + 1) { res.status(200).json({ ok: true, part: index, complete: last, repeat: true }); return; }
+            if (c && Number(c.slen) + chunk.length > MAXC) { res.status(413).json({ error: 'File too large.' }); return; }
+            res.status(409).json({ error: 'Upload out of sync. Start this file again.' }); return;
+          }
         }
         res.status(200).json({ ok: true, part: index, complete: last });
         return;

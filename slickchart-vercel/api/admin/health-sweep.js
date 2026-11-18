@@ -191,8 +191,10 @@ export async function runSweep(q) {
 
   // 2. A library that shrank in the last day (kv_history keeps the copy from before each shrink).
   await check('data-shrink', 'No saved library shrank sharply in the last day', async () => {
-    const rows = await q`SELECT h.owner, h.k, h.items AS old_items, h.bytes AS old_bytes, length(kv.v) AS now_bytes, h.saved_at,
-        h.v AS old_v, kv.v AS now_v
+    // Sizes first; the two values are read one pair at a time, only for a shrink worth explaining.
+    // Reading 60 pairs of full client lists in one answer can pass the database's 64 MB answer limit
+    // (the kv-size check failed exactly that way on 2026-11-18).
+    const rows = await q`SELECT h.id AS hid, h.owner, h.k, h.items AS old_items, h.bytes AS old_bytes, length(kv.v) AS now_bytes, h.saved_at
       FROM kv_history h LEFT JOIN kv ON kv.owner = h.owner AND kv.k = h.k
       WHERE h.reason = 'shrink' AND h.saved_at > now() - interval '26 hours' AND h.k = ANY(${SHRINK_KEYS})
       ORDER BY h.saved_at DESC LIMIT 60`;
@@ -203,6 +205,11 @@ export async function runSweep(q) {
       const key = r.owner + '|' + r.k;
       if (seen.has(key) || !((r.old_bytes || 0) > 200 && (r.now_bytes || 0) < (r.old_bytes || 0) * 0.8)) continue;
       seen.add(key);
+      try {
+        const pv = await q`SELECT h.v AS old_v, kv.v AS now_v FROM kv_history h LEFT JOIN kv ON kv.owner = h.owner AND kv.k = h.k
+          WHERE h.id = ${r.hid} AND h.owner = ${r.owner}`;
+        r.old_v = pv[0] && pv[0].old_v; r.now_v = pv[0] && pv[0].now_v;
+      } catch (e) { r.old_v = null; r.now_v = null; }
       let del = {};
       if (DELETE_KEYS[r.k]) { try { del = deletedSet((await q`SELECT v FROM kv WHERE owner = ${r.owner} AND k = ANY(${DELETE_KEYS[r.k]})`).map(x => x.v)); } catch (e) {} }
       let why;
@@ -278,6 +285,25 @@ export async function runSweep(q) {
       items.push(who(r.owner) + ': ' + r.k + ' is ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB' + rep + (Number(r.bytes) > 4300000 ? ' (over the save limit)' : ''));
     }
     return { items, level: rows.some(r => Number(r.bytes) > 4300000) ? 'warn' : (rows.length ? 'warn' : 'ok') };
+  });
+
+  // The account's FIRST read on a device (sign-in, new phone, cleared storage) is every saved value
+  // in ONE response, and Vercel refuses a response over ~4.5 MB (the events list hit exactly that,
+  // 2026-11-06). Sizes only, summed in the database. Listed early, while there is time to act.
+  await check('kv-total', 'Every account fits in one first download', async () => {
+    const rows = await q`SELECT owner, count(*)::int AS n, sum(octet_length(v))::bigint AS bytes FROM kv
+      GROUP BY owner HAVING sum(octet_length(v)) > 3000000 ORDER BY bytes DESC LIMIT 40`;
+    const items = [];
+    for (const r of rows) {
+      let top = '';
+      try {
+        const t = await q`SELECT k, octet_length(v)::bigint AS b FROM kv WHERE owner = ${r.owner} ORDER BY octet_length(v) DESC LIMIT 3`;
+        top = ' (largest: ' + t.map(x => x.k + ' ' + (Number(x.b) / 1e6).toFixed(1) + ' MB').join(', ') + ')';
+      } catch (e) {}
+      items.push(who(r.owner) + ': ' + r.n + ' saved values, ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB in all' + top
+        + (Number(r.bytes) > 4300000 ? ' — over the 4.5 MB first-download limit' : ''));
+    }
+    return { items, level: rows.length ? 'warn' : 'ok' };
   });
 
   await check('events-size', 'Client submissions fit in one download', async () => {

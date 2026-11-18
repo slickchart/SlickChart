@@ -77,14 +77,21 @@ async function handler(req, res) {
     await ensureClientTables();
     await ensureTable();                // kv table
     const q = sql();
-    const rows = await q`SELECT owner, v FROM kv WHERE k = 'sc_autos'`;
-    for (const row of rows) {
-      const owner = row.owner;
+    // Owners first, then ONE value at a time. Reading every provider's sc_autos in one query broke
+    // once a few lists had copied themselves to tens of MB (2026-11-17): one answer over the
+    // database's 64 MB limit failed the run for EVERY provider. Smallest lists first, so a bloated
+    // one can never hold up everyone else.
+    const owners = await q`SELECT owner FROM kv WHERE k = 'sc_autos' ORDER BY octet_length(v) ASC`;
+    for (const o of owners) {
+      const owner = o.owner;
       let autos = [];
-      try { autos = JSON.parse(row.v || '[]'); } catch (e) { autos = []; }
+      try {
+        const r = await q`SELECT v FROM kv WHERE owner = ${owner} AND k = 'sc_autos'`;
+        autos = JSON.parse((r[0] && r[0].v) || '[]');
+      } catch (e) { autos = []; }
       if (!Array.isArray(autos) || !autos.length) continue;
 
-      const due = [];
+      const due = [], dueSeen = new Set();
       for (const a of autos) {
         if (!a || a.on === false) continue;
         const msg = String(a.msg || '').trim();
@@ -94,6 +101,11 @@ async function handler(req, res) {
         const autoId = a.id || (String(a.name || 'auto') + ':' + (a.sendAt || ''));
         // Optional recipient list: [] / missing → all clients; non-empty → only those client ids.
         const clientIds = Array.isArray(a.clientIds) ? a.clientIds.map(String).filter(Boolean) : null;
+        // A list that holds repeat copies of one automation must still send it once (and not
+        // claim once per copy per client, which is what timed the run out).
+        const dk = autoId + ':' + occ;
+        if (dueSeen.has(dk)) continue;
+        dueSeen.add(dk);
         due.push({ autoId, occ, msg, clientIds });
       }
       if (!due.length) continue;

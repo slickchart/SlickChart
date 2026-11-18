@@ -96,32 +96,46 @@ export async function listReminderOwners() {
   // owner_kind 'provider', owner_id = the same provider id the session carries). App-only providers
   // were never on this list, so their reminders never fired. The native table may not exist on a
   // fresh database; fall back to web-push owners only.
-  let rows;
+  // Owners first, then ONE owner's values at a time. Reading every provider's sc_clients in one
+  // answer stops working once the total passes the database's 64 MB answer limit (one account's
+  // list reached tens of MB on 2026-11-17), and then nobody's reminders fire. Client charts are
+  // reduced to names in SQL: names are all the reminder text uses.
+  let owners;
   try {
-    rows = await q`SELECT k.owner, k.k, k.v
-      FROM kv k
-      WHERE k.k IN ('sc_reminders', 'sc_pro_vc_invites', 'sc_clients', 'sc_notif_settings')
+    owners = await q`SELECT DISTINCT k.owner FROM kv k
+      WHERE k.k IN ('sc_reminders', 'sc_pro_vc_invites')
         AND (EXISTS (SELECT 1 FROM provider_push_subscriptions p WHERE p.provider_id = k.owner)
           OR EXISTS (SELECT 1 FROM native_push_tokens n WHERE n.owner_kind = 'provider' AND n.owner_id = k.owner))`;
   } catch (e) {
-    rows = await q`SELECT k.owner, k.k, k.v
-      FROM kv k
-      WHERE k.k IN ('sc_reminders', 'sc_pro_vc_invites', 'sc_clients', 'sc_notif_settings')
+    owners = await q`SELECT DISTINCT k.owner FROM kv k
+      WHERE k.k IN ('sc_reminders', 'sc_pro_vc_invites')
         AND EXISTS (SELECT 1 FROM provider_push_subscriptions p WHERE p.provider_id = k.owner)`;
   }
-  const byOwner = new Map();
-  rows.forEach(r => {
-    const o = String(r.owner);
-    if (!byOwner.has(o)) byOwner.set(o, { owner: o, reminders: null, invites: null, clients: null, notif: null });
-    const slot = byOwner.get(o);
-    let parsed = null;
-    try { parsed = JSON.parse(r.v); } catch (e) { return; }
-    if (r.k === 'sc_reminders') slot.reminders = parsed;
-    else if (r.k === 'sc_pro_vc_invites') slot.invites = parsed;
-    else if (r.k === 'sc_clients') slot.clients = parsed;
-    else if (r.k === 'sc_notif_settings') slot.notif = parsed;
-  });
-  return Array.from(byOwner.values());
+  const out = [];
+  for (const ow of owners) {
+    const o = String(ow.owner);
+    const slot = { owner: o, reminders: null, invites: null, clients: null, notif: null };
+    try {
+      const rows = await q`SELECT k, v FROM kv WHERE owner = ${o} AND k IN ('sc_reminders', 'sc_pro_vc_invites', 'sc_notif_settings')`;
+      rows.forEach(r => {
+        let parsed = null;
+        try { parsed = JSON.parse(r.v); } catch (e) { return; }
+        if (r.k === 'sc_reminders') slot.reminders = parsed;
+        else if (r.k === 'sc_pro_vc_invites') slot.invites = parsed;
+        else if (r.k === 'sc_notif_settings') slot.notif = parsed;
+      });
+    } catch (e) { continue; }
+    try {
+      const cr = await q`SELECT e.key AS id, e.value->>'name' AS name
+        FROM kv, jsonb_each(CASE WHEN jsonb_typeof(kv.v::jsonb) = 'object' THEN kv.v::jsonb ELSE '{}'::jsonb END) e
+        WHERE kv.owner = ${o} AND kv.k = 'sc_clients'`;
+      const clients = {};
+      cr.forEach(r => { clients[r.id] = { name: r.name || '' }; });
+      slot.clients = clients;
+    } catch (e) { slot.clients = null; }
+    out.push(slot);
+  }
+  return out;
 }
 
 // Dedupe, per provider. reminder_log's primary key is (client_id, rkey); provider reminders are

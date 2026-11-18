@@ -76,10 +76,15 @@ export async function claimSlug(providerId, desired) {
 export async function addConsultRequest(providerId, { name, email, phone, message }) {
   await ensureConsultSchema();
   const q = sql();
-  const id = 'cr_' + crypto.randomBytes(9).toString('base64url');
-  await q`INSERT INTO consult_requests (id, provider_id, name, email, phone, message)
-    VALUES (${id}, ${providerId}, ${name || ''}, ${email || ''}, ${phone || ''}, ${message || ''})`;
-  return id;
+  // The same request sent twice within ten minutes (a double tap, a retry after a slow answer) is ONE
+  // request: the id is fixed by its content, so the second insert does nothing. Returns null for a
+  // repeat so the caller does not email her about it twice. (2026-11-18 sweep)
+  const bucket = Math.floor(Date.now() / 600000);
+  const id = 'cr_' + crypto.createHash('sha256').update([providerId, name || '', email || '', phone || '', message || '', bucket].join('\u0001')).digest('base64url').slice(0, 12);
+  const r = await q`INSERT INTO consult_requests (id, provider_id, name, email, phone, message)
+    VALUES (${id}, ${providerId}, ${name || ''}, ${email || ''}, ${phone || ''}, ${message || ''})
+    ON CONFLICT (id) DO NOTHING RETURNING id`;
+  return r.length ? id : null;
 }
 
 export async function listConsultRequests(providerId) {

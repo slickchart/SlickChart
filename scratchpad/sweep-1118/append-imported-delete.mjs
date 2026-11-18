@@ -1,0 +1,25 @@
+import http from 'http'; import fs from 'fs';
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
+import {makeServer,device,flush,resync,sleep} from '/home/user/SlickChart/scratchpad/sweep-dup-xdevice-lib.mjs';
+const ROOT='/home/user/SlickChart/slickchart-vercel';
+const srvh=http.createServer((q,r)=>{const f=ROOT+decodeURIComponent(q.url.split('?')[0]);try{const d=fs.readFileSync(f);r.writeHead(200,{'content-type':f.endsWith('.html')?'text/html':f.endsWith('.js')?'application/javascript':'application/octet-stream'});r.end(d);}catch(e){r.writeHead(404);r.end();}}).listen(8899);
+const prod={id:'ipabc1',name:'Hydra Serum',brand:'X',icon:'x',url:'',active:true,imported:true};
+const srv=makeServer({sc_imported_products:JSON.stringify([prod]),sc_affiliate_links:JSON.stringify([prod]),sc_affiliate_custom:'1'});
+const b=await pw.chromium.launch({executablePath:'/opt/pw-browsers/chromium-1243/chrome-linux64/chrome'});
+const p=await device(b,srv,'A');
+const before=await p.evaluate(()=>affiliateLinks.map(a=>a.name));
+await p.evaluate(()=>{const ei=affiliateLinks.findIndex(a=>a.name==='Hydra Serum');window.confirmModal=(o,fn)=>fn();deleteAffiliate(ei);});
+const afterDel=await p.evaluate(()=>affiliateLinks.map(a=>a.name));
+await p.evaluate(()=>{try{renderShop();}catch(e){}});
+const afterRender=await p.evaluate(()=>affiliateLinks.map(a=>a.name));
+await flush(p);
+const kvAfterDel=JSON.parse(srv.kv.sc_affiliate_links||'[]').map(a=>a.name);
+// rename case
+await p.evaluate(()=>{const a=affiliateLinks.find(a=>a.name==='Hydra Serum');if(a){a.name='Hydra Serum 2.0';persistAffiliateLinks();}renderShop();});
+const afterRename=await p.evaluate(()=>affiliateLinks.map(a=>a.name));
+await flush(p);
+const p2=await device(b,srv,'B');
+await p2.evaluate(()=>{try{renderShop();}catch(e){}});
+const devB=await p2.evaluate(()=>affiliateLinks.map(a=>a.name));
+console.log(JSON.stringify({before,afterDel,afterRender,kvAfterDel,afterRename,devB,tomb:srv.kv.sc_deleted_products||null,errs:p._errs.slice(0,3)}));
+await b.close(); srvh.close();

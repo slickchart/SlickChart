@@ -137,6 +137,9 @@ export async function ensureFilesTable() {
   // a TRUNCATED file. `complete` marks that window. Existing rows default to true, and a whole-file
   // upload sets it true in the same statement, so nothing changes for the non-chunked path.
   try { await q`ALTER TABLE files ADD COLUMN IF NOT EXISTS complete boolean NOT NULL DEFAULT true`; } catch (e) {}
+  // The index of the next piece a chunked upload expects. A piece retried after its first try
+  // already landed (timeout, 5xx) used to be appended a second time and the file was served corrupt.
+  try { await q`ALTER TABLE files ADD COLUMN IF NOT EXISTS staging_next integer`; } catch (e) {}
   // A re-upload in pieces builds up here, so a COMPLETE file keeps being served until the last piece
   // lands (piece 0 used to overwrite it, and an interrupted re-send left her only copy unfetchable).
   try { await q`ALTER TABLE files ADD COLUMN IF NOT EXISTS staging text`; } catch (e) {}
@@ -189,6 +192,10 @@ export async function ensureProvidersTable() {
     ts timestamptz DEFAULT now()
   )`;
   await q`ALTER TABLE login_attempts ADD COLUMN IF NOT EXISTS ip text`;
+  // Every sign-in counts recent rows by email and by address. With no index each count read the
+  // WHOLE table, which only ever grows, so every sign-in got slower. (2026-11-18 sweep)
+  try { await q`CREATE INDEX IF NOT EXISTS login_attempts_email_ts ON login_attempts (email, ts)`; } catch (e) {}
+  try { await q`CREATE INDEX IF NOT EXISTS login_attempts_ip_ts ON login_attempts (ip, ts)`; } catch (e) {}
   // Interest log for "request live sync" on booking apps we don't yet integrate.
   await q`CREATE TABLE IF NOT EXISTS sync_requests (
     id bigserial PRIMARY KEY,

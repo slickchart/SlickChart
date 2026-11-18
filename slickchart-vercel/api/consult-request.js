@@ -42,7 +42,8 @@ export default async function handler(req, res) {
   try {
     const prov = await getProviderBySlug(slug);
     if (!prov) { res.status(404).json({ error: 'This consult link is not active.' }); return; }
-    await addConsultRequest(prov.id, { name, email, phone, message });
+    const crId = await addConsultRequest(prov.id, { name, email, phone, message });
+    if (!crId) { res.status(200).json({ ok: true }); return; }   // the same request again: saved once, emailed once
 
     // Notify the provider so a lead doesn't sit unseen until they next open the app. Best-effort:
     // a mail failure must never fail the prospect's submission (it's already saved). Reply-To is

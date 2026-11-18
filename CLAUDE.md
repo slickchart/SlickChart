@@ -59,6 +59,26 @@ Hard rules — never violate:
    And remember a client's own record carries `c.summaries` — the client-facing copy lives only
    there, so `_unionClientForms` has to union it too.
 
+9. **Nothing synced may grow on its own (the "huge list" rule, 2026-11-18).** On 2026-11-17
+   `sc_autos` and `sc_imported_products` copied themselves on EVERY pull, because a merge put the
+   account's copy and the device's copy side by side (rows with no id; objects deduped with a
+   `Set`). Lisa's list reached 85 MB, saves were refused as too large, and six providers saw a
+   "photo too large" popup on repeat. So, for every merge and every list:
+   - **merge(X, X) must equal X** and report no change. Two devices trading copies with no edits
+     must settle after one exchange. `scripts/check-merge-growth.cjs` (CI) runs every merge
+     against itself on rows with ids, without ids, strings, objects and per-client maps;
+     `scratchpad/sweep-sync-growth.mjs` does it through the real `Cloud.pull()` for every synced key
+     in Chromium and WebKit. A new merge or registry key is covered automatically; do not weaken it.
+   - **A row needs an identity.** No id means it is matched by content, so an edit leaves two
+     copies and a delete has nothing to record. Give new rows an id when they are created; for old
+     id-less rows add a `_LIB_NATURAL` key (as `sc_autos` and `sc_inventory` have).
+   - **An id made on load must be the same on every device** (derive it, never `Math.random()`),
+     or each device's copy survives the union (`_healGhostForms` made one form per device).
+   - **A capped log is capped in the merge too** (`_TOMB_ARR_CAP`), and never cap a delete record
+     or a provider's own records: those need dedupe, not truncation.
+   - **Server code reads one account at a time.** A query that reads every provider's value in one
+     answer fails for everyone once one account's list is huge (Neon answers at most 64 MB).
+
 When you add or change any endpoint, ask: *Could a different account, or an unauthenticated caller, use
 this to read or write data that isn't theirs?* If yes, it's not done.
 

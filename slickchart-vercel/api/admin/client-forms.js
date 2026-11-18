@@ -60,10 +60,14 @@ export default async function handler(req, res) {
   const dl = parse(K.sc_deleted_clients) || {}, ud = parse(K.sc_undeleted_clients) || {};
   out.deleteRecord = listIds.filter(id => dl[id]).map(id => ({ id, at: iso(dl[id]), undeleted: ud[id] ? iso(ud[id]) : null }));
   // Earlier copies of the list: did any of them hold her forms?
-  const hist = await q`SELECT id, reason, saved_at, v FROM kv_history WHERE owner = ${p} AND k = 'sc_clients' ORDER BY saved_at DESC LIMIT 40`;
-  out.earlierCopies = hist.map(h => {
-    const m = recs(h.v).filter(([id, r]) => match(id, r));
-    return { copy: h.id, reason: h.reason, at: h.saved_at, matches: m.map(([id, r]) => ({ id, forms: formsOf(r).map(f => f.formId + (f.ev ? '#' + f.ev : '') + '@' + (f.at || '')) })) };
-  });
+  // One copy at a time: 40 whole client lists in one answer can pass the database's 64 MB limit.
+  const hist = await q`SELECT id, reason, saved_at FROM kv_history WHERE owner = ${p} AND k = 'sc_clients' ORDER BY saved_at DESC LIMIT 40`;
+  out.earlierCopies = [];
+  for (const h of hist) {
+    let v = null;
+    try { const r = await q`SELECT v FROM kv_history WHERE id = ${h.id} AND owner = ${p}`; v = r[0] && r[0].v; } catch (e) {}
+    const m = recs(v).filter(([id, r]) => match(id, r));
+    out.earlierCopies.push({ copy: h.id, reason: h.reason, at: h.saved_at, matches: m.map(([id, r]) => ({ id, forms: formsOf(r).map(f => f.formId + (f.ev ? '#' + f.ev : '') + '@' + (f.at || '')) })) });
+  }
   res.status(200).json(out);
 }

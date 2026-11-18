@@ -12,6 +12,6 @@ export PLAYWRIGHT_BROWSERS_PATH="${SC_WEBKIT:-/tmp/claude-0/-home-user-SlickChar
 src="$1"; shift
 tmpdir="$here/.safari-run"; mkdir -p "$tmpdir"
 for f in "$src" "$here"/*.mjs; do
-  sed -E "s#newContext\(\{#newContext({serviceWorkers:'block',#g; s#newContext\(\)#newContext({serviceWorkers:'block'})#g; s#\.newPage\(\{#.newPage({serviceWorkers:'block',#g; s#pw\.chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g; s#chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g" "$f" > "$tmpdir/$(basename "$f")"
+  sed -E "s#newContext\(\{#newContext({serviceWorkers:'block',#g; s#newContext\(\)#newContext({serviceWorkers:'block'})#g; s#\.newPage\(\{#.newPage({serviceWorkers:'block',#g; s#pw\.chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g; s#chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g; s#pw\.chromium\.launch\(exe \? \{ executablePath: exe \} : \{\}\)#pw.webkit.launch()#g" "$f" > "$tmpdir/$(basename "$f")"
 done
 node "$tmpdir/$(basename "$src")" "$@"

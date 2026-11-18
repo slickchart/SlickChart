@@ -1,3 +1,4 @@
+import fs from 'fs';
 // Shared harness for the sweep-dup-xdevice-* repros: N browser contexts ("devices") signed into ONE
 // account, all talking to a single in-memory mock of /api/store (kv, plain overwrite like api/store.js)
 // and /api/clients (rows with deleted_at, upsert no-ops on a deleted row, like lib/clients.js).
@@ -16,7 +17,9 @@ export function makeServer(seedKv, seedRows) {
 }
 
 export async function launch() {
-  return pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  // The Chromium build in the container moves (1194 -> 1243); use whichever is installed.
+  const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome'].find(f => fs.existsSync(f));
+  return pw.chromium.launch(exe ? { executablePath: exe } : {});
 }
 
 // Boot one device. localSeed: localStorage to set BEFORE the app boots (the device's own stale copy).
