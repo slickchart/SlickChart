@@ -54,6 +54,13 @@ async function launch(ctx,{offline,idbBroken}={}){
       if(q.method()!=='GET'&&server.dropPuts)return r.abort('connectionaborted');
       if(q.method()==='GET')return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:server.kv})});
       let b={};try{b=JSON.parse(q.postData()||'{}');}catch(e){}
+      // A value over ~3 MB arrives in numbered pieces (Cloud._sendBig, 2026-11-18); keep them and save
+      // the whole value once every piece is in, like api/store does. Without this the test's server
+      // silently dropped big saves and E reported a lost summary that had in fact been sent.
+      if(b.part){const P=b.part;server.parts=server.parts||{};const g=server.parts[P.id]=server.parts[P.id]||[];g[P.i]=P.data;
+        if(g.filter(x=>x!=null).length===P.n){const v=g.join('');delete server.parts[P.id];if(v.length===P.total){server.kv[P.k]=v;server.posts.push([P.k]);}
+          return r.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'});}
+        return r.fulfill({status:200,contentType:'application/json',body:'{"ok":true,"partial":true}'});}
       Object.keys(b.items||{}).forEach(k=>{if(b.items[k]===null)delete server.kv[k];else server.kv[k]=b.items[k];});server.posts.push(Object.keys(b.items||{}));
       return r.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'});});
     await page.route('**/api/clients*',async r=>{const q=r.request();

@@ -9920,6 +9920,18 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Sync sweep (rotation area 11): sound; one test harness fixed
+
+`sweep-sync-growth` (Chromium): growth, echo, exact dups all clean; edit-dups only in the `unkeyed`
+sample family (rows with no id, by design reported only, §0.9). `test-busy-courses-boot` 32/32.
+`test-iphone-account-scale` reported "E. a summary saved then the app closed 150 ms later" as LOST in
+both engines, also on this morning's build. **Not an app bug:** a value over ~3 MB now goes up in
+numbered pieces (`Cloud._sendBig`, added 2026-11-18), and the test's fake /api/store only understood
+`items`, so it dropped the pieces. The fake now reassembles `part` uploads like api/store does:
+26/26 in Chromium + WebKit (WebKit via `run-in-safari.sh`). Any other test that fakes /api/store with
+heavy data needs the same if it starts reporting lost saves.
+`sweep-crossdevice.mjs` named in CLAUDE.md §3 is not in scratchpad/ (never committed or removed).
+
 ## 2026-11-18 — Build 2026-11-18n: readability + accessibility sweeps (areas 13, 16) (PREVIEW)
 
 `scratchpad/sweep-contrast.mjs` (WCAG AA on every text node of 123 screens) and
