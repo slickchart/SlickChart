@@ -69,7 +69,8 @@ while (queue.length && seen.size < 300) {
   errs = []; cerrs = [];
   const found = await page.evaluate(([s, d, g]) => { try { document.querySelectorAll('.shell > div[id], body > div[id]').forEach(x => { if (getComputedStyle(x).position === 'fixed' && x.id !== 'app') x.remove(); }); } catch (e) {}
     try { d == null ? nav(s) : nav(s, d); } catch (e) { return { err: String(e.message) }; }
-    const html = Array.from(document.body.children).filter(e => e.tagName !== 'SCRIPT').map(e => e.outerHTML).join('');   // not the app's own script text const out = []; const re = /nav\(\s*'([a-z0-9-]+)'\s*(?:,\s*('[^']*'|\d+|\{[^}]{0,120}\}))?\s*\)/g; let m;
+    const html = Array.from(document.body.children).filter(e => e.tagName !== 'SCRIPT').map(e => e.outerHTML).join('');   // not the app's own script text
+    const out = []; const re = /nav\(\s*'([a-z0-9-]+)'\s*(?:,\s*('[^']*'|\d+|\{[^}]{0,120}\}))?\s*\)/g; let m;
     while ((m = re.exec(html))) { let dd = null; if (m[2] != null) { const v = m[2]; if (/^'/.test(v)) dd = v.slice(1, -1); else if (/^\d+$/.test(v)) dd = +v; else { try { dd = Function('return ' + v)(); } catch (e) { dd = null; } } } out.push([m[1], dd]); }
     return { tt: (document.getElementById('tt') || {}).textContent || '', len: (document.getElementById('S') || document.body).innerText.length, links: out, geom: Function('return (' + g + ')()')() }; }, [s, d, geom.toString()]).catch(e => ({ err: String(e.message) }));
   await page.waitForTimeout(150);
