@@ -9920,6 +9920,19 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Build 2026-11-18k: messages sweep (rotation area 7) (PREVIEW)
+
+- **A failed provider message re-sent itself in a loop while the chat was open.** `renderChat` calls
+  `_flushPendingProviderMsgs(id)` on every repaint (including failed ones), and marking a message
+  failed repaints, so: fail, repaint, re-send, fail... A new "That message didn't reach X, tap it to
+  resend" popup every ~3 s and two server calls each round, for as long as the chat stayed open
+  (offline, server 500, or `{ok:false}`). Now an automatic re-drive of a FAILED message waits at least
+  a minute since its last try (`_pmLastTry`, in memory, keyed by `_mid`); pending messages and "Tap to
+  resend" are unchanged and immediate.
+Test: `scratchpad/test-msg-send-fail.mjs` (MSG=500|offline|okfalse|ok), WebKit + Chromium: one popup,
+two tries, then quiet; Tap to resend tries again. `sweep2-ui-msg-stuck-sending`, `sweep2-ui-summary-msg`,
+`test-appt-time-in-messages`, `test-chat-compose-above-nav` pass.
+
 ## 2026-11-18 — Build 2026-11-18j: payments sweep (rotation area 6) (PREVIEW)
 
 - **Build invoice started on the first client in the list** (`_biClient` defaulted to `entries[0]`), so

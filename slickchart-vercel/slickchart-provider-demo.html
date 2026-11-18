@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18j';
+const APP_BUILD='2026-11-18k';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -25499,9 +25499,15 @@ function _setProviderMsgStatus(id,mid,status){
 }
 // Re-drive any messages left 'pending' (composed before the client had joined) or 'failed' now that
 // we may have a delivery token. Called when a chat opens and after a sync that can bring a new token.
+// When each message was last tried (this session only). renderChat calls the flush on EVERY repaint,
+// and marking a message failed repaints, so a failed message was re-sent, failed, repainted and re-sent
+// in a loop for as long as the chat stayed open: a new "didn't reach" popup every few seconds (2026-11-18
+// sweep). A failed message is re-driven automatically at most once a minute; "Tap to resend" is immediate.
+const _pmLastTry={};
 function _flushPendingProviderMsgs(id,onlyPending){
   try{const c=CL[id];if(!c||!c._token||id==='maya')return;const arr=msgStore[id]||[];
-    arr.forEach(m=>{if(m&&m.from==='me'&&(m.status==='pending'||(!onlyPending&&m.status==='failed')||(m.status==='sending'&&Date.now()-(Number(m.ts)||0)>60000))){   // 'sending' a minute later never finished (app closed mid-send); its key is stable, so a resend cannot doublem.status='sending';if(!m._mid)m._mid=_genMid();
+    arr.forEach(m=>{if(m&&m._mid&&m.status==='failed'&&Date.now()-(_pmLastTry[m._mid]||0)<60000)return;
+      if(m&&m.from==='me'&&(m.status==='pending'||(!onlyPending&&m.status==='failed')||(m.status==='sending'&&Date.now()-(Number(m.ts)||0)>60000))){   // 'sending' a minute later never finished (app closed mid-send); its key is stable, so a resend cannot doublem.status='sending';if(!m._mid)m._mid=_genMid();
       // Pass null idem so the delivery uses the SAME stable 'pm-'+_mid key as the initial send and the
       // manual resend. Minting a fresh random key here meant a lost-response flush + later manual resend
       // sent two different keys, so the client received the message twice.
@@ -25564,6 +25570,7 @@ function sendMsg(id,imgArg){
   }
 }
 async function _sendProviderMessageToClient(id,text,photos,_retried,_idem,_mid){
+  if(_mid)_pmLastTry[_mid]=Date.now();
   const c=CL[id];if(!c||!c._token){if(_mid)_setProviderMsgStatus(id,_mid,'pending');return;} // not joined yet \u2014 leave pending
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok){if(_mid)_setProviderMsgStatus(id,_mid,'failed');return;}
   const imgs=Array.isArray(photos)?photos:[];
