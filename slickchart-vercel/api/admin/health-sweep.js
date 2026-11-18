@@ -384,16 +384,6 @@ export async function runSweep(q) {
   });
 
   // 8. Billing: a provider using the app on a lapsed plan, or a paid plan with no account to use it.
-  // Ashley 2026-11-18: remind her to upgrade Resend (free plan: 100 emails a day) at 90 paying
-  // providers. The number is hers (founder setting resend_upgrade_at, 0 = off).
-  await check('email-plan', 'The email plan fits how many providers you have', async () => {
-    let at = 90; try { at = (await getFounderSettings(q)).resend_upgrade_at; } catch (e) {}
-    if (!at) return { items: [] };
-    const r = await q`SELECT count(*)::int AS n FROM subscriptions WHERE status = 'active'`;
-    const n = r[0] ? r[0].n : 0;
-    return { items: n >= at ? [n + ' paying providers (your reminder is set at ' + at + '): time to check the Resend plan. You are on Transactional 50,000 emails a month ($20); look at Resend > Settings > Usage and, if this month is near 50,000, move to 100,000 ($35 a month). Once done, set the reminder to 0 (or a higher number) in Admin tools > Paid but no account.'] : [] };
-  });
-
   await check('billing', 'Every paying provider can get in', async () => {
     const items = [];
     const lapsed = await q`SELECT s.email, s.status FROM subscriptions s JOIN providers p ON lower(p.email) = lower(s.email)

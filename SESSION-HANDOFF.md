@@ -9871,8 +9871,3 @@ ready for 600 providers".
   SAVED past 4.5 MB (the request limit); the largest is 2.9 MB. Photos live as base64 in Postgres
   (`files`), which is the main storage cost at scale; Vercel Blob or similar would be cheaper. See the
   thread's report for plan costs (Neon storage, Resend volume).
-- **Her plans, from her screenshots 2026-11-18:** Neon **Launch** (via Vercel, $0.35/GB-month storage,
-  scale to zero after 5 min) and Resend **Transactional 50,000 emails/month, $20** (renews Dec 3). Next
-  Resend step is 100,000 for $35. Health sweep `email-plan` reminds her at `resend_upgrade_at` paying
-  providers (founder setting, default 90 = her number, 0 = off, editable in Admin tools > Paid but no account).
-

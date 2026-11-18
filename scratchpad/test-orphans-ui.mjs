@@ -1,15 +1,15 @@
 // Admin tools -> Paid but no account: opens, lists each person with what was sent, saves her waits.
-import { createRequire } from 'module'; const pw = createRequire(import.meta.url)('playwright');
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 const PORT = process.env.PORT || 8899;
-const b = await pw.chromium.launch();
+const b = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const ctx = await b.newContext({ viewport: { width: 390, height: 800 } }); const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
 await p.addInitScript(() => { localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_hide_sample', '1'); localStorage.setItem('sc_is_founder', '1'); });
-let posted = null; let settings = { orphan_email_hours: 3, orphan_alert_hours: 48, orphan_alert_on: 0, resend_upgrade_at: 90 };
+let posted = null; let settings = { orphan_email_hours: 3, orphan_alert_hours: 48, orphan_alert_on: 0 };
 await p.route('**/api/**', async r => { const u = r.request().url();
   if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
   if (u.includes('/api/admin/orphans')) {
     if (r.request().method() === 'POST') { posted = JSON.parse(r.request().postData() || '{}'); if (posted.resend === 'all') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, sent: 1, results: [{ email: 'jill@stuck.com', result: 'sent' }, { email: 'new@stuck.com', result: 'already' }] }) }); settings = Object.assign({}, settings, posted); return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, settings }) }); }
-    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, settings, labels: { resend_upgrade_at: { label: 'Remind me to upgrade the email plan (Resend) at this many paying providers. 0 = off', min: 0, max: 100000, def: 90 }, orphan_email_hours: { label: 'Hours after paying before the "finish your account" email goes out', min: 1, max: 168 }, orphan_alert_hours: { label: 'Hours after paying before you are told they still have no account', min: 2, max: 720 } },
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, settings, labels: { orphan_email_hours: { label: 'Hours after paying before the "finish your account" email goes out', min: 1, max: 168 }, orphan_alert_hours: { label: 'Hours after paying before you are told they still have no account', min: 2, max: 720 } },
       people: [{ email: 'jill@stuck.com', paidAt: new Date(Date.now() - 5 * 36e5).toISOString(), emailedAt: new Date(Date.now() - 2 * 36e5).toISOString(), status: 'emailed', failedSignIns: 6 }, { email: 'new@stuck.com', paidAt: new Date().toISOString(), status: 'waiting (2h until the email)', failedSignIns: 0 }] }) });
   }
   return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{},"clients":[],"events":[]}' }); });
@@ -30,11 +30,8 @@ res.push(['saving with it off sends 0 and says she is not told', posted && poste
 await p.check('#orph-orphan_alert_on');
 await p.fill('#orph-orphan_email_hours', '6'); await p.fill('#orph-orphan_alert_hours', '30'); await p.click('#orph-save'); await p.waitForTimeout(600);
 const msg = await p.textContent('#orph-msg');
-res.push(['email-plan reminder field shows 90 providers', await p.$eval('#orph-resend_upgrade_at', el => el.value === '90' && el.min === '0' && /providers/.test(el.parentElement.textContent)).catch(() => false)]);
 res.push(['saves her values', posted && posted.orphan_email_hours === 6 && posted.orphan_alert_hours === 30 && posted.orphan_alert_on === 1 && /after 6 h.*after 30 h/.test(msg), msg]);
 await p.screenshot({ path: process.env.SHOT || '/tmp/orphans-ui.png' });
-await p.fill('#orph-resend_upgrade_at', '0'); await p.click('#orph-save'); await p.waitForTimeout(600);
-res.push(['the email-plan reminder can be switched off (0)', posted && posted.resend_upgrade_at === 0, JSON.stringify(posted)]);
 await p.click('#orph-resend'); await p.waitForTimeout(600);
 const rm = await p.textContent('#orph-resend-msg');
 res.push(['one tap resends to all and says what happened to each', posted && posted.resend === 'all' && /Sent to 1 of 2/.test(rm) && /jill@stuck.com: sent/.test(rm) && /new@stuck.com: already sent in the last hour/.test(rm), rm]);
