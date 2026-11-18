@@ -9688,7 +9688,7 @@ localhost:8899 tests without a separate server; `sweep-dup-xdevice-lib` launch f
 - `sc_ci_cleared` is a grow-only union, so Undo of a cleared check-in can come back on the next pull.
 - A tap made in the first seconds of a cold open is dropped with boot's own writes (`_bootQueued`), by design.
 
-**Build 2026-11-18e — the three items above, fixed (Ashley: "fix all of those").** Her message is the
+**Build 2026-11-18f — the three items above, fixed (Ashley: "fix all of those").** Her message is the
 yes for the deletes.
 - **Message photos kept once.** `_slimMsgPhotos` (run by `saveMessages`): a CLIENT message (`from:'them'`
   with an `evId`) whose every photo `ph_ev_<evId>_<n>` is on her photo chart with bytes AND in
