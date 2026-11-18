@@ -9688,6 +9688,30 @@ localhost:8899 tests without a separate server; `sweep-dup-xdevice-lib` launch f
 - `sc_ci_cleared` is a grow-only union, so Undo of a cleared check-in can come back on the next pull.
 - A tap made in the first seconds of a cold open is dropped with boot's own writes (`_bootQueued`), by design.
 
+**Build 2026-11-18e — the three items above, fixed (Ashley: "fix all of those").** Her message is the
+yes for the deletes.
+- **Message photos kept once.** `_slimMsgPhotos` (run by `saveMessages`): a CLIENT message (`from:'them'`
+  with an `evId`) whose every photo `ph_ev_<evId>_<n>` is on her photo chart with bytes AND in
+  `sc_photo_backed` keeps only `imgPids`/`imgCount`; `imgs` becomes `[]`. The chat reads `_msgImgs`.
+  Not backed up yet, her own sent photos, or no evId: unchanged. A device that does not have the
+  chart photo yet (restore still running) shows "Photo, on the photo chart" instead of a blank. An
+  OLD build shows such a message as text only until it relaunches; its full copy merges by evId
+  (`_msgKey`), so the two never make a second message.
+- **Old records cleaned daily.** `lib/retention.js` `pruneOldRecordsDaily`, run from `cron-nurture`
+  after the emails, once a day (claim `system`/`retention:<day>`), 5,000 rows a batch, max 100k per
+  rule a day, each rule its own try. Removes: kv_history `before-restore`/`dedupe`/`before-purge`
+  beyond the newest 10 per account+key+reason AND older than 90 days; reminder_log DATED one-time
+  claims older than 180 days (homecare, apptbefore, apptday, auto, evt:bday, cicron, retention) — never
+  `founder`, `evt:nov`, `heal-`; login_attempts > 45 days; auth_tokens expired > 7 days; sessions
+  REVOKED and unseen 60 days (signed-in ones never); `aiusage:<date>` counters > 90 days. Not touched:
+  client_events, notify_log, beta_events, kv. Result lands in the cron's answer as `retention` and the
+  log as `[retention]`. Test: `scratchpad/test-retention-pg.mjs` (real PostgreSQL, 30/30).
+- **Check-in Undo sticks.** New synced `sc_ci_clear_at` `{id: +clearedAt | -undoneAt}` in `_TOMB_OBJ`
+  (newest decision wins everywhere) and in `_LIB_TOMB.sc_checkins`. `_clearedCheckinsLog` = the old
+  list minus ids undone, plus ids cleared. Old builds still read `sc_ci_cleared` alone, as before.
+- Tests: `scratchpad/test-ci-undo-msg-photos.mjs` 13/13 Chromium + WebKit; growth sweep, merge-no-doubling,
+  check-merge-growth clean.
+
 ## 2026-11-18 — Account clean-up for repeated lists: /api/admin/dedupe-kv (PREVIEW)
 
 Ashley 2026-11-18 8:46am PT: "lets get this fixed" about the oversized saved lists across accounts.

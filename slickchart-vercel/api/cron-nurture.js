@@ -3,7 +3,8 @@
 // as often as scheduled: every step is claimed once, and each contact gets at most
 // one email per run. Auth matches cron-reminders (CRON_SECRET Bearer, or ?key= for
 // a manual test).
-import { dbEnabled } from '../lib/db.js';
+import { dbEnabled, sql } from '../lib/db.js';
+import { pruneOldRecordsDaily } from '../lib/retention.js';
 import { runNurture } from '../lib/nurture.js';
 import { runFreeFunnel } from '../lib/free-funnel.js';
 import { withCronRun } from '../lib/cron-runs.js';
@@ -37,6 +38,14 @@ async function handler(req, res) {
   } catch (e) {
     out.freeError = true;
     console.error('[cron-nurture] free funnel failed:', e && e.stack || e);
+  }
+  // Once a day: remove old records nothing reads any more (lib/retention.js). Its own try, after the
+  // emails, so a slow or failing cleanup can never hold up or stop a send.
+  try {
+    const r = await pruneOldRecordsDaily(sql());
+    if (r) out.retention = r;
+  } catch (e) {
+    console.error('[cron-nurture] retention failed:', e && e.stack || e);
   }
   if (out.nurtureError && out.freeError) { res.status(500).json({ error: 'cron failed' }); return; }
   res.status(200).json(out);
