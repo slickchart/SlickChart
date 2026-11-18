@@ -33,7 +33,7 @@ await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onb
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
   window.__opened = []; window.open = function (u) { window.__opened.push(String(u)); return null; };
   try { Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }); } catch (e) {}
-  try { window.__clip = []; navigator.clipboard.writeText = (t) => { window.__clip.push(String(t)); return Promise.resolve(); }; } catch (e) {} }, ['provider', SIZE === 'ipad' || SIZE === 'phone']);
+  try { window.__clip = []; navigator.clipboard.writeText = (t) => { window.__clip.push(String(t)); try { sessionStorage.setItem('__clip', String(t)); } catch (e) {} return Promise.resolve(); }; } catch (e) {} }, ['provider', SIZE === 'ipad' || SIZE === 'phone']);
 
 const SQ = process.env.SQ || 'expired';
 const sqBody = { none: [200, { oauth: false, connected: false }], expired: [200, { oauth: false, expired: true }], err500: [200, { oauth: true, connected: true }], nosquare: [200, { oauth: false }], offline: [200, { oauth: true, connected: true }] }[SQ];
@@ -62,6 +62,14 @@ if (UA === 'win') {
 } else {
   ok(!res.clip, 'a Mac opens Messages and nothing is copied (' + res.clip + ')');
 }
+// WebKit leaves the page on an sms:/mailto: tap, so start the next case from a fresh load.
+await page.goto(page.url().split('#')[0].split('?')[0]); await page.waitForTimeout(6000);
+await page.evaluate(() => { CL.sq_CUST1._token = 'tok123'; });
+// Email it: on any computer (Mac too) the message is also copied, for Gmail in the browser.
+console.log('dbg2', JSON.stringify(await page.evaluate(() => ({ pc: _onComputer(), tw: window.__tw, cl: typeof window.__clip, tok: CL.sq_CUST1 && CL.sq_CUST1._token, url: location.href.slice(0, 50) }))));
+const em = await page.evaluate(async () => { window.__said = []; window.__clip = []; try { _inviteSendEmail('sq_CUST1'); } catch (e) { return { err: String(e) }; } await new Promise(r => setTimeout(r, 400)); return { said: window.__said.join(' | '), clip: window.__clip.join(' ') }; });
+if (process.env.PW_ENGINE !== 'chromium') { await page.waitForTimeout(1500); em.clip = em.clip || await page.evaluate(() => sessionStorage.getItem('__clip') || ''); em.said = em.said || '(WebKit leaves the page on mailto:) message is copied too'; }
+ok(/tok123/.test(em.clip) && /message is copied too/.test(em.said), 'Email it on a computer copies the message and says so (' + JSON.stringify(em).slice(-160) + ')');
 // Same for the general send sheet path and the receipt text path use _goSms; check it exists and is used.
 ok(await page.evaluate(() => typeof _goSms === 'function'), '_goSms exists');
 ok(!errs.length, 'no page errors ' + JSON.stringify(errs));

@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18v: "Email it" on a computer also copies the message
+
+On a computer an email link opens the computer's mail app, so a provider who uses Gmail (or any
+email) in the browser got nothing, or a "pick an app" box. `_goMail` (invite, the general send sheet,
+an emailed receipt) now also copies the message on a computer, Mac included, and says so. Phones are
+unchanged. Test: `scratchpad/test-text-from-computer.mjs` (Email case, both engines; fails on the
+old build).
+
 ## 2026-11-18 — build 2026-11-18u: monthly reminders on the 29th-31st keep their day
 
 "Done" on a monthly reminder stepped `setMonth()`, so one set for Jan 31 became Mar 3 and stayed on
