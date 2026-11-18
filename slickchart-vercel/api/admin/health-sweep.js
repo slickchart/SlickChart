@@ -263,12 +263,20 @@ export async function runSweep(q) {
   // refused as too large (Lisa 85 MB). Devices only report it from build 2026-11-17a, so read the
   // ACCOUNT copies too: any saved value near the 4.5 MB save limit, and how much of it is repeats.
   await check('kv-size', 'Every saved list fits in one save', async () => {
-    const rows = await q`SELECT owner, k, octet_length(v)::bigint AS bytes, v FROM kv WHERE octet_length(v) > 1500000 ORDER BY octet_length(v) DESC LIMIT 40`;
-    const items = rows.map(r => {
+    // Sizes only: on its first live run (2026-11-18) reading the values themselves came to over 64 MB
+    // and the database refused the whole answer. Repeats are counted inside the database, one row at
+    // a time, so one odd value can only lose its own repeat count.
+    const rows = await q`SELECT owner, k, octet_length(v)::bigint AS bytes FROM kv WHERE octet_length(v) > 1500000 ORDER BY octet_length(v) DESC LIMIT 40`;
+    const items = [];
+    for (const r of rows) {
       let rep = '';
-      try { const a = JSON.parse(r.v); if (Array.isArray(a) && a.length) { const u = new Set(a.map(x => JSON.stringify(x))).size; if (u < a.length) rep = ', ' + a.length + ' rows of which ' + (a.length - u) + ' are exact repeats'; } } catch (e) {}
-      return who(r.owner) + ': ' + r.k + ' is ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB' + rep + (Number(r.bytes) > 4300000 ? ' (over the save limit)' : '');
-    });
+      try {
+        const c = await q`SELECT jsonb_array_length(v::jsonb)::int AS n, (SELECT count(DISTINCT e)::int FROM jsonb_array_elements(v::jsonb) e) AS u
+          FROM kv WHERE owner = ${r.owner} AND k = ${r.k} AND left(ltrim(v), 1) = '['`;
+        if (c[0] && c[0].u < c[0].n) rep = ', ' + c[0].n + ' rows of which ' + (c[0].n - c[0].u) + ' are exact repeats';
+      } catch (e) {}
+      items.push(who(r.owner) + ': ' + r.k + ' is ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB' + rep + (Number(r.bytes) > 4300000 ? ' (over the save limit)' : ''));
+    }
     return { items, level: rows.some(r => Number(r.bytes) > 4300000) ? 'warn' : (rows.length ? 'warn' : 'ok') };
   });
 

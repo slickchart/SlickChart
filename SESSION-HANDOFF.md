@@ -9629,6 +9629,14 @@ Ashley: *"since we added in the free trial not every sign up is a paid provider 
 - New **"💰 Trial converted to paid!"** push + email to every founder device on the FIRST real payment of a trial (`notifyFounderTrialConverted` in `api/stripe-webhook.js`, claim `claimTrialConversion` in `lib/trial-outcomes.js`: once per subscription via `trial_outcomes.converted_notified_at`, only when `first_paid_at` is within 3 days, so old conversions and renewals stay silent). Fires from `invoice.paid` or the subscription event, whichever lands second. Logged as `notify_log` kind `trial-converted`. Test: `scratchpad/founder-push/trial-converted.mjs` (in CI).
 - Daily brief: health-sweep `trials.convertedLast24h` / `convertedLast30d`, and `trials.summary` opens with "N trials became paying in the last 24 hours."
 
+## 2026-11-18 — kv-size health check: count in the database (PREVIEW)
+
+Its first live run (brief 2026-11-18 14:41Z) failed: "response is too large (max is 67108864 bytes)",
+because it read the VALUES of up to 40 entries over 1.5 MB. That alone means many account values are
+over 1.5 MB. It now reads sizes only and counts exact repeats inside Postgres one entry at a time
+(a value that is not valid JSON only loses its own count). Checked against a local Postgres 16:
+2000-row list with 1 distinct row reports 1999 repeats; non-array and broken values are skipped.
+
 ## 2026-11-18 — Build 2026-11-18b: the "too large" popup heals itself, says no photo, and every account is checked (PREVIEW)
 
 Ashley 2026-11-18: *"the photos too large is happening across many apps so we need to figure that out"*.
