@@ -9963,3 +9963,27 @@ and skips crash counting for browsers. Read `new-providers` / `app-launches` fir
 Test `scratchpad/test-new-provider-wide.mjs` (SIZE=mac|imac|ipad|phone): WebKit 4/4 sizes ALL PASS,
 Chromium mac+phone ALL PASS. `test-onboard-resume` passes. WebKit installed this session at
 `/tmp/claude-0/pw-webkit` (`PLAYWRIGHT_BROWSERS_PATH`).
+
+## 2026-11-18 — Photo consults take body photos (build 2026-11-18h)
+
+Ashley: *"if someone has something like eczema and wants to do a skin analysis, the photos wont
+necessarily only be of the face ... have options for face and/or body and direct them on taking the
+photos depending on the options."* She left the design to us.
+
+- **Client** (`slickchart-client.html`, `_vcBodyOn` / `_vcWhereHTML` / `_vcSlots` / `_vcGridHTML`):
+  a skin consult asks "Where is your concern?" Face (default, the provider's own photo list,
+  unchanged), Body, or Face and body. Body ticks areas from `_vcAreaList()` (neck & chest, back &
+  shoulders, arms, hands, stomach & sides, legs, feet, somewhere else + a typed name). Each area asks
+  "<area>, whole area" + "<area>, close-up", one line of coaching per area, body camera tips
+  (`_vcTipsFor`), and a privacy line (only the area, no private areas, goes only to her provider,
+  not a medical diagnosis). Body slots are keyed `area:<id>:wide|close` so typing the "other" name
+  never orphans a photo. Only on-screen slots are sent; each photo carries `area`; the payload adds
+  `areas` + `concern`. `_vcFitPhotos` shrinks the set on the way out to stay under 3.2 MB (17 noise
+  photos, 12.4 MB raw, went out at 1.9 MB). Draft keeps concern/areas/otherArea.
+- **Provider**: `_sanVcPhotos` keeps `area`, `_sanVcAreas` stores `areas`; review screen groups by
+  area (`_vcGroupedGrid`), chart card shows "Areas: ..." (`_vcAreasLine`); AI read takes one photo
+  per area first. Per consult type switch "Let them add body photos" (`bodyAreas`,
+  `_vcBodyAreasOn`: unset = on for skin, off otherwise), carried on the invite, SlickBridge and
+  `_assembleClientData`. Face-only records are byte-for-byte as before.
+- Test: `scratchpad/test-vc-body-areas.mjs` (27 client + 12 provider checks; phone/tablet/desktop
+  widths; `SHOTS=<dir>` saves screenshots). Green in Chromium and WebKit, plus all `sweep*-vc-*`.
