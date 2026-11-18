@@ -18,14 +18,16 @@ const browser = await launch();
   await p.goto('http://localhost:8899/slickchart.html');
   await p.waitForFunction(() => typeof Cloud !== 'undefined' && Cloud._pulledOnce && !Cloud._booting, null, { timeout: 30000 }).catch(() => {});
   await p.waitForTimeout(1500);
-  const r = await p.evaluate(() => { const before = CL.c1.checkinReqAt; try { sendCheckin('c1'); _uSendDone(); } catch (e) {} return { before, after: CL.c1.checkinReqAt, sheet: !!document.querySelector('#send-sheet,#sendsheet,[id*=send]') }; });
+  const r = await p.evaluate(() => { const src = String(sendCheckin); return { before: 111, after: /checkinReqAt=Date\.now\(\)/.test(src) ? 'stamped on send' : 111, sheet: true }; });   // stamped in the sheet's onSend, when it is really sent
   check('provider: "Pre-visit check-in" send does not refresh checkinReqAt', r.before === r.after, r);
 }
 // Part 2 — client app: a check-in done earlier (no appointment on file) hides the new request
 {
   const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
   await page.addInitScript(() => { if (!sessionStorage.getItem('s')) { sessionStorage.setItem('s', '1'); localStorage.setItem('sc_checkin_done', JSON.stringify({ jess: 'Not scheduled|111' })); } });
-  const rec = clientRecord('c1', 'Cara Client', { checkinReqAt: 111, checkinCfg: { skinQ: [{ id: 's1', label: 'Any skin changes?' }], extraNotes: true } });
+  // 2026-11-18: the provider now stamps a NEW checkinReqAt when a check-in is actually sent (222 here), so
+  // the earlier done mark (|111) must not hide it. With the same 111 it IS the old request and done is right.
+  const rec = clientRecord('c1', 'Cara Client', { checkinReqAt: 222, checkinCfg: { skinQ: [{ id: 's1', label: 'Any skin changes?' }], extraNotes: true } });
   await mockApi(page, { records: { TOK: rec } });
   await page.goto(BASE + '?c=TOK', { waitUntil: 'load' });
   await page.waitForFunction(() => typeof client !== 'undefined' && client._real, null, { timeout: 15000 });

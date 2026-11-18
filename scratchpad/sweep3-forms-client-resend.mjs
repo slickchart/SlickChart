@@ -15,7 +15,7 @@ await page.goto(BASE + '?c=TOK', { waitUntil: 'load' });
 await page.waitForFunction(() => typeof client !== 'undefined' && client._real, null, { timeout: 15000 });
 await page.waitForTimeout(1200);
 // Client removes guide + course from their library (what the confirm sheet's action does).
-await page.evaluate(() => { _deletedRes.add(_resGK('g1')); _resSetSave('sc_deleted_res', _deletedRes); _deletedRes.add(_resCK('co1')); _resSetSave('sc_deleted_res', _deletedRes); });
+await page.evaluate(() => { _resMarkRemoved(_resGK('g1')); _resMarkRemoved(_resCK('co1')); _deletedRes.add(_resGK('g1')); _resSetSave('sc_deleted_res', _deletedRes); _deletedRes.add(_resCK('co1')); _resSetSave('sc_deleted_res', _deletedRes); });
 // Provider re-sends both: provider app's _assignPending bumps assignedAt; client-data payload is rebuilt.
 opts.records.TOK = clientRecord('c1', 'Cara Client', { pendingGuides: [Object.assign({}, guide, { assignedAt: Date.now() })], pendingCourses: [Object.assign({}, course, { assignedAt: Date.now() })], pendingForms: [form], checkinCfg: { steps: [] } });
 await page.reload({ waitUntil: 'load' });

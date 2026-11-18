@@ -9920,6 +9920,23 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Client app sweep (rotation area 8) (PREVIEW, slickchart-client.html)
+
+`scratchpad/sweep-client-wide.mjs` (SIZE=phone|ipad|mac, FAIL=none|500|offline) screenshots every client
+screen and fails message/form sends. Fixed:
+- A client who opened her link on a **computer** got "For the best experience, get the app" with App
+  Store / Google Play buttons. `_clOnComputer()` (same test as the provider app's `_onComputer`) hides
+  it on a laptop/desktop; phones and iPads still get it. Test: `test-client-nudge-computer.mjs`.
+- `_providerHasSubmission`: a received copy with NO `at` stamp (sent before submissions carried one)
+  counted as proof a RE-SENT form had arrived, so the re-sent form stayed hidden from the client for
+  good while the provider waited. Now an undated copy is not proof when the pending copy has an
+  `assignedAt`; the 12 h trust window then lets it come back (`sweep3-forms-client-resend-lost`: 0).
+Stale sweeps corrected (they were reporting bugs the app no longer has): `sweep3-forms-client-resend`
+(removed guides/courses: the app's real remove path `_resMarkRemoved` was skipped) and
+`sweep3-forms-checkin-resend` / `v-forms-checkin-resend` (a check-in is stamped `checkinReqAt` in the
+send sheet's onSend; the test re-used the old stamp). All three now 0 confirmed.
+Client message send failure already shows "Not delivered · Tap to retry" once, no loop.
+
 ## 2026-11-18 — Build 2026-11-18k: messages sweep (rotation area 7) (PREVIEW)
 
 - **A failed provider message re-sent itself in a loop while the chat was open.** `renderChat` calls

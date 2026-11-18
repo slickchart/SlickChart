@@ -1759,6 +1759,10 @@ function _providerHasSubmission(p,formId,title,assignedAt){
     return (client._forms||[]).concat(p.forms||[]).some(function(f){
       if(!f)return false;
       if(since&&Number(f.at)&&Number(f.at)<since)return false;
+      // A copy with NO time (sent before submissions carried one) cannot prove a re-sent copy arrived
+      // either: it let a re-sent intake stay hidden forever while the provider waited (2026-11-18).
+      // Worst case now is the client sees a form again that is already on its way.
+      if(since&&!Number(f.at))return false;
       if(f.formId)return f.formId===formId;
       return !!title&&String(f.title||'')===String(title);
     });
@@ -2825,11 +2829,16 @@ function _dismissAppNudge(){
   try{localStorage.setItem('sc_appnudge_dismissed','1');}catch(e){}
   var el=document.getElementById('sc-appnudge');if(el)el.remove();
 }
+// Same test as the provider app's _onComputer (2026-11-18): a client who opened her link on a laptop
+// was told to get the iPhone/Android app. An iPad (touch Mac) and phones still get the nudge.
+function _clOnComputer(){try{var ua=navigator.userAgent||'';if(/iPhone|iPad|iPod|Android/i.test(ua))return false;if(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1)return false;
+  return /Macintosh|Windows|X11|CrOS|Linux x86/.test(ua)&&!!(window.matchMedia&&window.matchMedia('(pointer:fine)').matches);}catch(e){return false;}}
 function _showAppDownloadNudge(){
   try{
     if(typeof _isNativeApp==='function'&&_isNativeApp())return;    // already inside the installed app
     if(typeof client==='undefined'||!client._real)return;          // sample/demo preview — don't nudge
     if(_formOnlyId)return;                                         // a form-only link: just the form, no app pitch
+    if(_clOnComputer())return;                                     // a laptop/desktop: the phone app is not for this screen
     var dismissed='';try{dismissed=localStorage.getItem('sc_appnudge_dismissed')||'';}catch(e){}
     if(dismissed)return;
     if(document.getElementById('sc-appnudge'))return;
