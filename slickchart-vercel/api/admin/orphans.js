@@ -12,6 +12,7 @@ import { verifyToken, isSessionValid } from '../../lib/auth.js';
 import { monitorKeyOk } from '../feedback.js';
 import { maskEmail } from '../../lib/app-launch-log.js';
 import { ensureNurtureTables } from '../../lib/nurture.js';
+import { resendSetupEmail } from '../../lib/setup-email.js';
 import { FOUNDER_SETTINGS, getFounderSettings, setFounderSetting } from '../../lib/founder-settings.js';
 
 async function founderSession(req, q) {
@@ -36,6 +37,22 @@ export default async function handler(req, res) {
   if (!founder && !monitor) { res.status(403).json({ error: 'Owner-only.', code: 'notowner' }); return; }
 
   try {
+    if (req.method === 'POST' && req.body && req.body.resend === 'all') {
+      // "Send setup email again" — to EVERY person on this list (paid, real subscription, no account),
+      // in one tap (CLAUDE.md §4d). The list is read from the server, never from the request, so this
+      // can only ever email people who paid and have no account. Founder session only (above).
+      await ensureProvidersTable();
+      await ensureNurtureTables(q);
+      const list = await q`SELECT s.email FROM subscriptions s
+        WHERE s.status IN ('active', 'trialing') AND coalesce(s.stripe_subscription_id, '') <> ''
+          AND s.updated_at > now() - interval '60 days'
+          AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
+        ORDER BY s.updated_at DESC LIMIT 50`;
+      const results = [];
+      for (const r of list) results.push({ email: String(r.email || '').toLowerCase(), result: await resendSetupEmail(q, r.email) });
+      res.status(200).json({ ok: true, sent: results.filter(x => x.result === 'sent').length, results });
+      return;
+    }
     if (req.method === 'POST') {
       const b = req.body || {};
       const saved = {};
@@ -52,6 +69,8 @@ export default async function handler(req, res) {
     const rows = await q`SELECT s.email, s.updated_at,
         (SELECT sent_at FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'orphan' AND n.step = 0) AS emailed_at,
         (SELECT sent_at FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'orphan' AND n.step = 1) AS alerted_at,
+        (SELECT sent_at FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'setup' AND n.step = 0) AS setup_at,
+        (SELECT max(sent_at) FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'setup-resend') AS resent_at,
         EXISTS (SELECT 1 FROM nurture_optout o WHERE o.email = lower(s.email)) AS unsubscribed
       FROM subscriptions s
       WHERE s.status IN ('active', 'trialing') AND coalesce(s.stripe_subscription_id, '') <> ''
@@ -67,9 +86,9 @@ export default async function handler(req, res) {
       let status;
       if (emailed) status = 'emailed';
       else if (r.unsubscribed) status = 'unsubscribed, not emailed';
-      else if (hours < settings.orphan_email_hours) status = 'waiting (' + (settings.orphan_email_hours - hours) + 'h until the email)';
+      else if (hours < settings.orphan_email_hours) status = (r.setup_at ? 'setup email sent, reminder' : 'waiting') + ' (' + (settings.orphan_email_hours - hours) + 'h until the email)';
       else status = 'due, goes out on the next hourly run';
-      return { email: founder ? em : maskEmail(em), paidAt: iso(r.updated_at), hoursSincePaid: hours, emailedAt: emailed, alertedAt: iso(r.alerted_at), status, failedSignIns: fails[em] || 0 };
+      return { email: founder ? em : maskEmail(em), paidAt: iso(r.updated_at), hoursSincePaid: hours, emailedAt: emailed, setupEmailAt: iso(r.setup_at), resentAt: iso(r.resent_at), alertedAt: iso(r.alerted_at), status, failedSignIns: fails[em] || 0 };
     });
     const labels = {}; for (const k of Object.keys(FOUNDER_SETTINGS)) labels[k] = { label: FOUNDER_SETTINGS[k].label, min: FOUNDER_SETTINGS[k].min, max: FOUNDER_SETTINGS[k].max, def: FOUNDER_SETTINGS[k].def };
     res.status(200).json({ ok: true, settings, labels, people });

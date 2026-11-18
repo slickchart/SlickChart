@@ -8,7 +8,7 @@ let posted = null; let settings = { orphan_email_hours: 3, orphan_alert_hours: 4
 await p.route('**/api/**', async r => { const u = r.request().url();
   if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
   if (u.includes('/api/admin/orphans')) {
-    if (r.request().method() === 'POST') { posted = JSON.parse(r.request().postData() || '{}'); settings = Object.assign({}, settings, posted); return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, settings }) }); }
+    if (r.request().method() === 'POST') { posted = JSON.parse(r.request().postData() || '{}'); if (posted.resend === 'all') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, sent: 1, results: [{ email: 'jill@stuck.com', result: 'sent' }, { email: 'new@stuck.com', result: 'already' }] }) }); settings = Object.assign({}, settings, posted); return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, settings }) }); }
     return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, settings, labels: { orphan_email_hours: { label: 'Hours after paying before the "finish your account" email goes out', min: 1, max: 168 }, orphan_alert_hours: { label: 'Hours after paying before you are told they still have no account', min: 2, max: 720 } },
       people: [{ email: 'jill@stuck.com', paidAt: new Date(Date.now() - 5 * 36e5).toISOString(), emailedAt: new Date(Date.now() - 2 * 36e5).toISOString(), status: 'emailed', failedSignIns: 6 }, { email: 'new@stuck.com', paidAt: new Date().toISOString(), status: 'waiting (2h until the email)', failedSignIns: 0 }] }) });
   }
@@ -32,6 +32,9 @@ await p.fill('#orph-orphan_email_hours', '6'); await p.fill('#orph-orphan_alert_
 const msg = await p.textContent('#orph-msg');
 res.push(['saves her values', posted && posted.orphan_email_hours === 6 && posted.orphan_alert_hours === 30 && posted.orphan_alert_on === 1 && /after 6 h.*after 30 h/.test(msg), msg]);
 await p.screenshot({ path: process.env.SHOT || '/tmp/orphans-ui.png' });
+await p.click('#orph-resend'); await p.waitForTimeout(600);
+const rm = await p.textContent('#orph-resend-msg');
+res.push(['one tap resends to all and says what happened to each', posted && posted.resend === 'all' && /Sent to 1 of 2/.test(rm) && /jill@stuck.com: sent/.test(rm) && /new@stuck.com: already sent in the last hour/.test(rm), rm]);
 await p.click('#orph-close'); res.push(['closes', !(await p.$('#orphan-modal'))]);
 res.push(['no page errors', !errs.length, errs.join('|')]);
 await b.close(); let all = true; for (const [n, v, d] of res) { console.log((v ? 'PASS ' : 'FAIL ') + n + (v ? '' : ' :: ' + (d || ''))); all = all && v; } console.log(all ? 'ALL PASS' : 'FAILURES'); process.exit(all ? 0 : 1);

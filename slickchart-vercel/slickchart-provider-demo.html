@@ -35271,7 +35271,7 @@ async function _founderOrphans(){
   catch(e){box.innerHTML='<div style="font-size:16px;color:var(--p-ink);margin-bottom:12px;">Couldn\u2019t check. Try again.</div><button class="btng" id="orph-close" style="width:100%;border-radius:12px;padding:11px;">Close</button>';box.querySelector('#orph-close').onclick=()=>ov.remove();return;}
   const st=j.settings||{},lb=j.labels||{};
   const people=(j.people||[]).map(function(x){
-    const sent=x.emailedAt?('Setup email sent '+when(x.emailedAt)):esc(x.status||'');
+    const sent=(x.emailedAt?('Setup email sent '+when(x.emailedAt)):esc(x.status||''))+(x.resentAt?'<br>Sent again '+esc(when(x.resentAt)):'');
     return '<div style="padding:10px 0;border-top:1px solid var(--p-line);"><div style="font-size:16px;color:var(--p-ink);word-break:break-all;">'+esc(x.email)+'</div>'
       +'<div style="font-size:15px;color:var(--p-mut);line-height:1.5;">Paid '+esc(when(x.paidAt))+'<br>'+sent+(x.alertedAt?'<br>You were told '+esc(when(x.alertedAt)):'')+(x.failedSignIns?'<br>'+x.failedSignIns+' failed sign-in'+(x.failedSignIns===1?'':'s')+' with this email':'')+'</div></div>';
   }).join('');
@@ -35285,8 +35285,17 @@ async function _founderOrphans(){
     +'<div id="orph-msg" style="font-size:15px;color:var(--p-mut);min-height:20px;margin-bottom:8px;"></div>'
     +'<div style="display:flex;gap:8px;margin-bottom:14px;"><button class="btng" id="orph-close" style="flex:1;border-radius:12px;padding:11px;">Close</button><button id="orph-save" style="flex:1;border:none;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--accent);color:var(--accent-ink);">Save</button></div>'
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:2px;">'+((j.people||[]).length?((j.people||[]).length+' waiting'):'Nobody waiting')+'</div>'
+    +((j.people||[]).length?'<button id="orph-resend" style="width:100%;margin:6px 0 4px;border:none;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--accent);color:var(--accent-ink);">Send setup email again to all '+(j.people||[]).length+'</button><div id="orph-resend-msg" style="font-size:15px;color:var(--p-mut);min-height:20px;margin-bottom:6px;"></div>':'')
     +(people||'<div style="font-size:15px;color:var(--p-mut);">Everyone who paid in the last 60 days has an account.</div>');
   box.querySelector('#orph-close').onclick=()=>ov.remove();
+  {const rb=box.querySelector('#orph-resend');if(rb)rb.onclick=async function(){
+    const m=box.querySelector('#orph-resend-msg');rb.disabled=true;m.textContent='Sending\u2026';
+    const words={sent:'sent','has-account':'has an account now, not sent',unsubscribed:'unsubscribed, not sent',already:'already sent in the last hour',failed:'did not send, try again',founder:'you, not sent','no-email':'no email'};
+    try{const r=await fetch('/api/admin/orphans',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({resend:'all'})});const k=await r.json().catch(()=>null);
+      if(!r.ok||!k||!k.ok){m.textContent=(k&&k.error)||'Couldn\u2019t send. Try again.';rb.disabled=false;return;}
+      m.innerHTML='Sent to '+k.sent+' of '+k.results.length+'.<br>'+k.results.map(function(x){return esc(x.email)+': '+esc(words[x.result]||x.result);}).join('<br>');
+    }catch(e){m.textContent='Couldn\u2019t send. Try again.';rb.disabled=false;}
+  };}
   box.querySelector('#orph-save').onclick=async function(){
     const msg=box.querySelector('#orph-msg');const body={};
     ['orphan_email_hours','orphan_alert_hours'].forEach(function(k){const el=box.querySelector('#orph-'+k);if(el&&el.value!=='')body[k]=Number(el.value);});

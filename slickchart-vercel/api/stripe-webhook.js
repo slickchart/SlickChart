@@ -23,6 +23,7 @@ import { recordBuildSale } from '../lib/build-sales.js';
 import { liveSubForEmail } from '../lib/stripe-subs.js';
 import { recordReferralFromCheckout, markReferralCanceled, rewardOnInvoice, getReferralSettings, recordSignupSource, sourceLine } from '../lib/referral.js';
 import { notifySharer } from '../lib/referral-notify.js';
+import { sendSetupEmailNow } from '../lib/setup-email.js';
 import { recordTrialFromSubscription, recordTrialPayment, claimTrialConversion } from '../lib/trial-outcomes.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
@@ -289,6 +290,10 @@ export default async function handler(req, res) {
         // subscription-activated branch below, so whichever event Stripe delivers first wins and the
         // push can't be lost to event ordering. Never blocks the webhook's 200.
         await notifyFounderPaid(q, email);
+        // The new provider's own "create your account" email, right away (lib/setup-email.js). Only
+        // when she has no account yet, once ever. Never throws, so Stripe still gets its 200.
+        const setup = await sendSetupEmailNow(q, email);
+        console.log('[stripe-webhook] setup email for new checkout: ' + setup);
         if (ref && ref.status === 'trial') {
           let rs = null; try { rs = await getReferralSettings(q); } catch (e) {}
           await notifySharer(ref.referrer_email, 'joined', { friend: ref.friend_first_name, rewardOnPayment: !rs || !!rs.ref_reward_on_payment });
