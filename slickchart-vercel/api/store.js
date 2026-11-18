@@ -25,6 +25,46 @@ export function sendJson(res, obj) {
   res.end();
 }
 
+// Pieces of one big value (see the PUT handler). Kept per owner + upload id; a piece is at most
+// ~1.2M characters so its request stays well under 4.5 MB even when every character needs escaping.
+export const PART_MAX_CHARS = 1200000, PART_MAX_COUNT = 60;
+let _partsReady = false;
+async function ensurePartsTable(q) {
+  if (_partsReady) return;
+  await q`CREATE TABLE IF NOT EXISTS kv_parts (
+    owner text NOT NULL, upload_id text NOT NULL, k text NOT NULL, i int NOT NULL, n int NOT NULL,
+    total int NOT NULL, data text NOT NULL, created_at timestamptz DEFAULT now(),
+    PRIMARY KEY (owner, upload_id, i)
+  )`;
+  _partsReady = true;
+}
+// Returns { have, of } while pieces are still missing, { k, value } once the value is whole, or
+// { error, status }. Owner always comes from the verified session (never the request).
+export async function takePart(q, owner, part) {
+  const k = String(part.k || ''), id = String(part.id || '');
+  const i = Number(part.i), n = Number(part.n), total = Number(part.total), data = part.data;
+  if (!/^[A-Za-z0-9_:.\-]{1,120}$/.test(k) || !/^[A-Za-z0-9_-]{8,64}$/.test(id)) return { error: 'Bad piece.', status: 400 };
+  if (!Number.isInteger(n) || n < 1 || n > PART_MAX_COUNT || !Number.isInteger(i) || i < 0 || i >= n) return { error: 'Bad piece.', status: 400 };
+  if (typeof data !== 'string' || data.length > PART_MAX_CHARS || !Number.isInteger(total) || total < 1 || total > PART_MAX_CHARS * PART_MAX_COUNT) return { error: 'Bad piece.', status: 400 };
+  // A piece may not end half way through an emoji (a lone surrogate cannot be stored as text and
+  // would come back as a broken character). The app cuts on a whole character; refuse one that did not.
+  if (data.length) { const last = data.charCodeAt(data.length - 1), first = data.charCodeAt(0);
+    if ((last >= 0xD800 && last <= 0xDBFF) || (first >= 0xDC00 && first <= 0xDFFF)) return { error: 'Bad piece.', status: 400 }; }
+  await ensurePartsTable(q);
+  if (Math.random() < 0.05) { try { await q`DELETE FROM kv_parts WHERE created_at < now() - interval '1 day'`; } catch (e) {} }
+  await q`INSERT INTO kv_parts (owner, upload_id, k, i, n, total, data) VALUES (${owner}, ${id}, ${k}, ${i}, ${n}, ${total}, ${data})
+    ON CONFLICT (owner, upload_id, i) DO UPDATE SET data = EXCLUDED.data, k = EXCLUDED.k, n = EXCLUDED.n, total = EXCLUDED.total, created_at = now()`;
+  const have = await q`SELECT count(*)::int AS c FROM kv_parts WHERE owner = ${owner} AND upload_id = ${id} AND k = ${k} AND n = ${n} AND total = ${total}`;
+  const c = have[0] ? have[0].c : 0;
+  if (c < n) return { have: c, of: n };
+  const rows = await q`SELECT i, data FROM kv_parts WHERE owner = ${owner} AND upload_id = ${id} AND k = ${k} AND n = ${n} AND total = ${total} ORDER BY i`;
+  const value = rows.map(r => r.data).join('');
+  await q`DELETE FROM kv_parts WHERE owner = ${owner} AND upload_id = ${id}`;
+  // Every piece present but not adding up (a piece from a different attempt): save nothing, the app sends it again.
+  if (rows.length !== n || value.length !== total) return { error: 'The pieces did not add up. Nothing was changed.', status: 409, reason: 'parts-mismatch' };
+  return { k, value };
+}
+
 async function requireLogin(req, res, q) {
   const secret = process.env.SESSION_SECRET || '';
   const h = req.headers['authorization'] || '';
@@ -114,7 +154,7 @@ export default async function handler(req, res) {
         const rows = await q`SELECT k, v FROM kv WHERE owner = ${owner} AND k = ${one}`;
         const data = {};
         rows.forEach(r => { data[r.k] = r.v; });
-        res.status(200).json({ data, count: rows.length });
+        sendJson(res, { data, count: rows.length });
         return;
       }
       // ?since=<ms> (2026-11-13): send only what CHANGED. Opening the app read her whole workspace every
@@ -169,6 +209,21 @@ export default async function handler(req, res) {
 
       let items = body.items;
       if (!items && body.key !== undefined) items = { [body.key]: body.value };
+
+      // ONE VALUE SENT IN PIECES (2026-11-18, "ready for 600 providers"). A request may be at most
+      // 4.5 MB, so a busy practice's client list (2.9 MB already) would one day be impossible to save
+      // at all. The app now sends any value that big as numbered pieces; each piece is kept here,
+      // owner-scoped, until the last one arrives, and only then is the whole value put together and
+      // saved through EXACTLY the same path as an ordinary save below (history copy, removed-client
+      // strip, merges). Nothing is written to the account until every piece is here and the total
+      // length matches, so a half-sent value can never replace a whole one. The stored value is the
+      // same text as before, so every build, job and screen reads it unchanged.
+      if (body.part && typeof body.part === 'object') {
+        const pr = await takePart(q, owner, body.part);
+        if (pr.error) { res.status(pr.status || 400).json({ error: pr.error, reason: pr.reason || 'part' }); return; }
+        if (!pr.value) { res.status(200).json({ ok: true, partial: true, have: pr.have, of: pr.of }); return; }
+        items = { [pr.k]: pr.value };
+      }
       if (!items || typeof items !== 'object') { res.status(400).json({ error: 'Nothing to save.' }); return; }
 
       const entries = Object.entries(items);

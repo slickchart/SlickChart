@@ -282,7 +282,7 @@ export async function runSweep(q) {
           FROM kv WHERE owner = ${r.owner} AND k = ${r.k} AND left(ltrim(v), 1) = '['`;
         if (c[0] && c[0].u < c[0].n) rep = ', ' + c[0].n + ' rows of which ' + (c[0].n - c[0].u) + ' are exact repeats';
       } catch (e) {}
-      items.push(who(r.owner) + ': ' + r.k + ' is ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB' + rep + (Number(r.bytes) > 4300000 ? ' (over the save limit)' : ''));
+      items.push(who(r.owner) + ': ' + r.k + ' is ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB' + rep + (Number(r.bytes) > 4300000 ? ' (over one request: only builds from 2026-11-18e save it, in pieces)' : ''));
     }
     return { items, level: rows.some(r => Number(r.bytes) > 4300000) ? 'warn' : (rows.length ? 'warn' : 'ok') };
   });
