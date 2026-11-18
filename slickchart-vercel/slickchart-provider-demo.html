@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18i';
+const APP_BUILD='2026-11-18j';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -30991,14 +30991,15 @@ async function _loadCalFeedUrl(){
 
 // ── Take payment (via the provider's own connected Square) ──
 function _coVal(x){const el=document.getElementById(x);return el?el.value.trim():'';}
-function _coErr(msg,reconnect){_coActionLock=false;try{_alAdd('toast-err',(_alLastNav?_alLastNav+': ':'')+_alScrub(msg));}catch(e){}const el=document.getElementById('co-result');if(!el)return;el.innerHTML='<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:11px 13px;font-size:16px;color:var(--p-red);line-height:1.5;">'+String(msg).replace(/</g,'&lt;')+(reconnect?' <button onclick="nav(\'square-guide\')" style="background:none;border:none;color:var(--p-red);text-decoration:underline;cursor:pointer;font-family:inherit;font-size:16px;">Reconnect Square</button>':'')+'</div>';}
+function _coErr(msg,reconnect){_coActionLock=false;if(reconnect==='gone')msg='Square isn\u2019t connected right now. Tap Reconnect Square, sign in, then try again.';try{_alAdd('toast-err',(_alLastNav?_alLastNav+': ':'')+_alScrub(msg));}catch(e){}const el=document.getElementById('co-result');if(!el)return;el.innerHTML='<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:11px 13px;font-size:16px;color:var(--p-red);line-height:1.5;">'+String(msg).replace(/</g,'&lt;')+(reconnect?' <button onclick="_sqConnect()" style="background:none;border:none;color:var(--p-red);text-decoration:underline;font-weight:600;cursor:pointer;font-family:inherit;font-size:16px;">Reconnect Square</button>':'')+'</div>';}
 function _coBusy(t){const el=document.getElementById('co-result');if(el)el.innerHTML='<div style="text-align:center;color:var(--p-mut);font-size:16px;padding:8px;">'+t+'</div>';}
 // Shared in-flight lock so a double-tap on "Send payment link"/"Send invoice"/"Charge"
 // can't fire the action twice (duplicate invoice email, duplicate payment-link record).
 // Cleared on any error (via _coErr), on success at each action's end, and on fresh entry.
 let _coActionLock=false;
 function _coLock(){if(_coActionLock)return false;_coActionLock=true;return true;}
-function _coRecon(e){return e&&(e.code==='reconnect'||e.code==='nosquare');}
+// 'auth' is a 401 from Square itself (access revoked in Square), which only a reconnect fixes too.
+function _coRecon(e){return !e?false:(e.code==='nosquare'||e.code==='auth')?'gone':e.code==='reconnect';}
 function renderCheckout(id){
   const c=CL[id];if(!c){nav('clients');return;}
   setNav('clients');document.getElementById('tt').textContent='Take Payment';
@@ -32690,14 +32691,16 @@ function renderBuildInvoice(){
   // A fresh entry (via the "Build an invoice" button) must not inherit a stale edit target
   // from an abandoned "Edit & resend", otherwise sending would splice out an unrelated prior
   // payment. Keep edit state only when we arrived from _payEdit (one-shot _biEnterEdit flag).
-  if(!_biEnterEdit){_biEditId='';_coItems=[];}
+  // A new invoice starts with NO client. It used to start on the first client in the list, so an invoice
+  // built in a hurry was emailed to whoever happened to be first (2026-11-18 sweep).
+  if(!_biEnterEdit){_biEditId='';_coItems=[];_biClient='';}
   _biEnterEdit=false;
   _coActionLock=false;   // never inherit a stale in-flight lock from a checkout session
   _coTip=_tipAskOn();
   document.getElementById('tt').textContent=_biEditId?'Edit invoice':'Build invoice';
   const entries=Object.entries(CL);
   const opts=entries.map(([cid,c])=>`<option value="${cid}">${String(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
-  if(!_biClient||!CL[_biClient])_biClient=entries.length?entries[0][0]:'';
+  if(_biClient&&!CL[_biClient])_biClient='';
   S.innerHTML=`
   <div style="padding:14px 16px;">
     <div id="bi-sqcta"></div>

@@ -74,9 +74,13 @@ saved anywhere", not "does this always call that".
 | `_beginDisableTotp` | `/api/totp-verify` | via `_confirmDisableTotp` |
 | `_beginTotpEnroll` | `/api/totp-setup` | direct |
 | `_beginTotpEnroll` | `/api/totp-verify` | via `_confirmTotpEnroll` |
+| `_biPreview` | `/api/square/connect` | via `_sqConnect` |
 | `_biPreview` | `/api/square/invoice` | via `_biSend` |
 | `_biPreview` | `/api/square/tax-rate` | via `_fetchSquareTaxRate` |
+| `_biSaveUnpaid` | `/api/square/connect` | via `_sqConnect` |
+| `_biSend` | `/api/square/connect` | via `_sqConnect` |
 | `_biSend` | `/api/square/invoice` | direct |
+| `_biTextLink` | `/api/square/connect` | via `_sqConnect` |
 | `_biTextLink` | `/api/square/payment-link` | direct |
 | `_billingHTML` | `/api/billing-status` | via `_loadBillingStatus` |
 | `_billingHTML` | `/api/create-portal-session` | via `_openBillingPortal` |
@@ -165,21 +169,30 @@ saved anywhere", not "does this always call that".
 | `_clientVerifyCode` | `/api/client-code` | direct |
 | `_clientsNotInSquare` | `/api/square/customers` | via `_fetchSquareDirectory` |
 | `_coCharge` | `/api/square/charge-card` | direct |
+| `_coCharge` | `/api/square/connect` | via `_sqConnect` |
 | `_coDoCharge` | `/api/square/charge-card` | direct |
+| `_coDoCharge` | `/api/square/connect` | via `_sqConnect` |
 | `_coEnsureMenu` | `/api/square/booking-options` | direct |
 | `_coEnsureMenu` | `/api/square/catalog` | direct |
+| `_coErr` | `/api/square/connect` | via `_sqConnect` |
+| `_coInvoice` | `/api/square/connect` | via `_sqConnect` |
 | `_coInvoice` | `/api/square/invoice` | direct |
+| `_coLink` | `/api/square/connect` | via `_sqConnect` |
 | `_coLink` | `/api/square/payment-link` | direct |
 | `_coMarkPaid` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_coMarkPaid` | `/api/square/connect` | via `_sqConnect` |
 | `_coMenuOpen` | `/api/square/booking-options` | via `_coEnsureMenu` |
 | `_coMenuOpen` | `/api/square/catalog` | via `_coEnsureMenu` |
 | `_coPrefill` | `/api/square/booking-options` | via `_coEnsureMenu` |
 | `_coPrefill` | `/api/square/catalog` | via `_coEnsureMenu` |
+| `_coQr` | `/api/square/connect` | via `_sqConnect` |
 | `_coQr` | `/api/square/pay-status` | via `_coQrSheet` |
 | `_coQr` | `/api/square/payment-link` | direct |
 | `_coQrSheet` | `/api/square/pay-status` | direct |
 | `_coRecordPaid` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_coRecordPaid` | `/api/square/connect` | via `_sqConnect` |
 | `_coTapToPay` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_coTapToPay` | `/api/square/connect` | via `_sqConnect` |
 | `_coTapToPay` | `/api/square/mobile-auth` | via `_ttpWarm` |
 | `_coTapToPay` | `/api/square/pay-status` | via `_ttpReceipt` |
 | `_commitDeleteSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |

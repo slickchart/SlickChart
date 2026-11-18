@@ -9920,6 +9920,19 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Build 2026-11-18j: payments sweep (rotation area 6) (PREVIEW)
+
+- **Build invoice started on the first client in the list** (`_biClient` defaulted to `entries[0]`), so
+  an invoice built in a hurry from Payments was emailed to whoever was first. A new invoice now starts
+  with "Choose a client" and Send says "Pick a client first." Editing an invoice keeps its client.
+- Checkout / invoice / payment link / card on file, when Square is not connected or access was revoked
+  (401 `nosquare` or `auth`): said "Connect your own Square account to sync your customers." with no
+  button for `auth`. Now "Square isn't connected right now. Tap Reconnect Square, sign in, then try
+  again." and Reconnect Square calls `_sqConnect()` directly (one tap). A 403 `reconnect` keeps the
+  server's own words (e.g. the Tap to Pay one) and still gets the button.
+Test: `scratchpad/test-checkout-square.mjs` (SQ=expired|offline|err500), WebKit + Chromium.
+`test-checkout-qr-tip`, `test-square-pay-cta`, `sweep2-square-invoice-xdevice` still pass.
+
 ## 2026-11-18 — Public booking page sweep (rotation area 3) (PREVIEW, api/book-page.js)
 
 `scratchpad/sweep-book-page.mjs` (MODE=request|instant, SIZE=phone|mac, SLOTS=ok|500|offline,
