@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18o';
+const APP_BUILD='2026-11-18p';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -31002,11 +31002,13 @@ async function _loadCalFeedUrl(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok){box.innerHTML='<span style="color:var(--p-amber);">Log in to get your private calendar link.</span>';return;}
   try{
+    const _again='<button onclick="var b=document.getElementById(\'cal-feed-box\');if(b)b.textContent=\'Preparing your private calendar link\u2026\';_loadCalFeedUrl()" class="btng" style="width:100%;border-radius:8px;padding:10px;margin-top:10px;"><i class="ti ti-refresh"></i> Try again</button>';
     const r=await fetch('/api/calendar-url',{headers:{'Authorization':'Bearer '+tok}});
-    const j=await r.json();
-    if(!r.ok||!j.url){box.innerHTML='<span style="color:var(--p-amber);">'+((j&&j.error)||'Could not create your link.')+'</span>';return;}
+    let j=null;try{j=await r.json();}catch(_){}
+    // A non-JSON answer (a server hiccup) is not "check your internet": it reached us. Always offer Try again.
+    if(!r.ok||!j||!j.url){box.innerHTML='<span style="color:var(--p-amber);">'+String((j&&j.error)||'Couldn\u2019t make your calendar link just now. Nothing has changed.').replace(/</g,'&lt;')+'</span>'+(r.status===401?'':_again);return;}
     box.innerHTML='<div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">Your private calendar link</div><div style="font-size:14px;color:var(--p-mut);word-break:break-all;font-family:monospace;line-height:1.5;">'+j.url+'</div><button onclick="_copyText(\''+j.url+'\',this)" class="btnp" style="width:100%;border-radius:8px;padding:10px;margin-top:10px;"><i class="ti ti-copy"></i> Copy link</button>';
-  }catch(e){box.innerHTML='<span style="color:var(--p-amber);">Could not reach SlickChart. Check your internet connection and try again.</span>';}
+  }catch(e){box.innerHTML='<span style="color:var(--p-amber);">Could not reach SlickChart. Check your internet connection and try again.</span><button onclick="var b=document.getElementById(\'cal-feed-box\');if(b)b.textContent=\'Preparing your private calendar link\u2026\';_loadCalFeedUrl()" class="btng" style="width:100%;border-radius:8px;padding:10px;margin-top:10px;"><i class="ti ti-refresh"></i> Try again</button>';}
 }
 
 // ── Take payment (via the provider's own connected Square) ──
@@ -34439,7 +34441,9 @@ async function _gcalSetPrivacy(next){
 async function _gcalDisconnect(){
   try{
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-    await fetch('/api/google-cal',{method:'DELETE',headers:{'Authorization':'Bearer '+tok}}).catch(function(){});
+    const r=await fetch('/api/google-cal',{method:'DELETE',headers:{'Authorization':'Bearer '+tok}}).catch(function(){return null;});
+    // Said "disconnected" even when the request never arrived, so appointments kept going to Google.
+    if(!r||!r.ok){if(typeof proToast==='function')proToast('Couldn\u2019t disconnect Google just now. It is still connected. Check your internet and try again.');return;}
     _gcalState={connected:false,configured:(_gcalState&&_gcalState.configured)||false};
     if(typeof proToast==='function')proToast('Google Calendar disconnected');
     try{nav('connect-calendar');}catch(e){}
@@ -34458,7 +34462,8 @@ async function _gcalDisconnectOne(id,label){
 async function _gcalDoDisconnectOne(id,name){
   try{
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-    await fetch('/api/google-cal?id='+encodeURIComponent(id),{method:'DELETE',headers:{'Authorization':'Bearer '+tok}}).catch(function(){});
+    const r=await fetch('/api/google-cal?id='+encodeURIComponent(id),{method:'DELETE',headers:{'Authorization':'Bearer '+tok}}).catch(function(){return null;});
+    if(!r||!r.ok){if(typeof proToast==='function')proToast('Couldn\u2019t disconnect '+name+' just now. It is still connected. Check your internet and try again.');return;}
     if(typeof _gcalStatus==='function')await _gcalStatus();   // re-read rather than guess what is left
     if(typeof proToast==='function')proToast(name+' disconnected');
     try{nav('connect-calendar');}catch(e){}

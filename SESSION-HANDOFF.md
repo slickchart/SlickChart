@@ -9943,6 +9943,21 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18p: calendar failures say what happened; triage
+
+- **Sync Calendar's private link:** a failure now always offers **Try again**; a non-JSON server
+  answer (502) is no longer blamed on her internet. `scratchpad/test-cal-link-fail.mjs`
+  (CAL=500|html|offline|ok, both engines; fails on the old build).
+- **Google disconnect** (all, or one calendar) toasted "disconnected" even when the request never
+  arrived, so appointments kept going to Google. Now it checks the answer and says it is still
+  connected. Same test file. `test-gcal-accounts` still passes.
+- Triage: `sweep3-recs-client-shop` A/B is legacy-only. New visit summaries carry `prodV:2`
+  (slickchart.html, session summary save) and the client app skips "typed-in extras" for them, so a
+  renamed/deleted product no longer shows twice. Summaries saved before that cannot tell a typed-in
+  product from a renamed one; left as is. `sweep3-pc-review-ui`: `sendVcReview` returns false on a
+  refusal and the caller stays; the sweep's finding is its own stub.
+- Photos (8 sweeps) and courses/shop (6 tests) re-run: all pass.
+
 ## 2026-11-18 — Sync sweep (rotation area 11): sound; one test harness fixed
 
 `sweep-sync-growth` (Chromium): growth, echo, exact dups all clean; edit-dups only in the `unkeyed`
