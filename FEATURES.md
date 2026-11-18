@@ -1175,6 +1175,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/admin/client-forms` | GET | **public** | GET /api/admin/client-forms?name=<part of a name>   Authorization: Monitor <key> |
 | `/api/admin/client-recover` | POST | founder, provider session | FOUNDER-ONLY. Get a provider's clients back. |
 | `/api/admin/contacts` | GET | provider session | GET /api/admin/contacts[?format=csv][&all=1]  → owner-only: every email address Ashley has, in one |
+| `/api/admin/dedupe-kv` | POST | **public** | GET  /api/admin/dedupe-kv           Authorization: Monitor <key>  — report only: every account value that |
 | `/api/admin/exposure` | POST | founder, provider session | OWNER-ONLY. |
 | `/api/admin/health-sweep` | GET | founder, provider session | GET /api/admin/health-sweep   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/kv-health` | — | founder, provider session | GET /api/admin/kv-health?email=<provider email>  — FOUNDER-ONLY, READ-ONLY, METADATA ONLY. |
