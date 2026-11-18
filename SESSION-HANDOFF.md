@@ -9943,6 +9943,17 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18q: client/product import reads semicolon and tab files
+
+`_parseCSV` only split on commas. Excel in many countries saves "CSV" with semicolons, and cells
+copied from Google Sheets/Numbers/Excel and pasted into the import box arrive TAB-separated, so every
+row became ONE client named "Ava Lane;a@x.com;555..." with the whole line in her email and phone too.
+Now `_csvDelim` reads the separator from the heading row (outside quotes; comma wins ties), and a
+leading BOM is dropped. The file picker also accepts .tsv/.txt. Test:
+`scratchpad/test-csv-delimiters.mjs` (real import screen, both engines; 6 fail on the old build).
+`sweep-dup-create-csv` check 3 corrected: it expected "Kate" to match "Katie" by phone, but the rule
+is phone + SAME first name (families share phones); it now spells the last name differently, 4/4.
+
 ## 2026-11-18 — build 2026-11-18p: calendar failures say what happened; triage
 
 - **Sync Calendar's private link:** a failure now always offers **Try again**; a non-JSON server

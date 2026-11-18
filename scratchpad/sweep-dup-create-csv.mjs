@@ -30,8 +30,8 @@ const r1 = await p.evaluate(() => {
 check('re-importing a client she removed earlier actually adds her', r1.nowInList.length === 1, JSON.stringify(r1));
 const r2 = await p.evaluate(() => _importClientsFromRows([{ name: 'Sarah Johnson', email: '' }]).ids);
 check('imported id is not a guessable shared value (other accounts importing "Sarah Johnson" mint the same server primary key)', !/^imp_sarahjohnson$/.test(r2[0] || ''), JSON.stringify(r2));
-const r3 = await p.evaluate(() => { _importClientsFromRows([{ name: 'Kate Lee', phone: '555-777-8888' }]); return Object.keys(CL).filter(k => /Lee$/.test(CL[k].name)); });
-check('import of a phone already on file (name spelled differently) does not add a second chart', r3.length === 1, JSON.stringify(r3));
+const r3 = await p.evaluate(() => { _importClientsFromRows([{ name: 'Katie Leigh', phone: '555-777-8888' }]); return Object.keys(CL).filter(k => /Le(e|igh)$/.test(CL[k].name)); });
+check('import of a phone already on file (last name spelled differently; same first name is the rule, families share phones) does not add a second chart', r3.length === 1, JSON.stringify(r3));
 // 4. the everyday version of case 1: Import -> "Undo" (wrong file / wrong columns) -> import the right file
 const r4 = await p.evaluate(() => {
   const rows = [{ name: 'Una Undo', email: 'una@x.com' }, { name: 'Ivy Import', email: 'ivy@x.com' }];

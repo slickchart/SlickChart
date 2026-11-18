@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18p';
+const APP_BUILD='2026-11-18q';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -30472,11 +30472,20 @@ let _importedProducts=(function(){try{const a=JSON.parse(localStorage.getItem('s
 // RENAMED is still in it. Matching by name alone put a deleted one back on every shop render and a
 // renamed one in twice (2026-11-18 sweep). Same id = already there; a delete record = stays gone.
 function _applyImportedProducts(){try{const del=_tombSet(['sc_deleted_products']);(_importedProducts||[]).forEach(pr=>{if(!pr)return;if(pr.id&&_tombHides(del[String(pr.id)],pr._ts))return;if(affiliateLinks.some(a=>(pr.id&&a&&a.id===pr.id)||(a.name||'').toLowerCase()===(pr.name||'').toLowerCase()))return;affiliateLinks.push(pr);});}catch(e){}}
+// The separator is read from the heading row. Excel in many countries saves "CSV" with semicolons,
+// and a sheet saved as tab-separated text arrives with tabs; read with commas, every row became ONE
+// client named "Ava Lane;a@x.com;555..." with that whole line in the email too (2026-11-18 sweep).
+function _csvDelim(text){
+  const n={',':0,';':0,'\t':0};let inQ=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];if(ch==='"')inQ=!inQ;else if(!inQ){if(ch==='\n')break;if(ch in n)n[ch]++;}}
+  return (n[';']>n[',']&&n[';']>=n['\t'])?';':(n['\t']>n[',']&&n['\t']>n[';'])?'\t':',';
+}
 function _parseCSV(text){
-  const rows=[];let i=0,field='',row=[],inQ=false;text=String(text||'').replace(/\r\n?/g,'\n');
+  const rows=[];let i=0,field='',row=[],inQ=false;text=String(text||'').replace(/^\ufeff/,'').replace(/\r\n?/g,'\n');
+  const D=_csvDelim(text);
   while(i<text.length){const ch=text[i];
     if(inQ){if(ch==='"'){if(text[i+1]==='"'){field+='"';i++;}else{inQ=false;}}else{field+=ch;}}
-    else{if(ch==='"'){inQ=true;}else if(ch===','){row.push(field);field='';}else if(ch==='\n'){row.push(field);rows.push(row);row=[];field='';}else{field+=ch;}}
+    else{if(ch==='"'){inQ=true;}else if(ch===D){row.push(field);field='';}else if(ch==='\n'){row.push(field);rows.push(row);row=[];field='';}else{field+=ch;}}
     i++;
   }
   if(field.length||row.length){row.push(field);rows.push(row);}
@@ -30848,7 +30857,7 @@ function _csvImportScreen(kind){
     <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:14px;">${lead}</div>
     ${isProd?'':_impSourceHTML()}
     ${isProd?'':_impStepsHTML()}
-    <label style="display:block;width:100%;background:var(--accent);color:var(--accent-ink);border-radius:12px;padding:12px;font-size:16px;font-weight:700;text-align:center;cursor:pointer;font-family:inherit;margin-bottom:10px;box-sizing:border-box;"><i class="ti ti-upload" style="font-size:16px;"></i> Choose a CSV file<input type="file" accept=".csv,text/csv,text/plain" onchange="_csvFile(this)" style="display:none;"></label>
+    <label style="display:block;width:100%;background:var(--accent);color:var(--accent-ink);border-radius:12px;padding:12px;font-size:16px;font-weight:700;text-align:center;cursor:pointer;font-family:inherit;margin-bottom:10px;box-sizing:border-box;"><i class="ti ti-upload" style="font-size:16px;"></i> Choose a CSV file<input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" onchange="_csvFile(this)" style="display:none;"></label>
     <div style="font-size:16px;color:var(--p-mut);text-align:center;margin-bottom:10px;">or paste it below</div>
     <textarea id="csv-text" oninput="_csvPreview()" placeholder="${ph}" style="width:100%;height:120px;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px 12px;font-size:16px;color:var(--p-ink);font-family:monospace;box-sizing:border-box;outline:none;resize:vertical;"></textarea>
     <div id="csv-preview"></div>
