@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18w: service prices with $ or commas; Edit details email check
+
+- Service menu price used `parseFloat`, so "$45" saved as 0 and "1,200" as 1 (every other price box
+  already used `_price`). Now `_price`.
+- Edit details saved an email with no ending ("jane@gmail"), and every invite, form and receipt to it
+  then failed quietly. It now refuses it with the same check and words as New client, and keeps the
+  box open. Clearing the email still works.
+- Test: `scratchpad/test-input-edges.mjs`, both engines; fails on the old build. `test-svc-delete` passes.
+
 ## 2026-11-18 — build 2026-11-18v: "Email it" on a computer also copies the message
 
 On a computer an email link opens the computer's mail app, so a provider who uses Gmail (or any
