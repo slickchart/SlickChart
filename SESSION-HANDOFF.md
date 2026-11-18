@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18y: client's first open during a server error
+
+A client opening their link while `/api/client-data` answered 500 saw the broken-link page ("This
+link isn't working ... ask your provider to resend"), a dead end for a link that worked a moment
+later. A 5xx on first open now shows the no-signal screen ("your link is fine", Try again). 401/404
+still show the broken-link page. `slickchart-client.html` + regenerated `api/client-page.js`. Test:
+`scratchpad/test-client-first-open-5xx.mjs` (needs :8899), Chromium and WebKit
+(`SC_WEBKIT=/tmp/claude-0/pw-webkit bash scratchpad/run-in-safari.sh ...`); fails on the old build.
+
 ## 2026-11-18 — build 2026-11-18x: Log a payment no longer preselects the first client
 
 Payments → Log a payment preselected whichever client was first in the roster, so a payment saved
