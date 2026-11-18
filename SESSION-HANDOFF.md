@@ -9920,6 +9920,24 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Build 2026-11-18n: readability + accessibility sweeps (areas 13, 16) (PREVIEW)
+
+`scratchpad/sweep-contrast.mjs` (WCAG AA on every text node of 123 screens) and
+`scratchpad/sweep-a11y.mjs` (controls with no name, clickables a keyboard cannot reach). Both read the
+screen list from a NET crawl at `/tmp/claude-0/screens.json` (regenerate with sweep-new-provider-wide).
+Fixed (all were dark-theme hex colours left on light screens, or accent-on-tint):
+- Delete account: "Save a copy first?" box and the red warning text were nearly invisible
+  (#bcdcff / #8fb4d8 / #d9a5a5 on light). Now theme vars.
+- Automations: "This one sends on its own" (#8fd6b0) and the selected "All active clients" segment.
+- Client screen tabs: the selected tab (Visit) was accent on accent-tint (1.9:1); now accent-strong.
+- Note format tiles crammed full names ("Brow record") in #aaa into a 42px tile: now initials
+  (`_nfTile`), readable colour.
+- Invite clients: a client with no avatar colours got white initials on a pale chip; now ink.
+- Add partner icon picker: tiles had no accessible name or keyboard focus; now role=button, tabindex,
+  aria-label.
+Left: photo-tile labels (white over the photo; the sweep sees no photo in test data), the notes
+placeholder (#888, a placeholder), check-in preview "Off" at 4.49:1. Escape already closes sheets.
+
 ## 2026-11-18 — Build 2026-11-18m: settings/billing sweep (rotation area 12) (PREVIEW)
 
 - **Billing said "No subscription found" when the billing check failed.** `_loadBillingStatus` parsed a
