@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18z: a client's new phone/email that could not send is sent again
+
+Client app, Profile: changing email or phone with no signal toasted "Saved here, couldn't reach your
+provider, will retry", and nothing retried; the provider kept the old number until the client edited
+it again. Now a failed send marks `sc_client_contact.unsent`, and the next open (within 7 days, so a
+stale value never overrides a correction the provider made since) sends it once more; success clears
+the mark. The decision uses the copy read at launch, because the account's saved settings replace the
+stored copy a moment later. Test: `scratchpad/test-client-contact-retry.mjs` (needs :8899), both
+engines; fails on the old build. Client prefs/settings/shared-device sweeps still pass.
+
 ## 2026-11-18 — build 2026-11-18y: client's first open during a server error
 
 A client opening their link while `/api/client-data` answered 500 saw the broken-link page ("This

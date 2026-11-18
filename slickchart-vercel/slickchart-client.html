@@ -6524,8 +6524,8 @@ function saveField(key){
     try{_saveClientContact();}catch(e){}
     if(client._real){
       _clientSubmit('contact',{email:client.email||'',phone:client.phone||'',_lock:'field'})
-        .then(res=>{showToast(res&&res.ok?'Sent to '+(client.providerFirst||'your provider'):(res&&res.duplicate?'':'Saved here, couldn’t reach your provider, will retry'));})
-        .catch(()=>showToast('Saved here, couldn’t reach your provider',false));
+        .then(res=>{if(res&&res.ok)_contactUnsent(false);else if(!(res&&res.duplicate))_contactUnsent(true);showToast(res&&res.ok?'Sent to '+(client.providerFirst||'your provider'):(res&&res.duplicate?'':'Saved here, couldn’t reach your provider, will retry'));})
+        .catch(()=>{_contactUnsent(true);showToast('Saved here, couldn’t reach your provider',false);});
     }else{showToast('Profile updated');}
     return;
   }
@@ -6538,6 +6538,15 @@ function saveField(key){
   showToast('Profile updated');
 }
 function _saveClientContact(){try{localStorage.setItem('sc_client_contact',JSON.stringify({email:client.email||'',phone:client.phone||''}));}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}}
+// "Will retry" was promised when a new email or phone could not reach the provider, and nothing ever
+// retried: the provider kept the old number until the client edited it again (2026-11-18 sweep).
+// The change is marked unsent, and the next time the app opens it is sent again (for 7 days, so a
+// stale phone never overrides a correction the provider made since).
+function _contactUnsent(on){try{var p=JSON.parse(localStorage.getItem('sc_client_contact')||'null');if(!p)return;if(on){p.unsent=Date.now();}else{delete p.unsent;}localStorage.setItem('sc_client_contact',JSON.stringify(p));}catch(e){}}
+// Decided from the copy read at launch: the account's saved settings arrive moments later and replace
+// the stored copy without the mark.
+function _retryUnsentContact(p){try{if(!p||!p.unsent||Date.now()-p.unsent>7*864e5||!client._real)return;
+  _clientSubmit('contact',{email:client.email||'',phone:client.phone||'',_lock:'field'}).then(function(res){if(res&&res.ok)_contactUnsent(false);});}catch(e){}}
 function _loadClientContact(prof){
   var pend;try{pend=JSON.parse(localStorage.getItem('sc_client_contact')||'null');}catch(e){pend=null;}
   if(!pend)return;
@@ -6548,7 +6557,8 @@ function _loadClientContact(prof){
   if(pend.email)client.email=pend.email;
   if(pend.phone)client.phone=pend.phone;
   if(!pend.email&&!pend.phone){try{localStorage.removeItem('sc_client_contact');}catch(e){}}
-  else{try{localStorage.setItem('sc_client_contact',JSON.stringify(pend));}catch(e){}}
+  else{try{localStorage.setItem('sc_client_contact',JSON.stringify(pend));}catch(e){}
+    if(pend.unsent){var _snap=JSON.parse(JSON.stringify(pend));setTimeout(function(){try{_retryUnsentContact(_snap);}catch(e){}},3000);}}
 }
 
 
