@@ -9920,7 +9920,7 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
-## 2026-11-18 — Build 2026-11-18h: Square sweep (rotation area 2) (PREVIEW)
+## 2026-11-18 — Build 2026-11-18i: Square sweep (rotation area 2) (PREVIEW)
 
 Ran `scratchpad/sweep-square-states.mjs` (SQ=none|expired|err500|nosquare|offline) on every Square
 screen at mac and phone. Fixed:
