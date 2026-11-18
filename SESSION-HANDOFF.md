@@ -9805,6 +9805,9 @@ ready for 600 providers".
      Square calls each; one by one passes 300 s around a few hundred providers). `test-cron-checkins-scale.mjs` 7/7.
   7. `_pickLogo`: an SVG over 150 KB is drawn to the 320px PNG like any picture (hea…'s branding is 2.6 MB
      and rides along with every client page). Existing logos are untouched. `test-logo-svg-size.mjs` 2/2 Chromium.
+  8. `_evTick`: the 15 s client-submission check runs at most every 2 min while the app is hidden
+     (a computer left open overnight made ~5,800 checks/day); visibilitychange + focus check at once on
+     return. `_pollFounderSignups` on the same timer is untouched (§0b). `test-events-poll-hidden.mjs` 3/3.
 - **Not fixed, needs a project or her decision:** a single synced value (sc_clients) still cannot be
   SAVED past 4.5 MB (the request limit); the largest is 2.9 MB. Photos live as base64 in Postgres
   (`files`), which is the main storage cost at scale; Vercel Blob or similar would be cheaper. See the

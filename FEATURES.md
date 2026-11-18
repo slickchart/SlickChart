@@ -277,6 +277,8 @@ saved anywhere", not "does this always call that".
 | `_founderReferrals` | `/api/admin/referrals` | direct |
 | `_founderStaleSubs` | `/api/admin/stale-subs` | direct |
 | `_founderTestPush` | `/api/admin/test-push` | direct |
+| `_founderTestPush` | `/api/announcements` | via `_checkNews` |
+| `_founderTestPush` | `/api/native-push` | via `_flushNativePushTok` |
 | `_fvpChooseSend` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_fvpChooser` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_fvpClientRows` | `/api/clients` | via `_syncSpecificClientsToServer` |

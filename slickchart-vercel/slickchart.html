@@ -36327,7 +36327,13 @@ async function _founderTestPush(rowEl,delaySec){
   }catch(e){setSub('Couldn’t reach the server. Try again.');try{if(typeof proToast==='function')proToast('⚠️ The test push couldn’t reach the server. Try again.',7000);}catch(_){}}
 }
 try{_loadFounderLastTs();}catch(e){}
-setInterval(()=>{try{syncClientEvents();}catch(e){}try{_pollFounderSignups();}catch(e){}try{if(typeof _vcSyncFollowUpNotifs==='function')_vcSyncFollowUpNotifs();}catch(e){}try{if(typeof _syncReminderNotifs==='function')_syncReminderNotifs();}catch(e){}},15000);
+// A hidden tab or minimised desktop app checks for client submissions every 2 minutes instead of every
+// 15 seconds (2026-11-18 capacity review: a computer left open overnight made ~5,800 checks a day,
+// which at 600 providers is most of the server's traffic). Coming back to the app checks at once
+// (focus), and her phone alerts come from the server, so nothing waits on this.
+let _evHiddenLast=0;
+function _evTick(){if(typeof document!=='undefined'&&document.hidden){if(Date.now()-_evHiddenLast<120000)return;_evHiddenLast=Date.now();}syncClientEvents();}
+setInterval(()=>{try{_evTick();}catch(e){}try{_pollFounderSignups();}catch(e){}try{if(typeof _vcSyncFollowUpNotifs==='function')_vcSyncFollowUpNotifs();}catch(e){}try{if(typeof _syncReminderNotifs==='function')_syncReminderNotifs();}catch(e){}},15000);
 // React to a Square webhook: the server records recent Square activity (booking/payment/refund/
 // catalog change) into sc_square_activity, which the cloud pull brings down. When we see a newer one
 // than last handled, refresh the relevant live data and let the provider know — near-real-time.
@@ -36348,6 +36354,7 @@ setInterval(()=>{try{_checkSquareActivity();}catch(e){}},15000);
 // Poll again the moment the provider returns to this tab/window, so anything a client just did
 // (form, message, check-in, photo consult) shows up without a manual refresh.
 try{window.addEventListener('focus',function(){try{syncClientEvents();}catch(e){}});}catch(e){}
+try{document.addEventListener('visibilitychange',function(){if(!document.hidden){try{syncClientEvents();}catch(e){}}});}catch(e){}   // a phone coming back may not fire focus
 
 function seedDemoRequestOnce(){ // demo-only: the body lives in scripts/demo-seed.js and ships only in the public demo
   var d=(typeof window!=='undefined'&&window.__SC_DEMO_SEED__)||null;
