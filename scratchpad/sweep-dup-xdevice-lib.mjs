@@ -37,6 +37,8 @@ export async function device(browser, srv, name, localSeed, patchJs) {
     if (u.includes('cloud-status')) return ok({ enabled: true });
     if (u.includes('/api/store')) {
       if (m === 'GET') return ok({ data: Object.assign({}, srv.kv) });
+      // srv.maxBody: refuse a save bigger than this, like Vercel's 4.5 MB body limit (413).
+      if (srv.maxBody && (r.request().postData() || '').length > srv.maxBody) return r.fulfill({ status: 413, contentType: 'application/json', body: '{}' });
       let body = {}; try { body = JSON.parse(r.request().postData() || '{}'); } catch (e) {}
       if (body.rescue) return ok({ ok: true, rescued: 0 });
       const items = body.items || (body.key !== undefined ? { [body.key]: body.value } : {});

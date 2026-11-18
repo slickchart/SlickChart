@@ -259,6 +259,19 @@ export async function runSweep(q) {
   // The provider app's events list is ONE response, and Vercel refuses one over ~4.5 MB. Past that,
   // every poll failed and no form or check-in reached the provider (Josie, 2026-11-06). The list is
   // slimmed since build 2026-11-04i; this says how big the whole thing would be, per account.
+  // 2026-11-18: sc_autos and sc_imported_products copied themselves on every sync until the save was
+  // refused as too large (Lisa 85 MB). Devices only report it from build 2026-11-17a, so read the
+  // ACCOUNT copies too: any saved value near the 4.5 MB save limit, and how much of it is repeats.
+  await check('kv-size', 'Every saved list fits in one save', async () => {
+    const rows = await q`SELECT owner, k, octet_length(v)::bigint AS bytes, v FROM kv WHERE octet_length(v) > 1500000 ORDER BY octet_length(v) DESC LIMIT 40`;
+    const items = rows.map(r => {
+      let rep = '';
+      try { const a = JSON.parse(r.v); if (Array.isArray(a) && a.length) { const u = new Set(a.map(x => JSON.stringify(x))).size; if (u < a.length) rep = ', ' + a.length + ' rows of which ' + (a.length - u) + ' are exact repeats'; } } catch (e) {}
+      return who(r.owner) + ': ' + r.k + ' is ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB' + rep + (Number(r.bytes) > 4300000 ? ' (over the save limit)' : '');
+    });
+    return { items, level: rows.some(r => Number(r.bytes) > 4300000) ? 'warn' : (rows.length ? 'warn' : 'ok') };
+  });
+
   await check('events-size', 'Client submissions fit in one download', async () => {
     const rows = await q`SELECT provider_id, count(*)::int AS n, sum(octet_length(payload::text))::bigint AS bytes FROM (
         SELECT provider_id, payload, row_number() OVER (PARTITION BY provider_id ORDER BY created_at DESC) AS rn FROM client_events) t

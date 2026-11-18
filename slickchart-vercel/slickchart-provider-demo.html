@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18a';
+const APP_BUILD='2026-11-18b';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -3841,6 +3841,19 @@ function _rowSig(r){try{if(r&&typeof r==='object'&&!Array.isArray(r)){const o=Ob
 // Drop exact repeats from a list (strings, or records by content; a record with an id by its id),
 // keeping the first. Used by the merges and to shrink lists that already doubled on a device.
 function _dedupeList(arr){if(!Array.isArray(arr))return arr;const seen={},out=[];arr.forEach(function(r){const k=(r&&typeof r==='object'&&r.id)?'i:'+String(r.id):_rowSig(r);if(k in seen)return;seen[k]=1;out.push(r);});return out;}
+// A synced value with EXACT repeat rows removed (same content, id included), or null when nothing
+// repeats. Arrays, and plain objects whose values are arrays (per-client maps). Used only when the
+// account refused the value as too large: it can only ever drop a byte-for-byte duplicate.
+function _dedupeSyncValue(str){
+  try{
+    const v=JSON.parse(str);let hit=false;
+    const ex=function(a){const seen={},out=[];a.forEach(function(r){const k=JSON.stringify(r);if(k in seen){hit=true;return;}seen[k]=1;out.push(r);});return out;};
+    let out=null;
+    if(Array.isArray(v))out=ex(v);
+    else if(v&&typeof v==='object'){out={};Object.keys(v).forEach(function(k){out[k]=Array.isArray(v[k])?ex(v[k]):v[k];});}
+    return hit?JSON.stringify(out):null;
+  }catch(e){return null;}
+}
 function _mergeTombstone(k,serverStr,localStr){
   try{
     if(localStr==null)return null;   // nothing local — let the plain overwrite run
@@ -5152,6 +5165,21 @@ const Cloud={
             const keys=Object.keys(items);
             let biggest=null,biggestLen=-1;
             keys.forEach(k=>{const len=(items[k]||'').length;if(len>biggestLen){biggestLen=len;biggest=k;}});
+            // First see whether it is only too big because it holds the same rows over and over (sc_autos
+            // reached 85 MB that way, 2026-11-17). If so, keep one of each on this device and send that:
+            // nothing she made is lost, and the next merge bug of that kind heals itself instead of
+            // stopping her saves for good.
+            try{
+              const healed=_dedupeSyncValue(items[biggest]);
+              if(healed!=null&&healed.length<biggestLen*0.9&&!(biggest in this._queue)){
+                try{localStorage.setItem(biggest,healed);}catch(_){}
+                this._queue[biggest]=healed;
+                try{_alAdd('store-413-healed',String(biggest)+' '+Math.round(biggestLen/1024)+'KB -> '+Math.round(healed.length/1024)+'KB');_alSend(true);}catch(_){}
+                keys.forEach(k=>{if(k!==biggest&&!(k in this._queue))this._queue[k]=items[k];});
+                clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(0),800);
+                return;
+              }
+            }catch(_){}
             let requeued=0;
             keys.forEach(k=>{if(k!==biggest&&!(k in this._queue)){this._queue[k]=items[k];requeued++;}});
             if(requeued){clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(0),800);}
@@ -5163,7 +5191,7 @@ const Cloud={
             try{if(!this._warned413)this._warned413={};}catch(_){}
             if(!(this._warned413&&this._warned413[biggest])){
               try{this._warned413[biggest]=1;}catch(_){}
-              if(typeof proToast==='function')proToast('A photo was too large to back up to the cloud, your notes are saved. Try a smaller image next time.',0,'error');
+              if(typeof proToast==='function')proToast('Something was too large to save to your account. It is still saved on this device, and your notes are saved.',0,'error');
             }
           }
           else{

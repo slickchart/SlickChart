@@ -9629,6 +9629,25 @@ Ashley: *"since we added in the free trial not every sign up is a paid provider 
 - New **"💰 Trial converted to paid!"** push + email to every founder device on the FIRST real payment of a trial (`notifyFounderTrialConverted` in `api/stripe-webhook.js`, claim `claimTrialConversion` in `lib/trial-outcomes.js`: once per subscription via `trial_outcomes.converted_notified_at`, only when `first_paid_at` is within 3 days, so old conversions and renewals stay silent). Fires from `invoice.paid` or the subscription event, whichever lands second. Logged as `notify_log` kind `trial-converted`. Test: `scratchpad/founder-push/trial-converted.mjs` (in CI).
 - Daily brief: health-sweep `trials.convertedLast24h` / `convertedLast30d`, and `trials.summary` opens with "N trials became paying in the last 24 hours."
 
+## 2026-11-18 — Build 2026-11-18b: the "too large" popup heals itself, says no photo, and every account is checked (PREVIEW)
+
+Ashley 2026-11-18: *"the photos too large is happening across many apps so we need to figure that out"*.
+**Survey (app-launches, every phone on 2026-11-17a or later):** six providers' devices log `store-413`,
+and every one is `sc_autos` (ros…, fpa…, jen…, spa… on two iPhones) or `sc_imported_products` (est…).
+No other key. So 18a's merge fix covers all of them. Devices on older builds do not log the key, so:
+- **`kv-size` health-sweep check:** every account value over 1.5 MB, with how many rows are exact
+  repeats. The daily brief reads it, so accounts on old builds are listed too.
+- **Self-heal in `Cloud._flush`'s 413 branch:** before dropping the biggest value, `_dedupeSyncValue`
+  removes EXACT repeat rows (whole row including id, arrays or per-client maps of arrays). If that
+  shrinks it by 10%+, the device keeps the shrunk copy, sends it, logs `store-413-healed`, no popup.
+  The next merge bug of this kind fixes itself instead of stopping her saves.
+- **Popup wording:** "Something was too large to save to your account. It is still saved on this
+  device, and your notes are saved." (was "A photo was too large ... Try a smaller image").
+
+Test `scratchpad/test-413-self-heal.mjs` (mock store now takes `srv.maxBody` for a 413): 7/7 Chromium +
+WebKit, 2/7 on the old code. CLAUDE.md says CI runs Chromium tests; it does not (no Playwright in the
+workflow), so these two run by hand.
+
 ## 2026-11-18 — Build 2026-11-18a: two lists copied themselves on every sync ("photo too large" popup) (PREVIEW)
 
 **Observed (ground truth):** Kristen (2026-11-17, iPhone) and Lisa (2026-11-17 5:40pm PT, iPhone, Safari
