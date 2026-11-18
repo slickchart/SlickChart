@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-17d';
+const APP_BUILD='2026-11-18a';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -3836,13 +3836,19 @@ function _mergeClients(serverStr,localStr){
   }catch(e){return null;}
 }
 // Returns the merged JSON string (server ∪ local), or null if there's nothing local to preserve.
+// Content identity for a record, ignoring the edit stamp, so two copies of the same row match.
+function _rowSig(r){try{if(r&&typeof r==='object'&&!Array.isArray(r)){const o=Object.assign({},r);delete o._ts;return 'o:'+JSON.stringify(o);}return 'v:'+JSON.stringify(r);}catch(e){return 'x:'+String(r);}}
+// Drop exact repeats from a list (strings, or records by content; a record with an id by its id),
+// keeping the first. Used by the merges and to shrink lists that already doubled on a device.
+function _dedupeList(arr){if(!Array.isArray(arr))return arr;const seen={},out=[];arr.forEach(function(r){const k=(r&&typeof r==='object'&&r.id)?'i:'+String(r.id):_rowSig(r);if(k in seen)return;seen[k]=1;out.push(r);});return out;}
 function _mergeTombstone(k,serverStr,localStr){
   try{
     if(localStr==null)return null;   // nothing local — let the plain overwrite run
     if(_TOMB_ARR[k]){
       const sv=JSON.parse(serverStr||'[]'),lv=JSON.parse(localStr||'[]');
-      const merged=Array.from(new Set([].concat(Array.isArray(sv)?sv:[],Array.isArray(lv)?lv:[])));
-      return JSON.stringify(merged);
+      // A Set only dedupes strings. sc_imported_products holds OBJECTS, so every pull appended the
+      // server's whole list to the device's and it grew by megabytes per sync (2026-11-17).
+      return JSON.stringify(_dedupeList([].concat(Array.isArray(sv)?sv:[],Array.isArray(lv)?lv:[])));
     }
     const sv=JSON.parse(serverStr||'{}'),lv=JSON.parse(localStr||'{}');
     // local wins on a key collision (its timestamp is this device's), but every id from both survives.
@@ -4003,11 +4009,15 @@ function _mergeAuthoredById(serverStr,localStr,hiddenKey,opts){
   // would be the very loss this merge exists to prevent, so an unkeyed record is kept as it is.
   const keepUnkeyed=!!(opts&&opts.keepUnkeyed);
   const hidden=_tombSet(hiddenKey);
-  const out=[],idx={};
+  const out=[],idx={},useen={};
   const take=function(c,fromLocal){
     if(!c)return;
     const cid=keyOf(c);
-    if(!cid){if(keepUnkeyed)out.push(c);return;}
+    // An unkeyed row is matched by its CONTENT. Pushing every one blindly put the server's copy and
+    // the device's copy side by side on every pull, so a list of 5 automations with no ids grew by the
+    // whole account copy each sync (Lisa's sc_autos reached 85 MB, 2026-11-17) and the upload was
+    // refused as too large from then on. Identical rows are one row.
+    if(!cid){if(keepUnkeyed){const sg=_rowSig(c);if(!(sg in useen)){useen[sg]=1;out.push(c);}}return;}
     if(_tombHides(hidden[cid],c._ts))return;      // deleted on purpose (and not re-saved since)
     if(!(cid in idx)){idx[cid]=out.length;out.push(c);return;}
     const cur=out[idx[cid]];
@@ -5695,7 +5705,7 @@ function _lsGet(k){
 function _reloadTopLevelStores(){
   const J=function(k){try{return JSON.parse(_lsGet(k)||'null');}catch(e){return null;}};
   try{const a=J('sc_payments');if(Array.isArray(a))_payments=a;}catch(e){}
-  try{const a=J('sc_imported_products');if(Array.isArray(a))_importedProducts=a;}catch(e){}
+  try{const a=J('sc_imported_products');if(Array.isArray(a)){_importedProducts=_dedupeList(a);if(_importedProducts.length!==a.length)_shrinkDoubled('sc_imported_products',JSON.stringify(_importedProducts));}}catch(e){}
   try{const a=J('sc_manual_appts');if(Array.isArray(a)){a.forEach(function(x){if(x&&!x.id)x.id='ma_'+Math.random().toString(36).slice(2,10);});manualAppts=a;
     // An appointment cancelled on another device must not come back here. The merge already strips
     // it on the way in; this also covers a list that was stored before the cancellation synced.
@@ -9029,7 +9039,12 @@ async function _initCapturedPhotos(){
   try{setTimeout(function(){try{_restorePhotosFromCloud();}catch(e){}try{_backupPhotosToServer();}catch(e){}},1200);}catch(e){}
 }
 function persistAutos(){_stampRows('sc_autos',autos);try{(function(_v){localStorage.setItem('sc_autos',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_autos',_v);return _v;})(JSON.stringify(autos));}catch(e){}}
-function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))autos=arr;}}catch(e){}}
+function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){autos=_dedupeAutos(arr);if(autos.length!==arr.length)_shrinkDoubled('sc_autos',JSON.stringify(autos));}}}catch(e){}}
+// sc_autos doubled on every sync before 2026-11-17 (see _mergeAuthoredById). Keyed rows by id, the
+// rest by content: the same thing the merge now does, applied once to what is already on the device.
+function _dedupeAutos(arr){const seen={},out=[];(arr||[]).forEach(function(a){if(!a)return;const k=a.id?'i:'+a.id:_rowSig(a);if(k in seen)return;seen[k]=1;out.push(a);});return out;}
+// Store the de-duplicated copy and send it up. Only exact repeats were removed, nothing she made.
+function _shrinkDoubled(key,val){try{localStorage.setItem(key,val);if(typeof _alAdd==='function')_alAdd('dedupe',key+' '+Math.round(val.length/1024)+'KB');if(typeof _pushKeyNow==='function')_pushKeyNow(key,val);}catch(e){}}
 function persistNotifSettings(){try{const v=JSON.stringify(notifSettings);localStorage.setItem('sc_notif_settings',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_notif_settings',v);}catch(e){}}
 const _NOTIF_NEW_DEFAULTS={bookingNew:true,bookingRequest:true,bookingChanged:true,bookingCancelled:true,consultRequest:true,paymentReceived:true,refundProcessed:true,productRequest:true,clientDetails:true};
 // A switch added after her settings were saved shows as ON (as the server treats it), not as off.
@@ -30106,7 +30121,7 @@ function renderNotifications(){
 
 // ── Bring-your-data-in: bulk CSV import for providers switching from another system ──
 let _csvKind='clients';
-let _importedProducts=(function(){try{return JSON.parse(localStorage.getItem('sc_imported_products')||'[]');}catch(e){return [];}})();
+let _importedProducts=(function(){try{const a=JSON.parse(localStorage.getItem('sc_imported_products')||'[]');return Array.isArray(a)?_dedupeList(a):[];}catch(e){return [];}})();
 function _applyImportedProducts(){try{(_importedProducts||[]).forEach(pr=>{if(!affiliateLinks.some(a=>(a.name||'').toLowerCase()===(pr.name||'').toLowerCase()))affiliateLinks.push(pr);});}catch(e){}}
 function _parseCSV(text){
   const rows=[];let i=0,field='',row=[],inQ=false;text=String(text||'').replace(/\r\n?/g,'\n');

@@ -9629,6 +9629,34 @@ Ashley: *"since we added in the free trial not every sign up is a paid provider 
 - New **"💰 Trial converted to paid!"** push + email to every founder device on the FIRST real payment of a trial (`notifyFounderTrialConverted` in `api/stripe-webhook.js`, claim `claimTrialConversion` in `lib/trial-outcomes.js`: once per subscription via `trial_outcomes.converted_notified_at`, only when `first_paid_at` is within 3 days, so old conversions and renewals stay silent). Fires from `invoice.paid` or the subscription event, whichever lands second. Logged as `notify_log` kind `trial-converted`. Test: `scratchpad/founder-push/trial-converted.mjs` (in CI).
 - Daily brief: health-sweep `trials.convertedLast24h` / `convertedLast30d`, and `trials.summary` opens with "N trials became paying in the last 24 hours."
 
+## 2026-11-18 — Build 2026-11-18a: two lists copied themselves on every sync ("photo too large" popup) (PREVIEW)
+
+**Observed (ground truth):** Kristen (2026-11-17, iPhone) and Lisa (2026-11-17 5:40pm PT, iPhone, Safari
+from Gmail, screenshot on More) both see "A photo was too large to back up to the cloud" over and over.
+Lisa: "This window keeps popping up all the time."
+
+**Found (app-launches `store-413`, read 2026-11-18 02:05Z):** not a photo. The key being dropped was
+`sc_autos` (Lisa 22-85 MB on two iPhones, Jennie 10-17 MB on Android) and `sc_imported_products`
+(est… 13-21 MB), each GROWING by a fixed few MB per sync.
+- `_mergeAuthoredById(..., keepUnkeyed:true)` pushed every row with no id from BOTH sides, so a list of
+  automations without ids gained the whole account copy on every pull.
+- `_mergeTombstone` for `_TOMB_ARR` deduped with a `Set`, which only dedupes strings;
+  `sc_imported_products` holds objects, so the same thing happened.
+- The upload then 413'd, so the account never got the clean copy and the device kept growing.
+
+**Fix:** unkeyed rows match by content (`_rowSig`, ignoring `_ts`); tomb arrays dedupe by id or
+content (`_dedupeList`); `loadAutos` and the imported-products load/reload shrink a doubled copy
+already on the device (`_shrinkDoubled`, logs `dedupe` in the launch log). The pull's merge then
+differs from the server copy, so the small list is pushed back and the account is cleaned too. Only
+exact repeats are removed: two automations that differ in any field both stay.
+
+**Test:** `scratchpad/test-merge-no-doubling.mjs` 10/10 Chromium + WebKit; on the old code it fails
+(14 -> 28 -> 56 rows over three launches). Also green: sweep2-lib-natural-keys (both engines),
+sweep-dup-create-autosync, test-putback-survives-merge, sweep2-lib-unstamped-edit,
+test-busy-courses-boot, merge/reload/tenant checks.
+
+**After it ships:** app-launches should show `dedupe` events and no more `store-413` for these keys.
+
 ## 2026-11-17 — Build 2026-11-17a: booking link fixes from Kristen's report (PREVIEW)
 **Kristen Starr (Wellness Within Skin, Marlton NJ, wel…@gmail.com), email 2026-11-17 17:43Z. What she OBSERVED (§1b):**
 - iPhone, her public booking page (slickchart.app/book/wellnesswithinskin), 11:30am her time: picked "Glow Starter Consult · 30 min", got "That time has passed or is too soon. Please pick another." Her words: "My link isn't working and im not able to book an appointment."
