@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18k';
+const APP_BUILD='2026-11-18l';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -37689,6 +37689,17 @@ let _sqApptsState='idle';    // idle | loading | ok | error | off (no key yet)
 // The current calendar week, Sunday 00:00 to next Sunday 00:00.
 function _weekRange(){const now=new Date();const start=new Date(now);start.setHours(0,0,0,0);start.setDate(start.getDate()-start.getDay());const end=new Date(start);end.setDate(end.getDate()+7);return {start,end};}
 // Pull upcoming bookings from Square (next 14 days). Falls back to demo data on any issue.
+// The Refresh / Try again buttons. When Square still does not answer, the screen used to redraw exactly
+// as before, so the tap looked like it did nothing (2026-11-18 sweep, server failing). Say so instead.
+async function _sqApptsRetry(){
+  try{if(typeof proToast==='function')proToast('Checking Square\u2026',1500);}catch(e){}
+  try{await _loadSquareAppts(true);}catch(e){}
+  if(_sqApptsState!=='error')return;
+  const m=(_sqApptsErr==='network')?'Still couldn\u2019t reach Square. Check your internet connection and try again.'
+    :(_sqApptsErr==='nosquare'||_sqApptsErr==='auth')?'Square isn\u2019t connected right now. Tap Reconnect Square to bring your bookings back.'
+    :'Square didn\u2019t answer just now. Try again in a minute.';
+  try{if(typeof proToast==='function')proToast(m,0,'error');}catch(e){}
+}
 async function _loadSquareAppts(force){
   if(_sqApptsState==='loading')return;
   const hasKey=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)?'1':'';
@@ -37973,7 +37984,7 @@ function _sqApptsErrHTML(){
       <div style="font-size:16px;font-weight:600;color:var(--p-amber);">Showing a saved schedule</div>
       <div style="font-size:16px;color:var(--p-mut);margin-top:3px;line-height:1.5;">${msg}</div>
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-        <button onclick="event.stopPropagation();_loadSquareAppts(true)" style="background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:8px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px;">Try again</button>
+        <button onclick="event.stopPropagation();_sqApptsRetry()" style="background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:8px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px;">Try again</button>
         ${reconnect?`<button onclick="event.stopPropagation();_sqConnect()" style="background:none;border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:8px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px;">Reconnect Square</button>`:''}
       </div>
     </div>
@@ -38038,7 +38049,7 @@ function renderWeekAppts(){
   <div style="padding:10px 16px 4px;">
     <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:2px;">This week's appointments</div>
     <div style="font-size:16px;color:var(--p-mut);">${week.length} appointment${week.length===1?'':'s'} this week</div>
-    ${live?`<button onclick="_loadSquareAppts(true);renderWeekAppts()" style="margin-top:8px;background:none;border:none;color:var(--accent-strong);font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:16px;"></i> Refresh</button>`:''}
+    ${live?`<button onclick="_sqApptsRetry().then(function(){try{renderWeekAppts();}catch(e){}})" style="margin-top:8px;background:none;border:none;color:var(--accent-strong);font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:16px;"></i> Refresh</button>`:''}
   </div>
   ${_sqApptsErrHTML()}
   ${!week.length?`
@@ -38116,7 +38127,7 @@ function renderTodayAppts(){
   <div style="padding:10px 16px 4px;">
     <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:2px;">Today's appointments</div>
     <div style="font-size:16px;color:var(--p-mut);">${today.length} appointment${today.length===1?'':'s'} today \u00b7 stays here all day so you can go back and finish notes anytime.</div>
-    ${real?`<button onclick="_loadSquareAppts(true)" style="margin-top:8px;background:none;border:none;color:var(--accent-strong);font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:16px;"></i> Refresh</button>`:''}
+    ${real?`<button onclick="_sqApptsRetry()" style="margin-top:8px;background:none;border:none;color:var(--accent-strong);font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:16px;"></i> Refresh</button>`:''}
   </div>
   ${_sqApptsErrHTML()}
   ${!today.length?`

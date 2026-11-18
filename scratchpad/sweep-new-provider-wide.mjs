@@ -40,7 +40,11 @@ await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onb
   window.__opened = []; window.open = function (u) { window.__opened.push(String(u)); return null; };
   try { Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }); } catch (e) {}
   try { navigator.clipboard.writeText = () => Promise.resolve(); } catch (e) {} }, ['provider', SIZE === 'ipad' || SIZE === 'phone']);
+// NET=500|offline (rotation area 14): after boot, every other /api call fails, so each screen and tap is
+// checked for throws and silent failures with no server.
+const NET = process.env.NET || ''; let netFail = false;
 await page.route('**/api/**', r => { const u = r.request().url(); const m = r.request().method();
+  if (netFail && !/cloud-status|billing-status/.test(u) && !(u.includes('/api/store') && m === 'GET')) return NET === 'offline' ? r.abort('internetdisconnected') : r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Something went wrong."}' });
   if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
   if (u.includes('/api/store') && m === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: seed }) });
   if (u.includes('/api/square/connection')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"oauth":true,"connected":true,"env":"production","merchantName":"Frances Skin Studio"}' });
@@ -49,6 +53,7 @@ await page.route('**/api/**', r => { const u = r.request().url(); const m = r.re
 await page.route(/^(?!http:\/\/localhost:\d+).*/, r => r.abort());
 await page.goto('http://localhost:' + PORT + '/slickchart.html', { waitUntil: 'load' }); await page.waitForTimeout(9000);
 const bootErrs = errs.slice();
+if (NET) netFail = true;
 // ---- crawl ----
 const key = (s, d) => s + '|' + (d == null ? '' : JSON.stringify(d));
 const seen = new Map(); const queue = [['home', null], ['calendar', null], ['payments', null], ['messages', null], ['clients', null], ['more', null], ['client', 'sq_CUST1'], ['booking-link', null], ['forms', null]];
@@ -64,7 +69,7 @@ while (queue.length && seen.size < 300) {
   errs = []; cerrs = [];
   const found = await page.evaluate(([s, d, g]) => { try { document.querySelectorAll('.shell > div[id], body > div[id]').forEach(x => { if (getComputedStyle(x).position === 'fixed' && x.id !== 'app') x.remove(); }); } catch (e) {}
     try { d == null ? nav(s) : nav(s, d); } catch (e) { return { err: String(e.message) }; }
-    const html = document.body.innerHTML; const out = []; const re = /nav\(\s*'([a-z0-9-]+)'\s*(?:,\s*('[^']*'|\d+|\{[^}]{0,120}\}))?\s*\)/g; let m;
+    const html = Array.from(document.body.children).filter(e => e.tagName !== 'SCRIPT').map(e => e.outerHTML).join('');   // not the app's own script text const out = []; const re = /nav\(\s*'([a-z0-9-]+)'\s*(?:,\s*('[^']*'|\d+|\{[^}]{0,120}\}))?\s*\)/g; let m;
     while ((m = re.exec(html))) { let dd = null; if (m[2] != null) { const v = m[2]; if (/^'/.test(v)) dd = v.slice(1, -1); else if (/^\d+$/.test(v)) dd = +v; else { try { dd = Function('return ' + v)(); } catch (e) { dd = null; } } } out.push([m[1], dd]); }
     return { tt: (document.getElementById('tt') || {}).textContent || '', len: (document.getElementById('S') || document.body).innerText.length, links: out, geom: Function('return (' + g + ')()')() }; }, [s, d, geom.toString()]).catch(e => ({ err: String(e.message) }));
   await page.waitForTimeout(150);

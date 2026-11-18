@@ -9920,6 +9920,16 @@ health check reads it exactly as before.
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
 
+## 2026-11-18 — Build 2026-11-18l: bad-network sweep (rotation area 14) (PREVIEW)
+
+`sweep-new-provider-wide.mjs` now takes `NET=500|offline`: after boot every /api call (except the
+account read) fails. Mac, WebKit: 123 screens, 1,258 controls, **no render or tap errors** either way.
+Fixed: "Try again" / "Refresh" on Today's and the week's appointments redrew the same screen when Square
+still failed, so the tap looked dead. They now call `_sqApptsRetry()`: "Checking Square…", then if it
+still fails a plain reason by `_sqApptsErr` (offline / not connected / Square didn't answer).
+Test: `test-square-states.mjs` step 5. The crawler no longer reads the app's own script text (it
+reported a fake `course-detail|"${c.id}"` screen).
+
 ## 2026-11-18 — Client app sweep (rotation area 8) (PREVIEW, slickchart-client.html)
 
 `scratchpad/sweep-client-wide.mjs` (SIZE=phone|ipad|mac, FAIL=none|500|offline) screenshots every client

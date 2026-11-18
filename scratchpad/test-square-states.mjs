@@ -74,4 +74,9 @@ const said = (await page.evaluate(() => window.__said.join(' | '))) || '';
 const want = { expired: /isn’t connected right now/, nosquare: /isn’t connected right now/, offline: /Check your internet connection/, err500: /didn’t answer|try again/i, none: /isn’t connected right now/ }[SQ];
 ok(want.test(said), 'sync from Square says the right thing (' + said.slice(0, 160) + ')');
 ok(!/reconnect it: Settings/.test(said), 'no old "Settings → Square → Disconnect" instruction');
+// 5. Try again on Today, when Square still fails, says so (it used to redraw the same screen silently).
+await page.evaluate(() => { window.__said = []; nav('today-appts'); }); await page.waitForTimeout(1200);
+const tried = await page.evaluate(() => { const b = Array.from(document.querySelectorAll('#S button')).find(b => /Try again|Refresh/.test(b.textContent)); if (b) b.click(); return !!b; });
+await page.waitForTimeout(1500);
+if (tried) { const s5 = await page.evaluate(() => window.__said.join(' | ')); ok(/Still couldn’t reach Square|didn’t answer|isn’t connected right now/.test(s5), 'Today: Try again says what happened (' + s5.slice(0, 140) + ')'); }
 await browser.close(); srv.close(); console.log(fails ? fails + ' FAILED' : 'ALL PASS'); process.exit(fails ? 1 : 0);

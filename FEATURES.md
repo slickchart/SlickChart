@@ -703,6 +703,7 @@ saved anywhere", not "does this always call that".
 | `_signedOutBannerHTML` | `/api/client-code` | via `_clientSendCode` |
 | `_sqApptsErrHTML` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_sqApptsErrHTML` | `/api/square/connect` | via `_sqConnect` |
+| `_sqApptsRetry` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_sqCheckExpiry` | `/api/square/connect` | via `_sqConnect` |
 | `_sqCheckExpiry` | `/api/square/connection` | via `_sqConnState` |
 | `_sqCheckPerms` | `/api/square/token-status` | direct |
