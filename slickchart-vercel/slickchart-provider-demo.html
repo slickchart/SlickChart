@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18s';
+const APP_BUILD='2026-11-18t';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -24784,13 +24784,24 @@ function _smsHref(phone,msg){
   var num=String(phone||'').replace(/[^\d+]/g,'');
   return 'sms:'+num+(isIOS?'&':'?')+'body='+encodeURIComponent(msg||'');
 }
+// A Windows, Linux or Chromebook computer has no texting app behind an sms: link, so "Text it" did
+// nothing at all while the toast said "Opening your texts" (2026-11-18 sweep, a desktop-first trial).
+// There the message is also copied, with a toast saying so. A Mac opens Messages as before.
+function _goSms(phone,msg,name){
+  let pc=false;try{pc=_onComputer()&&!/Macintosh/.test(navigator.userAgent||'');}catch(e){}
+  if(pc){
+    const first=String(name||'').split(' ')[0]||'them';
+    const ok=function(){if(typeof proToast==='function')proToast('Message copied. Paste it into a text to '+first+' from your phone.',0);};
+    try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(msg).then(ok).catch(function(){_copyFallback(msg,ok,function(){});});else _copyFallback(msg,ok,function(){});}catch(e){}
+  }
+  try{location.href=_smsHref(phone,msg);}catch(e){}
+}
 function _inviteSendText(id){
   const c=CL[id]||{};
   const msg=_inviteEditedMsg(id);
-  const href=_smsHref(c.phone,msg);
   _inviteSharedToast(id,'text');
   const sh=document.getElementById('invite-sheet');if(sh)sh.remove();
-  location.href=href;
+  _goSms(c.phone,msg,c.name);
 }
 function _inviteSendEmail(id){
   const c=CL[id]||{};
@@ -25227,7 +25238,7 @@ function _uSendText(){
   _uSendDone();closeSendSheet();
   _uSendReady(o,function(){
     if(typeof proToast==='function')proToast('Opening your messages…');
-    location.href=_smsHref(c.phone,msg);
+    _goSms(c.phone,msg,c.name);
   });
 }
 function _uSendEmail(){
@@ -31902,7 +31913,7 @@ async function _ttpReceipt(id,how,kind,total,paymentId){
       if(navigator.share){await navigator.share({title:'Receipt',text:msg});return;}}catch(e){return;}
   }
   if(how==='email'){location.href='mailto:'+encodeURIComponent(c.email||'')+'?subject='+encodeURIComponent((kind==='approved'?'Your receipt from ':'Payment declined, ')+biz)+'&body='+encodeURIComponent(msg);}
-  else location.href=_smsHref(c.phone||'',msg);
+  else _goSms(c.phone||'',msg,c.name);
 }
 // Sign-out: the phone's Square SDK must stop holding this account's Square sign-in.
 async function _ttpSignOut(){_ttp.authed=false;_ttp.linked=null;_ttp.locationId='';const P=_ttpPlugin();if(!P||!P.deauthorize)return;try{await Promise.race([P.deauthorize(),new Promise(r=>setTimeout(r,2000))]);}catch(e){}}

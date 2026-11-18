@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18t: "Text it" on a Windows/Linux computer
+
+A Windows, Linux or Chromebook computer has no texting app behind an `sms:` link, so "Text it" (the
+app invite, the general send sheet, a receipt by text) did nothing at all while the toast said
+"Opening your texts". `_goSms` now also copies the message there and says "Message copied. Paste it
+into a text to <first name> from your phone." A Mac opens Messages exactly as before; phones are
+unchanged. Test: `scratchpad/test-text-from-computer.mjs` (UA=win in Chromium, UA=mac in both
+engines); fails on the old build.
+
 ## 2026-11-18 — build 2026-11-18s: automatic deposit forms retry after a failed send
 
 Tattoo "send intake & consent when a deposit is paid" in AUTOMATIC mode stamped the invoice in
