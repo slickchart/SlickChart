@@ -9898,3 +9898,24 @@ ready for 600 providers".
 - **Her plans (screenshots 2026-11-18):** Neon **Launch** via Vercel ($0.35/GB-month storage) and Resend
   **Transactional 50,000 emails/month, $20** (next step 100,000 for $35). She said no reminder is needed
   for the Resend upgrade (one was added and removed the same day).
+
+### 2026-11-18 — No more size limit on saving one big list (build 2026-11-18e)
+Ashley: "start it now and be preemptive" (the 4.5 MB per-save limit; largest client list 2.9 MB).
+Chose pieces over splitting sc_clients into per-client rows: same outcome (no ceiling, for EVERY key,
+not just clients) with no change to the stored shape, so every build, merge, cron, history copy and
+health check reads it exactly as before.
+- App `Cloud._send`: any value `_tooBigForOne` (measured escaped + in bytes, > 3 MB) goes to
+  `Cloud._sendBig`: 900K-character pieces, never cut inside an emoji, one upload per key at a time
+  (`_bigBusy`), a failed piece re-queues the key with backoff, the newest queued edit wins,
+  `_serverSeen` / `_outboxSettle` on success, launch-log `store-big` / `store-big-failed`.
+  `_pushFlushNow` routes big keys to the queue the same way.
+- Server `api/store.js takePart` + table `kv_parts` (owner, upload_id, i): pieces are kept owner-scoped,
+  NOTHING is written to kv until all n are in and the total length matches (409 otherwise), then the
+  whole value goes through the ordinary save path (kv_history copy, removed-client strip, merges).
+  Pieces older than a day are cleaned. `?key=` reads stream like the full read.
+- Old builds never send pieces and are unaffected; a new build talking to an old server gets a 400 and
+  shows the existing "too large" toast once (no data change).
+- Test `scratchpad/test-store-big-pg.mjs` 19/19: real PostgreSQL 16 + the real app in Chromium against
+  it; 6.5M-character list with quotes/emoji saves identically, never half a list, another account
+  cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
+  installed in this container, so not run in Safari's engine yet.

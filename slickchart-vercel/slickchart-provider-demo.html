@@ -5184,6 +5184,55 @@ const Cloud={
   // rejected, so her computer showed "Changes couldn't back up to the cloud yet" and sat in a retry
   // loop, never syncing at all. Batching was right; batching without a ceiling was not.
   _MAX_BATCH:350000,
+  // ONE value bigger than this is sent in numbered pieces instead of one request (2026-11-18). The
+  // platform refuses a request over 4.5 MB, and the busiest client list is already 2.9 MB; past the
+  // limit it could never be saved to the account again. The server keeps the pieces and only saves
+  // once every one has arrived and they add up, through the same path as any save, so the account
+  // never holds half a list. The saved text is the same as before, so every build reads it.
+  _BIG:3000000,
+  _PART:900000,
+  // Measured the way the request carries it: escaped (every quote in a client list doubles) and in
+  // bytes (an emoji is 4), not by the value's raw length.
+  _tooBigForOne(v){
+    if(v==null)return false;const s=String(v);if(s.length<1000000)return false;
+    try{return new Blob([JSON.stringify(s)]).size>this._BIG;}catch(e){return s.length>this._BIG;}
+  },
+  _sendBig(k,v,retryCount){
+    const tok=this.token;if(!tok)return Promise.resolve();
+    if(!this._bigBusy)this._bigBusy=Object.create(null);
+    this._bigBusy[k]=1;
+    const id='b'+Date.now().toString(36)+Math.random().toString(36).slice(2,12);
+    // Cut on whole characters: never between the two halves of an emoji.
+    const parts=[];let i=0;
+    while(i<v.length){let e=Math.min(v.length,i+this._PART);if(e<v.length){const c=v.charCodeAt(e-1);if(c>=0xD800&&c<=0xDBFF)e--;}parts.push(v.slice(i,e));i=e;}
+    const n=parts.length;
+    const again=()=>{ if(!(k in this._queue))this._queue[k]=v; this._retryLater({},retryCount||0); };
+    return (async()=>{
+      let r=null,j=null;
+      for(let p=0;p<n;p++){
+        r=await fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+          body:JSON.stringify({part:{k:k,id:id,i:p,n:n,total:v.length,data:parts[p]}})});
+        if(!r||!r.ok)break;
+      }
+      if(r&&r.ok){j=await r.json().catch(()=>null);}
+      delete this._bigBusy[k];
+      if(j&&j.ok&&!j.partial){
+        try{if(!this._serverSeen)this._serverSeen=Object.create(null);this._serverSeen[k]=v;}catch(e){}
+        try{_outboxSettle();}catch(e){}
+        try{_alAdd('store-big',String(k)+' '+Math.round(v.length/1024)+'KB in '+n);}catch(e){}
+        return;
+      }
+      const st=r?r.status:0;
+      try{_alAdd('store-big-failed',String(k)+' '+Math.round(v.length/1024)+'KB status '+st);_alSend(true);}catch(e){}
+      if(st===401){ if(!(k in this._queue))this._queue[k]=v; return; }   // the next ordinary save handles signing in again
+      if(st===400){
+        try{if(!this._warned413)this._warned413={};}catch(e){}
+        if(!(this._warned413&&this._warned413[k])){try{this._warned413[k]=1;}catch(e){}if(typeof proToast==='function')proToast('Something was too large to save to your account. It is still saved on this device, and your notes are saved.',0,'error');}
+        return;
+      }
+      again();
+    })().catch(()=>{ try{delete this._bigBusy[k];}catch(e){} again(); });
+  },
   _flush(retryCount){
     if(this._passive)return Promise.resolve();
     if(!this.token)return;
@@ -5217,6 +5266,16 @@ const Cloud={
     }
     try{items=_dropBootShrinks(items,'queue');if(!Object.keys(items).length)return Promise.resolve();}catch(e){}
     if(!this.token)return;
+    // A value too big for one request (a busy practice's client list) goes in pieces (_sendBig).
+    try{
+      for(const k of Object.keys(items)){
+        const v=items[k];if(!this._tooBigForOne(v))continue;
+        delete items[k];
+        if(this._bigBusy&&this._bigBusy[k]){ if(!(k in this._queue))this._queue[k]=v; clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(0),3000); continue; }
+        _markSent({[k]:v});this._sendBig(k,String(v),retryCount);
+      }
+      if(!Object.keys(items).length)return Promise.resolve();
+    }catch(e){}
     _markSent(items);
     fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})})
       .then(r=>{
@@ -26792,7 +26851,7 @@ function _pushFlushNow(){
     let used=0; const over=[];
     Object.keys(items).forEach(function(k){
       const len=String(items[k]==null?'':items[k]).length+k.length+8;
-      if(used&&used+len>Cloud._MAX_BATCH){over.push(k);return;}
+      if(Cloud._tooBigForOne(items[k])||(used&&used+len>Cloud._MAX_BATCH)){over.push(k);return;}   // a big one goes in pieces via the queue
       used+=len;
     });
     if(over.length){
