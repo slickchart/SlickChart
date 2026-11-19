@@ -40,6 +40,13 @@ await page.waitForTimeout(1200);
 if (FAIL === 'none') {
   for (const s of ['home', 'journey', 'shop', 'messages', 'profile', 'rebook', 'fill-form', 'notif-settings', 'help']) {
     await page.evaluate(s => { try { if (s === 'fill-form') _fillFormId = 'intake'; nav(s); } catch (e) {} }, s); await page.waitForTimeout(500);
+    // TINY=1: words under 12px, or fainter than 4.5:1 (3:1 for big text) against what is behind them.
+    if (process.env.TINY) out['tiny-' + s] = await page.evaluate(() => { const L = c => { const m = (c || '').match(/[\d.]+/g); if (!m) return 1; const [r, g, b] = m.slice(0, 3).map(v => { v = v / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+      const out = new Set(); for (const e of document.querySelectorAll('.shell *')) { if (!e.offsetParent) continue; const own = [...e.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent.trim()).join(' ').trim(); if (own.length < 2 || e.closest('[aria-hidden=true],input,textarea,select,option')) continue;
+        const cs = getComputedStyle(e); if (cs.visibility === 'hidden' || +cs.opacity === 0) continue; const fs = parseFloat(cs.fontSize); if (fs < 12) out.add('tiny ' + own.slice(0, 24) + ' ' + fs + 'px');
+        let p = e, bg; while (p) { if (getComputedStyle(p).backgroundImage !== 'none') { bg = null; break; } bg = getComputedStyle(p).backgroundColor; if (bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg) && !/rgba\([^)]*, 0\.[0-4]\d*\)/.test(bg)) break; p = p.parentElement; } if (bg === null) continue;
+        const a = L(cs.color), c = L(bg || 'rgb(255,255,255)'); const ratio = (Math.max(a, c) + 0.05) / (Math.min(a, c) + 0.05); const need = (fs >= 18 || (fs >= 14 && +cs.fontWeight >= 700)) ? 3 : 4.5; if (ratio < need - 0.05 && !e.closest('button[disabled]')) out.add('faint ' + own.slice(0, 24) + ' ' + ratio.toFixed(1)); }
+      return [...out].slice(0, 10); });
     if (process.env.SAFE) out['safe-' + s] = await page.evaluate(() => [...document.querySelectorAll('button, a[href], [role=button], input, textarea, select')].filter(el => { const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.top > innerHeight) return false;
       let sc = el.parentElement; while (sc && sc !== document.documentElement) { const st = getComputedStyle(sc); if (/(auto|scroll)/.test(st.overflowY) && sc.scrollHeight > sc.clientHeight + 1) break; sc = sc.parentElement; }
       const scr = sc && sc !== document.documentElement; const canDown = scr && sc.scrollTop + sc.clientHeight < sc.scrollHeight - 1, canUp = scr && sc.scrollTop > 0;

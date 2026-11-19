@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzw: a pasted sign-in code keeps all 6 digits
+
+The client email-code box, the authenticator box at log in, and the two authenticator boxes in
+Security had `maxlength="6"`, so a code pasted with a leading space (" 123456", common from mail apps)
+was cut to " 12345" before the digits were taken. They now allow 20 characters and `_codeDigits()`
+keeps the first 6 digits as she types or pastes. Test: `scratchpad/test-code-paste.mjs` (fails 7 on the
+old code). Also new and clean: `scratchpad/test-form-builder-phone.mjs` (every question type by taps).
+
 ## 2026-11-19 — build 2026-11-19zzu: two faint-text spots
 
 New crawl checks in `sweep-new-provider-wide.mjs`: TINY=1 (words under 12px or under 4.5:1 contrast)
