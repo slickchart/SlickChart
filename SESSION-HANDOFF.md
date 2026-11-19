@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19z: payment detail offers only what fits its status
+
+On a refunded or canceled payment, "Mark paid" was shown and did nothing (`_payMarkPaid` refuses
+those). A PAID invoice offered "Send text link" and "Edit & resend", which ask the client to pay again.
+Those three now show only while money is owed (`_payOpenOwed`: unpaid, partial). The sheet also shows
+"Collected $120.00 (includes a $20.00 tip)" and, for a partial, "Paid $40.00 so far · $60.00 still owed".
+Test: `scratchpad/test-payment-detail-buttons.mjs`.
+
 ## 2026-11-19 — build 2026-11-19y: "Collected this month" on Payments counts money received this month
 
 It sliced `p.date` as text, so an invoice made last month and paid this month never counted, and a

@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19y';
+const APP_BUILD='2026-11-19z';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -32871,6 +32871,7 @@ function renderPayments(){
 function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p&&p.status!=='refunded'&&p.status!=='canceled'){p.status='paid';if(!p.paidDate)p.paidDate=(typeof _todayISO==='function'?_todayISO():'');const _ok=_savePayments();if(_ok===false&&typeof proToast==='function')proToast('Couldn’t save that — your device storage may be full. The change may not stick on reload.',0);}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDeleteDo(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){if(_payments[i]&&_payments[i].squareInvoiceId)_markSquareDeleted(_payments[i].squareInvoiceId);_libForget('sc_payments',_payments[i]);_payments.splice(i,1);_savePayments();if(typeof proToast==='function')proToast('Payment removed');}const _m=document.getElementById('pay-detail');if(_m)_m.remove();if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDelete(idv){if(typeof confirmModal==='function'){confirmModal({title:'Remove this payment?',body:'This removes the payment record. It can’t be undone.',action:'Remove'},function(){_payDeleteDo(idv);});}else{_payDeleteDo(idv);}}
+function _payOpenOwed(p){return !!p&&(p.status==='unpaid'||p.status==='partial'||!p.status);}
 function _payOpen(idv){
   const p=_payments.find(x=>x.id===idv); if(!p)return;
   const ex=document.getElementById('pay-detail'); if(ex)ex.remove();
@@ -32880,10 +32881,13 @@ function _payOpen(idv){
   m.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:88%;overflow:auto;"><div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:22px;font-weight:700;color:var(--p-ink);">$'+(+p.amount||0).toFixed(2)+'</div><div style="font-size:16px;color:var(--p-mut);margin-top:2px;">'+String(p.clientName||'\u2014').replace(/</g,'&lt;')+' \u00b7 '+_payDateDisp(p.date)+' \u00b7 '+_fileEsc(p.method||'')+'</div></div><span style="font-size:16px;font-weight:700;color:'+col+';text-transform:capitalize;">'+_fileEsc(p.status)+'</span></div>'
     +itemsHtml
+    +(function(){const c=_payCollected(p),a=+p.amount||0;if(p.status==='partial')return '<div style="font-size:16px;color:var(--p-blue);margin-top:8px;">Paid $'+c.toFixed(2)+' so far \u00b7 $'+_payOwed(p).toFixed(2)+' still owed</div>';return (c>a+0.004)?'<div style="font-size:16px;color:var(--p-green);margin-top:8px;">Collected $'+c.toFixed(2)+' (includes a $'+(c-a).toFixed(2)+' tip)</div>':'';})()
     +'<div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;">'
-    +(p.status!=='paid'?'<button class="btnp" style="width:100%;border-radius:12px;justify-content:center;" onclick="_payMarkPaid(\''+p.id+'\');var _m=document.getElementById(\'pay-detail\');if(_m)_m.remove();"><i class="ti ti-check"></i> Mark paid</button>':'')
-    +'<button class="btng" style="width:100%;border-radius:12px;justify-content:center;" onclick="_payTextLink(\''+p.id+'\')"><i class="ti ti-message"></i> Send text link</button>'
-    +'<button class="btng" style="width:100%;border-radius:12px;justify-content:center;" onclick="_payEdit(\''+p.id+'\')"><i class="ti ti-edit"></i> Edit &amp; resend</button>'
+    // Only an invoice still owed can be marked paid or sent a pay link. On a refunded or canceled one,
+    // Mark paid did nothing at all, and a pay link for a paid invoice asks the client to pay twice.
+    +(_payOpenOwed(p)?'<button class="btnp" style="width:100%;border-radius:12px;justify-content:center;" onclick="_payMarkPaid(\''+p.id+'\');var _m=document.getElementById(\'pay-detail\');if(_m)_m.remove();"><i class="ti ti-check"></i> Mark paid</button>':'')
+    +(_payOpenOwed(p)?'<button class="btng" style="width:100%;border-radius:12px;justify-content:center;" onclick="_payTextLink(\''+p.id+'\')"><i class="ti ti-message"></i> Send text link</button>'
+    +'<button class="btng" style="width:100%;border-radius:12px;justify-content:center;" onclick="_payEdit(\''+p.id+'\')"><i class="ti ti-edit"></i> Edit &amp; resend</button>':'')
     +(p.publicUrl?'<a href="'+p.publicUrl+'" target="_blank" rel="noopener" class="btng" style="width:100%;border-radius:12px;justify-content:center;text-decoration:none;"><i class="ti ti-external-link"></i> View in Square</a>':'')
     +((p.status==='paid'&&p.squarePaymentId)?'<button class="btng" style="width:100%;border-radius:12px;justify-content:center;color:var(--p-amber);border-color:var(--p-amber-line);" onclick="_payRefund(\''+p.id+'\')"><i class="ti ti-arrow-back-up"></i> Refund in Square</button>':'')
     +'<button onclick="_payDelete(\''+p.id+'\');" style="width:100%;background:none;border:none;color:var(--p-red);font-size:16px;cursor:pointer;font-family:inherit;padding:8px;">Remove</button>'
