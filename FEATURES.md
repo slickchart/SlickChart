@@ -116,6 +116,7 @@ saved anywhere", not "does this always call that".
 | `_bookToggle` | `/api/square/connection` | via `_sqConnState` |
 | `_bookUseMenu` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_bookUseMenu` | `/api/square/connection` | via `_sqConnState` |
+| `_buildResumeCheck` | `/api/build-id` | via `_checkForNewBuild` |
 | `_calBookLinkRowHTML` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_calGo` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_calGo` | `/api/square/appointments` | via `_loadSquareAppts` |
