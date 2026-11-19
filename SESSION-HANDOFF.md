@@ -9943,6 +9943,17 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zw (client app sweep: focus ring on screen titles)
+
+- Client app sweep (phone/iPad/computer, WebKit + Chromium, server failing with 500 and offline):
+  messages show "Not delivered · Tap to retry", the intake says it didn't send, no overflow, no errors.
+  The sweep itself had two bugs, now fixed: its offline route was registered before `mockApi` (so
+  Playwright never used it and "offline" tested nothing), and it looked for a Submit button where the
+  intake says "Continue to your check-in".
+- Found: each screen title (`#page-heading`, focused on arrival for screen readers) drew a green box
+  around itself on 6 client screens and in the provider app. `#page-heading:focus{outline:none}` in
+  both. `sweep-client-wide.mjs` now reports `headingRing` per screen (6 before, 0 after).
+
 ## 2026-11-19 — build 2026-11-19zv (second client with the same name)
 
 - Adding "Maria Garcia" with no email when a Maria Garcia already existed opened the first one ("is
