@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19x: print pages keep their grey text and total lines
+
+The income statement (Reports, PDF/print), the client file print and the session summary print, plus
+the client's "My records", are written into their own document, where the app's colour variables
+(`--p-mut`, `--p-line2`, `--p-chip2`, `--c-ink`...) do not exist. So the muted labels printed black,
+and the line above "Total revenue" and the client file's row dividers were dropped. Each page now
+defines the light-theme values it uses. Tests: `scratchpad/test-print-doc-colours.mjs` (old build
+fails all 3), `scratchpad/test-client-records-colours.mjs`.
+
 ## 2026-11-19 — build 2026-11-19w: client accepts a suggested time with no signal
 
 Tapping Accept on "Marco suggested a time" marked the suggestion handled BEFORE sending, so a failed
