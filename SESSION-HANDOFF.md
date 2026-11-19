@@ -9943,6 +9943,21 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zze: long names on a phone, client initials contrast
+
+- **LONG=1 crawl** (new mode on `sweep-new-provider-wide.mjs`: hyphenated client names, 80-character
+  emails, a long studio name) at 390 and 320 wide: Take Payment was 634px wide on a 390 phone, so the
+  whole screen slid sideways. The client's name/contact block beside the avatar now has `min-width:0`
+  and wraps (`overflow-wrap:anywhere`), there and in three screens with the same pattern (forms &
+  documents, client header, consult). Re-crawl: 0 sideways at both widths. Client app with the same
+  long names: clean on every screen.
+- **Client app initials circle** (topbar avatar, message avatars) was 4.19:1 on the default brand tint
+  in light mode; it now sits on `--accent-lt` instead of `--accent-lt2` (4.69:1). Contrast sweeps, both
+  apps, light and dark, phone: clean apart from the known photo-tile false positives and Luxe "Off".
+- Test: `scratchpad/test-long-names-phone.mjs` (both engines).
+- Real-world signal this run: app-launches has no new errors; the store-413 / token-dropped entries are
+  all 23+ hours old on builds before the huge-list fix.
+
 ## 2026-11-19 — build 2026-11-19zzd: bottom sheets clear the iPhone home bar
 
 - **Found by a new crawl mode** (`SAFE=1 SIZE=phone` on `scratchpad/sweep-new-provider-wide.mjs`): the page

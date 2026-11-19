@@ -33,8 +33,11 @@ page.on('popup', p => p.close().catch(() => {}));
 // A brand-new esthetician, Square connected, clients imported from Square, setup finished.
 const now = Date.now();
 const clients = {}; for (let i = 0; i < 40; i++) { const id = 'sq_CUST' + i; clients[id] = { id, name: ['Ava', 'Bea', 'Cora', 'Dana', 'Eve'][i % 5] + ' ' + ['Lane', 'Moss', 'Reed', 'Stone'][i % 4] + ' ' + i, email: 'c' + i + '@ex.com', phone: '555010' + String(i).padStart(4, '0'), sqId: 'CUST' + i, source: 'square', created: now - 86400000 * 3, _ts: now - 86400000 * 3, visits: [], notes: [] }; }
-const seed = { sc_clients: JSON.stringify(clients), sc_onboarded: '1', sc_professions: JSON.stringify((process.env.PROF || 'esty').split(',')), sc_wsname: JSON.stringify('Frances Skin Studio'),
-  sc_bizinfo: JSON.stringify({ name: 'Frances Skin Studio', phone: '5550100000', email: 'studio@ex.com' }) };
+// LONG=1: real-world long names (hyphenated surnames, long studio names, long emails) to catch text that pushes a phone screen sideways.
+if (process.env.LONG) for (const c of Object.values(clients)) { c.name = c.name.replace(' ', ' Montgomery-Vanderbilt-') + ' Alexandrina-Rosalind'; c.email = 'alexandrina.montgomery.vanderbilt.' + c.id.toLowerCase() + '@extremelylongdomainname-example.com'; }
+const BIZ = process.env.LONG ? 'The Botanical Aesthetics Skin Wellness and Lash Studio of Southern California' : 'Frances Skin Studio';
+const seed = { sc_clients: JSON.stringify(clients), sc_onboarded: '1', sc_professions: JSON.stringify((process.env.PROF || 'esty').split(',')), sc_wsname: JSON.stringify(BIZ),
+  sc_bizinfo: JSON.stringify({ name: BIZ, phone: '5550100000', email: 'studio@ex.com' }) };
 // DATEHOOK=1: record every place the app parses a bare 'YYYY-MM-DD' with new Date()/Date.parse.
 // That reads it as UTC midnight, which is the PREVIOUS day anywhere west of UTC (every US provider).
 if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const hits = window.__dh = {};
