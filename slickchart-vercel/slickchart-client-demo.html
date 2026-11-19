@@ -4332,6 +4332,7 @@ function _submitFillForm(){
     nav('home');
   };
   const _ffPayload={formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel,qs:qs.map(function(q){return {id:q.id,label:q.label,type:q.type};}),_idem:_ffStableIdem(pf),_lock:'f:'+pf.formId};
+  if(client._real&&_tooBigToSend(_ffPayload)){showToast(_TOO_BIG_MSG,false);return;}
   if(client._real){
     const p=activeProvider();
     // Optimistically mark this form done and glide STRAIGHT into the next pre-visit step, so the intake
@@ -4980,6 +4981,7 @@ function submitCheckin(){
       });
     }
     const _ciPayload={client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[],_idem:_ciStableIdem(prov)};
+    if(_tooBigToSend(_ciPayload)){showToast(_TOO_BIG_MSG,false);return;}
     _markCheckinDoneKeepDraft(prov);   // pending only, so the next step can open
     if(_nextPrevisitItem()){
       _clientSubmit('checkin',_ciPayload).then(function(res){
@@ -5117,6 +5119,7 @@ function _submitPrevisitPackage(){
   // land in the chart under submittedForms and lastCheckin exactly as the separate flows do today. This
   // is the final step, so we confirm delivery before the all-set screen — a dropped submit could hide a
   // flagged contraindication (in the intake OR the check-in) with nothing after it to catch it.
+  if(client._real&&_tooBigToSend(ffPayload,ciPayload)){showToast(_TOO_BIG_MSG,false);return;}
   if(client._real){
     _pkgPending={ffPayload:ffPayload,ciPayload:ciPayload,ciFlaggedLc:ciFlaggedLc,pf:pf,prov:prov};
     _pkgSendReal();
@@ -7050,6 +7053,7 @@ function _clientSubmit(kind,payload,_retried){
         // A non-OK HTTP status means it did NOT reach the provider, treat as failure so
         // callers on critical paths (check-in, booking, forms) don't show a false "sent".
         if(!r.ok){
+          if(r.status===413)return _clear({ok:false,error:'too-large'});
           if(!_retried)return new Promise(function(res){setTimeout(res,1200);}).then(function(){return _clientSubmit(kind,payload,true);}).then(_clear);
           return {ok:false,error:'server'};
         }
@@ -7063,6 +7067,11 @@ function _clientSubmit(kind,payload,_retried){
       });
   }catch(e){ try{if(!_retried)_clientSubmitInFlight[_lk]=false;}catch(_e){} return Promise.resolve({ok:false,error:'network'}); }
 }
+// The server refuses a submission over 4 MB (api/client-submit.js MAX_PAYLOAD_BYTES). Photos are what
+// make one that big, so check before sending and say what to do, instead of a 413 that read as
+// "check your connection" and failed the same way on every retry.
+function _tooBigToSend(){try{let n=0;for(let i=0;i<arguments.length;i++)n+=JSON.stringify(arguments[i]||{}).length;return n>3.8*1024*1024;}catch(e){return false;}}
+const _TOO_BIG_MSG='That\u2019s more photos than can be sent at once. Remove a few photos and tap Submit again.';
 function _clientLinkError(msg){
   var S=document.getElementById('S');
   var safe=(typeof _txt==='function')?_txt(msg||''):String(msg||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');

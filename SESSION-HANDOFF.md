@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19s: client form with too many photos says "remove a few"
+
+`api/client-submit.js` refuses a submission over 4 MB (413). Photos are what make one that big. The
+client app used to send it, retry it, and then say "check your connection" on every tap. Now
+`_tooBigToSend` checks the form, the check-in and the merged package before anything is marked done
+and says "That's more photos than can be sent at once. Remove a few photos and tap Submit again",
+keeping every photo and answer on screen. `_clientSubmit` returns `error:'too-large'` on a 413 with
+no retry. Test: `scratchpad/test-client-too-many-photos.mjs` (Chromium + WebKit). sweep-all-forms 178 clean.
+
 ## 2026-11-19 — build 2026-11-19r: client app photos that would not open now say so
 
 Sweep of the client app's photo paths (chat, form photo answers, check-in photos). `_pickImages`
