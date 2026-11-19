@@ -48,6 +48,7 @@ if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const
   W.prototype = D.prototype; W.now = D.now; W.UTC = D.UTC; W.parse = s => { rec(s); return D.parse(s); }; window.Date = W; });
 await page.addInitScript(w => { window.__WORDS = w; }, process.env.WORDS || '');
 if (process.env.SAFE) await page.addInitScript(() => { window.__SAFE = [47, 34]; });
+if (process.env.DARK) await page.addInitScript(() => { try { localStorage.setItem('sc_provider_theme', 'dark'); } catch (e) {} });
 if (process.env.DIRTY) await page.addInitScript(() => { window.__DIRTY = 1; });
 if (process.env.SLOW || process.env.DUPSAVE) await page.addInitScript(() => { window.__SLOW = 1; });
 if (process.env.TEXTZOOM) await page.addInitScript(z => { window.__TZOOM = z; }, +process.env.TEXTZOOM);

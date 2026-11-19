@@ -9943,6 +9943,18 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzp: a long chat opens at the newest message (both apps)
+
+Phone sweep with a busy client (150 messages): in BOTH the client app and the provider's conversation
+screen, opening the chat landed on the OLDEST message. The scroll was set on `#chat-body`, which does
+not scroll; the page `#S` does, and `nav()` then reset `S.scrollTop=0`. Now `nav()` opens `messages`
+(client) / `chat` (provider) at `S.scrollHeight`, and a redraw follows a new message only when she was
+already within 160px of the end, so reading older messages is never interrupted. Tests:
+`scratchpad/test-client-chat-scroll.mjs` (390 + 320, both engines) and
+`scratchpad/test-provider-chat-scroll.mjs` (390, 320, 1440, both engines). Also fixed the client BUSY
+sweep harness (`sweep-client-wide.mjs` wrote its long lists onto the wrong object, so earlier "busy
+client" runs had not really been busy) and it now reports `chatShowsNewest`.
+
 ## 2026-11-19 — build 2026-11-19zzo: titles on Resources and My docs; no sign-in check line for providers
 
 Contact-sheet review of all 83 phone screens: Resources (forms) and My docs (vault) drew an EMPTY top

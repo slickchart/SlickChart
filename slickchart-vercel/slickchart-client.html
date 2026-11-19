@@ -2178,7 +2178,8 @@ function nav(screen){
     try{_a11yEnhanceClickables(S);}catch(e){}
     if(screen==='home'||screen==='welcome')_navStack.length=0;
     const bb=document.getElementById('topbar-back');if(bb)bb.style.display=(_navStack.length&&screen!=='checkin'&&screen!=='welcome')?'flex':'none';
-    S.scrollTop=0;
+    // A chat opens at the newest message, like every messaging app; every other screen opens at the top.
+    S.scrollTop=(screen==='messages')?S.scrollHeight:0;
     // Keep the "get the app" nudge on the Home screen only, so it never floats over a form's Submit button.
     try{var _an=document.getElementById('sc-appnudge');if(_an)_an.style.display=(screen==='home')?'block':'none';}catch(e){}
     requestAnimationFrame(()=>{
@@ -3429,6 +3430,8 @@ function renderMessages(){
   // Opening the thread means the client has seen these messages, clear the unread badge now
   // (it otherwise lingered until the next data refresh, so it looked unread after being read).
   try{const _ap=activeProvider();if(_ap&&_ap.unread){_ap.unread=0;if(typeof _saveClientMessages==='function')_saveClientMessages();if(typeof updateClientBadge==='function')updateClientBadge();}}catch(e){}
+  // Redrawn for a new message: follow it only if she was already at the end, so reading older messages is not interrupted.
+  const _chatAtEnd=(typeof S!=='undefined'&&S)?(S.scrollHeight-S.scrollTop-S.clientHeight<160):true;
   document.getElementById('tt').textContent=`${client.provider}`;
   S.innerHTML=`
   <div style="padding:10px 16px;border-bottom:1px solid var(--c-line);display:flex;align-items:center;gap:10px;background:var(--c-card);">
@@ -3453,7 +3456,8 @@ function renderMessages(){
     <textarea id="cinput" aria-label="Type a message" placeholder="Message ${_txt(client.providerFirst)}…" rows="1" style="flex:1;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:20px;padding:9px 14px;font-size:13px;color:var(--c-ink);resize:none;font-family:inherit;max-height:80px;" oninput="_msgDraft=this.value;this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
     <button onclick="sendClientMsg()" aria-label="Send message" title="Send" style="width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2.5L21 4z"/><path d="m21 4-7 16-2.5-6.5"/></svg></button>
   </div>`;
-  const body=document.getElementById('chat-body');if(body)body.scrollTop=body.scrollHeight;
+  // The page (S) is what scrolls, not the message list (2026-11-19 phone sweep: a long chat opened on its oldest message).
+  if(_chatAtEnd){try{S.scrollTop=S.scrollHeight;}catch(e){}}
   // Drop in any pre-filled reservation note ("Buy in office") so the client just taps Send.
   const _inp=document.getElementById('cinput');
   if(_inp&&_msgPrefill){_inp.value=_msgPrefill;_msgPrefill='';_msgDraft=_inp.value;try{_inp.style.height='auto';_inp.style.height=_inp.scrollHeight+'px';_inp.focus();_inp.setSelectionRange(_inp.value.length,_inp.value.length);}catch(e){}}
