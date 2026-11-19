@@ -5,7 +5,7 @@
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 import { mockApi, clientRecord, BASE } from './sweep2-client-lib.mjs';
 const SIZE = process.env.SIZE || 'phone', FAIL = process.env.FAIL || 'none';
-const VP = { phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, ipad: { viewport: { width: 1032, height: 1376 }, hasTouch: true }, mac: { viewport: { width: 1440, height: 900 } } }[SIZE];
+const VP = { phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, ipad: { viewport: { width: 1032, height: 1376 }, hasTouch: true }, mac: { viewport: { width: 1440, height: 900 } }, small: { viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true }, land: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true } }[SIZE];
 const eng = process.env.PW_ENGINE === 'chromium' ? pw.chromium : pw.webkit;
 const browser = await eng.launch(process.env.PW_ENGINE === 'chromium' ? { executablePath: '/opt/pw-browsers/chromium' } : {});
 const rec = clientRecord('c1', 'Jo Rivera', { providerName: 'Ashley', studio: 'Rose Glow Skin',

@@ -42,11 +42,12 @@ if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const
   function W(...a) { if (!new.target) return D(); if (a.length === 1) rec(a[0]); return new D(...a); }
   W.prototype = D.prototype; W.now = D.now; W.UTC = D.UTC; W.parse = s => { rec(s); return D.parse(s); }; window.Date = W; });
 await page.addInitScript(w => { window.__WORDS = w; }, process.env.WORDS || '');
+if (process.env.SAFE) await page.addInitScript(() => { window.__SAFE = [47, 34]; });
 await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_login_email', 'new@spa.com'); localStorage.setItem('sc_hide_sample', '1'); } catch (e) {}
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
   window.__opened = []; window.open = function (u) { window.__opened.push(String(u)); return null; };
   try { Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }); } catch (e) {}
-  try { navigator.clipboard.writeText = () => Promise.resolve(); } catch (e) {} }, ['provider', TOUCH]);
+  try { navigator.clipboard.writeText = () => Promise.resolve(); } catch (e) {} }, ['provider', TOUCH && !process.env.SAFE]);
 // NET=500|offline (rotation area 14): after boot, every other /api call fails, so each screen and tap is
 // checked for throws and silent failures with no server.
 const NET = process.env.NET || ''; let netFail = false;
@@ -58,6 +59,14 @@ await page.route('**/api/**', r => { const u = r.request().url(); const m = r.re
   if (u.includes('/api/billing-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"active":true,"status":"trialing","plan":"pro"}' });
   return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{},"clients":[],"events":[],"appointments":[],"items":[]}' }); });
 await page.route(/^(?!http:\/\/localhost:\d+).*/, r => r.abort());
+// SAFE=1: an iPhone home-screen app (black-translucent status bar, viewport-fit=cover): the notch takes
+// 47px at the top and the home bar 34px at the bottom. The page is served with env(safe-area-inset-*) set
+// to those, and every button in a sheet that opens is checked to sit clear of both.
+const SAFE = !!process.env.SAFE, SAFE_T = 47, SAFE_B = 34;
+if (SAFE) await page.route('**/slickchart.html', async r => { const res = await r.fetch(); let body = await res.text();
+  body = body.replace(/env\(\s*safe-area-inset-top\s*(,[^)]*)?\)/g, SAFE_T + 'px').replace(/env\(\s*safe-area-inset-bottom\s*(,[^)]*)?\)/g, SAFE_B + 'px')
+    .replace(/env\(\s*safe-area-inset-(left|right)\s*(,[^)]*)?\)/g, '0px');
+  return r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body }); });
 await page.goto('http://localhost:' + PORT + '/slickchart.html', { waitUntil: 'load' }); await page.waitForTimeout(9000);
 const bootErrs = errs.slice();
 if (NET) netFail = true;
@@ -127,6 +136,11 @@ for (const [k, scr] of seen) {
         if (b.left < -2 || b.right > innerWidth + 2) bad.push('sheet sticks out sideways ' + Math.round(b.left) + '..' + Math.round(b.right) + ' of ' + innerWidth);
         if (b.top < -2 || b.bottom > innerHeight + 2) { if (getComputedStyle(x).overflowY === 'visible') bad.push('sheet taller than the window and cannot scroll ' + Math.round(b.top) + '..' + Math.round(b.bottom)); }
         x.querySelectorAll('button').forEach(btn => { const r = btn.getBoundingClientRect(); if (r.width > 1 && (r.right > innerWidth + 2 || r.left < -2)) bad.push('button "' + (btn.textContent || '').trim().slice(0, 30) + '" outside the window'); });
+        if (window.__SAFE) x.querySelectorAll('button,[role=button],input,textarea,select').forEach(btn => { const r = btn.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return;
+          let sc = btn.parentElement; while (sc && sc !== x.parentElement) { const st = getComputedStyle(sc); if (/(auto|scroll)/.test(st.overflowY) && sc.scrollHeight > sc.clientHeight + 1) break; sc = sc.parentElement; }
+          const canDown = sc && sc !== x.parentElement && sc.scrollTop + sc.clientHeight < sc.scrollHeight - 1, canUp = sc && sc !== x.parentElement && sc.scrollTop > 0;
+          if (r.top < window.__SAFE[0] && r.bottom > 0 && !canUp) bad.push('"' + (btn.textContent || btn.placeholder || btn.tagName).trim().slice(0, 30) + '" under the notch (top ' + Math.round(r.top) + ')');
+          if (r.bottom > innerHeight - window.__SAFE[1] && r.top < innerHeight && !canDown) bad.push('"' + (btn.textContent || btn.placeholder || btn.tagName).trim().slice(0, 30) + '" on the home bar (bottom ' + Math.round(r.bottom) + ' of ' + innerHeight + ')'); });
         if (bad.length) sheets.push(bad.join('; '));
       });
       return { nav: window.__navs || 0, opened: (window.__opened || []).length, sheets, overflow: document.documentElement.scrollWidth > innerWidth + 2,

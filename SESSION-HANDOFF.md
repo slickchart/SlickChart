@@ -9943,6 +9943,23 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzd: bottom sheets clear the iPhone home bar
+
+- **Found by a new crawl mode** (`SAFE=1 SIZE=phone` on `scratchpad/sweep-new-provider-wide.mjs`): the page
+  is served with an iPhone's safe-area values (47px notch, 34px home bar) as a home-screen app sees them
+  (black-translucent status bar, viewport-fit=cover). 16 bottom sheets put their last button on the home
+  bar (Log a payment, Share feedback, Export client file, client Edit, Recover lost photos, Choose a
+  client, Add from menu, New reminder, protocol Edit). The native app is unaffected (contentInset always).
+- **Fix:** one CSS rule in both apps: a fixed overlay that pins its child to the bottom
+  (`justify-content:flex-end` / `align-items:flex-end`) gives that child a transparent bottom border of
+  `env(safe-area-inset-bottom)`, painted by its own background (`background-origin:border-box`). Zero
+  wherever there is no home bar; skipped where the sheet already pads for it. Re-crawl: 0 of 1,015.
+- Test: `scratchpad/test-home-bar-sheets.mjs` (both engines, both apps, with and without a home bar).
+- Also this round: client app clean at 320 wide, sideways and iPad size; provider crawl clean at 320 and
+  sideways (`SIZE=small|land|se`); no input under 16px (no focus zoom); 25 out-of-date tests repaired
+  (real-Postgres sweeps: `schemaInPlace` stub + missing lib copies); `scratchpad/force-webkit.mjs`
+  runs any Chromium test in WebKit.
+
 ## 2026-11-19 — build 2026-11-19zzc (phone round: three small tap targets)
 
 Ashley: "most people are using phones so make sure we are sweeping those too". Phone round on zzb:
