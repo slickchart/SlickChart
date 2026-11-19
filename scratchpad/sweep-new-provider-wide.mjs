@@ -103,6 +103,31 @@ while (queue.length && seen.size < 300) {
 // ---- tap ----
 const taps = [];
 const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY) : null;
+// LEAVE=1: on every screen with a box to type in, type a few words the way she would, then tap Home on
+// the bottom bar. The words must still be there when she comes back, or the app must have asked.
+if (process.env.LEAVE) {
+  const rows = [];
+  for (const [k, scr] of seen) {
+    await page.evaluate(([s, d]) => { document.querySelectorAll('#confirm-modal').forEach(x => x.remove()); document.querySelectorAll('body > div').forEach(x => { try { if (getComputedStyle(x).position === 'fixed' && x.id !== 'app' && !x.querySelector('#S')) x.remove(); } catch (e) {} }); try { d == null ? nav(s) : nav(s, d); } catch (e) {} }, [scr.s, scr.d]);
+    await page.waitForTimeout(450);
+    const fid = await page.evaluate(() => { const S = document.getElementById('S') || document.body;
+      const el = [...S.querySelectorAll('textarea'), ...S.querySelectorAll('input[type=text],input:not([type])')].find(e => e.offsetParent && !e.readOnly && !e.disabled && !/search|find|filter/i.test((e.id || '') + ' ' + (e.placeholder || '') + ' ' + (e.getAttribute('aria-label') || '')) && e.getBoundingClientRect().top < innerHeight - 80 && e.getBoundingClientRect().top > 60);
+      if (!el) return null; if (!el.id) el.id = '__lv' + Math.random().toString(36).slice(2, 7); return { id: el.id, tag: el.tagName, ph: (el.placeholder || el.getAttribute('aria-label') || '').slice(0, 40) }; });
+    if (!fid) continue;
+    try { await page.click('#' + fid.id, { timeout: 2000 }); await page.keyboard.press('End'); await page.keyboard.type(' Zebra words 77'); } catch (e) { continue; }
+    await page.waitForTimeout(200);
+    try { await page.click('.nav .ni:first-child, .nav button:first-child, .nav > *:first-child', { timeout: 2000 }); } catch (e) { await page.evaluate(() => nav('home')); }
+    await page.waitForTimeout(500);
+    const asked = await page.evaluate(() => !!document.getElementById('confirm-modal'));
+    if (asked) { rows.push(['asked', k, fid.ph]); await page.evaluate(() => { const c = document.getElementById('confirm-modal'); const x = c && c.querySelector('#_cf-cancel'); if (x) x.click(); else if (c) c.remove(); }); continue; }
+    await page.evaluate(([s, d]) => { try { d == null ? nav(s) : nav(s, d); } catch (e) {} }, [scr.s, scr.d]); await page.waitForTimeout(450);
+    const kept = await page.evaluate(() => [...document.querySelectorAll('input,textarea')].some(e => /Zebra words 77/.test(e.value || '')) || /Zebra words 77/.test((document.getElementById('S') || document.body).innerText));
+    rows.push([kept ? 'kept' : 'LOST', k, fid.tag + ' ' + fid.ph]);
+  }
+  for (const r of rows) console.log(r[0].padEnd(6) + ' ' + r[1] + '  [' + r[2] + ']');
+  console.log('LEAVE: ' + rows.length + ' screens with a box; lost ' + rows.filter(r => r[0] === 'LOST').length);
+  await browser.close(); srv.close(); process.exit(0);
+}
 for (const [k, scr] of seen) {
   if (scr.renderErr) continue; if (ONLY && !ONLY.test(scr.s)) continue;
   const n = await page.evaluate(([s, d]) => { try { d == null ? nav(s) : nav(s, d); } catch (e) { return 0; } const S = document.getElementById('S') || document.body;

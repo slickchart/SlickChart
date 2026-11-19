@@ -9943,6 +9943,20 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzg: leaving a page mid-typing asks first
+
+- **LEAVE=1 crawl mode** (`sweep-new-provider-wide.mjs`): on every page with a box, type a few words
+  for real, tap Home on the bottom bar, come back. 18 of 27 pages had lost the words: new protocol, edit
+  protocol, add/edit guide tips, add vendor notes, new form, upload document name, inventory item,
+  affiliate product, import products paste, new note format, service menu, Take Payment amount.
+- **Fix:** a trusted tap on the bottom bar or the Back arrow, and Android's back (`_scBack`), ask "Leave
+  without saving?" when she typed on the page (`_ovTyped(#S)`, only her own typing counts). Nothing
+  clears the mark except the page being redrawn or left, so a refused Save ("Add at least one step")
+  still protects her words. Pages that keep their own draft, and previews, are listed in `_LEAVE_KEEPS`
+  and never ask. Re-crawl: 0 lost (the one left is a form PREVIEW, by design).
+- Test: `scratchpad/test-leave-typed-guard.mjs` (both engines). Sheet, Escape and tab-trap tests pass;
+  the full phone crawl is clean.
+
 ## 2026-11-19 — build 2026-11-19zzf: a tap outside or Android's back asks before throwing away typed words
 
 - **BACK=1 / DIRTY=1 crawl modes** (`sweep-new-provider-wide.mjs`): after every tap that opens a sheet,

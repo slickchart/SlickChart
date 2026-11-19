@@ -394,7 +394,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zzf';
+const APP_BUILD='2026-11-19zzg';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -3141,6 +3141,24 @@ function _ovTyped(ov){try{return [...ov.querySelectorAll('textarea,input')].some
   const t=(el.type||'text').toLowerCase();if(!/^(text|email|tel|number|url|textarea)$/.test(el.tagName==='TEXTAREA'?'textarea':t))return false;
   if(/search|find|filter|-q$|^q$/i.test((el.id||'')+' '+(el.className||''))||/search|find/i.test(el.placeholder||''))return false;
   return el.offsetParent!==null&&el.dataset.typed==='1'&&String(el.value||'').trim()!=='';});}catch(e){return false;}}
+// Leaving a page mid-typing (2026-11-19 phone sweep): on 18 pages, words she typed were gone after a tap
+// on the bottom bar or Back: a new protocol, a guide's tips, a vendor's notes, a new form, a document
+// name, products pasted to import. Those taps (and Android's back) now ask first when she typed on the
+// page and it has not been saved (redrawn or left) since. Pages that keep their own draft are left alone.
+const _LEAVE_KEEPS=new Set(['new-client','checkin-settings','business-branding','write-note','routine-builder','import-clients','form-preview','guide-preview','checkin-preview']);
+function _leaveTyped(){try{const S=document.getElementById('S');const cur=(_navCur&&_navCur.screen)||'';
+  if(!S||!cur||_LEAVE_KEEPS.has(cur)||document.getElementById('confirm-modal')||_topOverlay())return false;
+  if(cur==='form-builder'&&_navCur.data&&_navCur.data!=='new')return false;   // an existing form saves as she types
+  return _ovTyped(S);}catch(e){return false;}}
+function _leaveClear(){try{document.querySelectorAll('#S [data-typed="1"]').forEach(el=>{delete el.dataset.typed;});}catch(e){}}
+function _leaveAsk(go){confirmModal({title:'Leave without saving?',body:'What you typed on this page will be lost.',action:'Leave'},function(){_leaveClear();go();});}
+try{document.addEventListener('click',function(e){
+  const t=e.target&&e.target.closest?e.target:null;if(!t)return;
+  const leave=t.closest('.nav .ni,#topbar-back');
+  if(leave){if(!e.isTrusted||!_leaveTyped())return;e.stopImmediatePropagation();e.preventDefault();_leaveAsk(function(){leave.click();});return;}
+  // Nothing else clears the mark: a Save that works redraws or leaves the page (fresh boxes carry no
+  // mark), and a Save that is refused ("Add at least one step") must still protect her words.
+},true);}catch(e){}
 // Only what SHE typed counts: a sheet that fills its own boxes (an edit sheet, a template) must still
 // close on Escape without a question.
 try{document.addEventListener('input',function(e){const t=e.target;if(e.isTrusted&&t&&t.dataset&&/^(INPUT|TEXTAREA)$/.test(t.tagName))t.dataset.typed='1';},true);}catch(e){}
@@ -9760,6 +9778,7 @@ function _scBack(){
       if(typeof _ovTyped==='function'&&_ovTyped(ov)){confirmModal({title:'Close without saving?',body:'What you typed here will be lost.',action:'Close'},shut);return true;}
       shut();return true;
     }
+    if(typeof _leaveTyped==='function'&&_leaveTyped()&&(_navStack.length||((_navCur&&_navCur.screen)||'home')!=='home')){_leaveAsk(function(){_scBack();});return true;}
     if(_navStack.length){navBack();return true;}
     const cur=(_navCur&&_navCur.screen)||'';
     if(cur&&cur!=='home'){nav('home');return true;}
