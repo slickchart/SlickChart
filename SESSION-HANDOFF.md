@@ -9943,6 +9943,18 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zv (second client with the same name)
+
+- Adding "Maria Garcia" with no email when a Maria Garcia already existed opened the first one ("is
+  already in your clients") and wrote the new number over hers; the full new-client flow also
+  replaced her notes. `_findExistingClientId(name, email, phone)` now treats a same-name client with
+  a DIFFERENT phone (7+ digits on both) as a different person. Only the two new-client screens pass
+  the phone; the sync routing callers are unchanged on purpose (no sync behaviour change). When it
+  is the same person, notes she typed are added under the old ones instead of replacing them.
+- Test: `scratchpad/test-new-client-same-name.mjs` (Chromium + WebKit, 5 fail on the old code);
+  sweep-dup-create-square-linked, booker-then-directory, test-nc-consent-ui, test-newclient-bundle,
+  test-provider-contact-keyboards pass.
+
 ## 2026-11-19 — build 2026-11-19zu (no raw error codes in toasts)
 
 - About 30 toasts show `(j&&j.error)||'Could not ...'` or `e.message`, so a server or browser error
