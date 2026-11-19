@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzh: the client's half-written message survives leaving the chat
+
+- Client app, same LEAVE check by hand on every screen with a box: the message box (`#cinput`) lost a
+  half-written message after a tap on Home and back, and on any redraw of the chat. Forms and rebook
+  already kept theirs. `_msgDraft` (memory only) now holds what she typed, refills the box on render
+  (after a reservation prefill, which wins), and is cleared when a message with text is sent.
+- Test: `scratchpad/test-client-msg-draft.mjs` (both engines). Chat layout and keys tests pass.
+
 ## 2026-11-19 — build 2026-11-19zzg: leaving a page mid-typing asks first
 
 - **LEAVE=1 crawl mode** (`sweep-new-provider-wide.mjs`): on every page with a box, type a few words

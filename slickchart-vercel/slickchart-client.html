@@ -3448,14 +3448,18 @@ function renderMessages(){
   <div id="chat-compose" style="position:absolute;bottom:var(--nav-h,calc(68px + env(safe-area-inset-bottom,0px)));left:0;right:0;z-index:6;background:var(--c-card);border-top:1px solid var(--c-line);padding:8px 12px;display:flex;align-items:flex-end;gap:6px;">
     <button onclick="attachClientPhoto()" aria-label="Add a photo" title="Add a photo" style="width:40px;height:40px;border-radius:50%;background:var(--c-surf);border:1.5px solid var(--c-line-ctl);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-camera" aria-hidden="true" style="font-size:18px;color:var(--accent-ink-lt);"></i></button>
     <button onclick="attachClientLink()" aria-label="Add a photo by link" title="Add a photo by link" style="width:40px;height:40px;border-radius:50%;background:var(--c-surf);border:1.5px solid var(--c-line-ctl);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-link" aria-hidden="true" style="font-size:19px;color:var(--accent-ink-lt);"></i></button>
-    <textarea id="cinput" aria-label="Type a message" placeholder="Message ${_txt(client.providerFirst)}…" rows="1" style="flex:1;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:20px;padding:9px 14px;font-size:13px;color:var(--c-ink);resize:none;font-family:inherit;max-height:80px;" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+    <textarea id="cinput" aria-label="Type a message" placeholder="Message ${_txt(client.providerFirst)}…" rows="1" style="flex:1;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:20px;padding:9px 14px;font-size:13px;color:var(--c-ink);resize:none;font-family:inherit;max-height:80px;" oninput="_msgDraft=this.value;this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
     <button onclick="sendClientMsg()" aria-label="Send message" title="Send" style="width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2.5L21 4z"/><path d="m21 4-7 16-2.5-6.5"/></svg></button>
   </div>`;
   const body=document.getElementById('chat-body');if(body)body.scrollTop=body.scrollHeight;
   // Drop in any pre-filled reservation note ("Buy in office") so the client just taps Send.
   const _inp=document.getElementById('cinput');
-  if(_inp&&_msgPrefill){_inp.value=_msgPrefill;_msgPrefill='';try{_inp.style.height='auto';_inp.style.height=_inp.scrollHeight+'px';_inp.focus();_inp.setSelectionRange(_inp.value.length,_inp.value.length);}catch(e){}}
+  if(_inp&&_msgPrefill){_inp.value=_msgPrefill;_msgPrefill='';_msgDraft=_inp.value;try{_inp.style.height='auto';_inp.style.height=_inp.scrollHeight+'px';_inp.focus();_inp.setSelectionRange(_inp.value.length,_inp.value.length);}catch(e){}}
+  // A message she was writing comes back when she returns to the chat, or when the chat redraws for a
+  // new message, instead of vanishing (2026-11-19 phone sweep). Cleared when it is sent.
+  else if(_inp&&_msgDraft&&!_inp.value){_inp.value=_msgDraft;try{_inp.style.height='auto';_inp.style.height=_inp.scrollHeight+'px';}catch(e){}}
 }
+let _msgDraft='';
 
 function attachClientPhoto(){_pickImages(srcs=>{if(srcs&&srcs.length)sendClientMsg(srcs);});}
 function attachClientCamera(){_pickImages(srcs=>{if(srcs&&srcs.length)sendClientMsg(srcs);},true);}
@@ -3483,6 +3487,7 @@ function sendClientMsg(imgArg){
   messages.push(msg);
   try{_saveClientMessages();}catch(e){}
   if(inp){inp.value='';inp.style.height='auto';}
+  if(text)_msgDraft='';
   renderMessages();
   if(track)_deliverClientMsg(msg);
 }
