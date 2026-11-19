@@ -231,6 +231,9 @@ export async function runSweep(q) {
           if (m && Number(m[1]) + cs.samples - hidden >= Number(m[2])) allHers = true;
         }
       }
+      // A note draft that left because its visit was saved is the app working (2026-11-19: every new
+      // provider's first visit raised this warn). Listed only when something unsaved went with it.
+      if (r.k === 'sc_note_drafts' && allHers && / 0 UNSAVED /.test(why)) continue;
       if ((r.old_bytes || 0) > 2000 && !allHers) big = true;
       items.push(who(r.owner) + ': ' + r.k + ' went from ' + r.old_bytes + ' to ' + (r.now_bytes || 0) + ' bytes (' + (r.old_items != null ? r.old_items + ' items before; ' : '') + 'earlier copy kept)' + why);
     }
@@ -417,8 +420,13 @@ export async function runSweep(q) {
 
   // 9. Someone who keeps failing to sign in (rows are cleared on a successful sign-in).
   await check('sign-in', 'Nobody is stuck at sign-in', async () => {
-    const rows = await q`SELECT lower(email) AS email, count(*)::int AS n, max(ts) AS last FROM login_attempts
-      WHERE ts > now() - interval '26 hours' GROUP BY lower(email) HAVING count(*) >= 3 ORDER BY n DESC LIMIT 15`;
+    // Someone who got in another way after failing (made the account, or a reset) is not stuck: the
+    // attempts are only cleared by a password sign-in (2026-11-19, cm…: 3 failures, then signed up).
+    const rows = await q`SELECT lower(a.email) AS email, count(*)::int AS n, max(a.ts) AS last FROM login_attempts a
+      WHERE a.ts > now() - interval '26 hours'
+        AND NOT EXISTS (SELECT 1 FROM providers p JOIN sessions s ON s.provider_id = p.id
+          WHERE lower(p.email) = lower(a.email) AND s.created_at > a.ts)
+      GROUP BY lower(a.email) HAVING count(*) >= 3 ORDER BY n DESC LIMIT 15`;
     const known = new Set((await q`SELECT lower(email) AS e FROM providers`).map(r => r.e));
     return { items: rows.map(r => maskEmail(r.email) + ': ' + r.n + ' failed sign-ins, still not in' + (known.has(r.email) ? '' : ' (no account with this email)')) };
   });

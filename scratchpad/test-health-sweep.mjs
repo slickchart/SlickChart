@@ -212,7 +212,7 @@ ok(by['deleted-but-live'].items.length === 1 && /1 client/.test(by['deleted-but-
 { const items = by['data-shrink'].items;
   const nd = items.find(i => /oth…@x.com: sc_note_drafts/.test(i)) || '', ne = items.find(i => /…only: sc_note_drafts/.test(i)) || '';
   ok(/Entries: 5 before, 1 now \(3 of the 4 gone were deleted by her\)\. Gone: 1 expired \(visit saved\), 1 client removed or merged, 1 saved visit, 1 UNSAVED \(711 typed characters\)/.test(nd), 'a note-draft shrink sorts each gone draft: expired, client removed, saved visit, unsaved with its typed characters', nd);
-  ok(/\(3 of the 3 gone were deleted by her\)\. Gone: 3 expired/.test(ne), 'drafts that all expired count as hers (the nd: record is read)', ne);
+  ok(ne === '', 'drafts that all expired (visit saved, nothing unsaved) are the app working: not listed (2026-11-19)', ne);
   ok(!/Hello world|zzzz/.test(JSON.stringify(items)), 'no draft text in the reply'); }
 { const items = by['data-shrink'].items;
   ok(!items.some(i => /sam…@new.com/.test(i)), 'only untouched sample courses gone (a profession change): not listed', JSON.stringify(items));

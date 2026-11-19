@@ -25,7 +25,7 @@ globalThis.__db = db;
 const H = 3600 * 1000, now = Date.now(), since = now - 2 * H;
 await db.exec(`
 CREATE TABLE providers (id text PRIMARY KEY, email text UNIQUE NOT NULL, created_at timestamptz DEFAULT now());
-CREATE TABLE sessions (id text PRIMARY KEY, provider_id text NOT NULL);
+CREATE TABLE sessions (id text PRIMARY KEY, provider_id text NOT NULL, created_at timestamptz DEFAULT now());
 CREATE TABLE kv (owner text, k text, v text, PRIMARY KEY(owner,k));
 CREATE TABLE login_attempts (email text, ts timestamptz DEFAULT now());
 CREATE TABLE signup_problems (email text, kind text, match text, detail text, alerted boolean, at timestamptz DEFAULT now());
@@ -36,6 +36,9 @@ await db.exec(`INSERT INTO sessions VALUES ('s1','p_ok'),('s2','p_big'),('s3','p
 await db.query(`INSERT INTO signup_problems (email, kind, detail, at) VALUES ('tahoo@tahoo.com','checkout-typo','paid as ...@tahoo.com', $1), ('old@x.com','signup-refused','409 old', $2), ('moved@x.com','moved','Ashley moved the payment', $1)`, [new Date(now - 0.5 * H).toISOString(), new Date(now - 30 * H).toISOString()]);
 for (let i = 0; i < 4; i++) await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['stuck@gmail.com', new Date(now - (1 + i * 0.1) * H).toISOString()]);
 await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['longago@gmail.com', new Date(now - 20 * H).toISOString()]);
+// Failed 3x, then made her account (a session after the failures): not stuck.
+for (let i = 0; i < 3; i++) await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['fresh@gmail.com', new Date(now - 0.5 * H).toISOString()]);
+await db.query("INSERT INTO sessions VALUES ('s4','p_fresh', $1)", [new Date(now - 0.3 * H).toISOString()]);
 await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['longago@gmail.com', new Date(now - 21 * H).toISOString()]);
 
 const { ensureAppLaunchTable } = await import(pathToFileURL(path.join(dir, 'lib/app-launch-log.js')));
@@ -74,6 +77,7 @@ ok(find('launch-cut-off', 'new').length === 0, 'a closed browser tab is not a cr
 ok(find('camera', 'new').length === 1, 'camera failure flagged');
 ok(find('storage', 'ros').length === 1 && find('not-saving', 'ros').length === 1, 'device report: storage broken + 7 unsaved flagged');
 ok(find('failed-sign-in', 'stu')[0]?.level === 'urgent', '4 failed sign-ins in the window is urgent');
+ok(find('failed-sign-in', 'fre').length === 0, 'failed 3x then got in another way is not stuck');
 ok(find('failed-sign-in', 'lon').length === 0, 'failed sign-ins before since are not reported');
 ok(find('setup-stuck', 'new')[0]?.level === 'fix', 'account 4h old, setup never finished');
 ok(find('setup-stuck', 'fre').length === 0, 'account 20 minutes old is given time');

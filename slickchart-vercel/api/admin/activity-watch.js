@@ -133,8 +133,11 @@ export async function runWatch(q, since) {
 
   // 3. Failed sign-ins by email (rows are cleared on a successful sign-in, so these are still out).
   try {
-    const rows = await q`SELECT lower(email) AS email, count(*)::int AS n, max(ts) AS last FROM login_attempts
-      WHERE ts > ${sinceTs} GROUP BY lower(email) HAVING count(*) >= 2 ORDER BY n DESC LIMIT 20`;
+    // Got in another way afterwards (made the account, reset): not stuck. Only a password sign-in clears these rows.
+    const rows = await q`SELECT lower(a.email) AS email, count(*)::int AS n, max(a.ts) AS last FROM login_attempts a
+      WHERE a.ts > ${sinceTs} AND NOT EXISTS (SELECT 1 FROM providers p JOIN sessions s ON s.provider_id = p.id
+          WHERE lower(p.email) = lower(a.email) AND s.created_at > a.ts)
+      GROUP BY lower(a.email) HAVING count(*) >= 2 ORDER BY n DESC LIMIT 20`;
     const known = new Set((await q`SELECT lower(email) AS e FROM providers`).map(r => r.e));
     for (const r of rows) problems.push({ level: r.n >= 3 ? 'urgent' : 'watch', kind: 'failed-sign-in', account: maskEmail(r.email), where: 'sign-in',
       detail: r.n + ' failed sign-ins' + (known.has(r.email) ? '' : ' (no account with this email: maybe meant to create one)'), count: r.n,
