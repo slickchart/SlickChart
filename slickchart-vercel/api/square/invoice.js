@@ -3,7 +3,7 @@
 // The Invoices API forbids orders that use auto_apply_taxes, so we attach the seller's
 // ENABLED catalog taxes explicitly and reference them only on taxable lines (so a line
 // toggled "No tax" — e.g. a gift — is excluded). Then create + publish an emailed invoice.
-import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId, resolveLocationTz, zonedDateKey } from '../../lib/square.js';
 import { logSquareCreate } from '../../lib/db.js';
 
 export default async function handler(req, res) {
@@ -78,7 +78,11 @@ export default async function handler(req, res) {
     const taxCollected = order.order && order.order.total_tax_money ? order.order.total_tax_money.amount / 100 : 0;
 
     // invoice — always include a due_date (Square requires it); tip prompt optional
-    const pr = { request_type: 'BALANCE', tipping_enabled: !!b.requestTip, due_date: b.dueDate || new Date().toISOString().slice(0, 10) };
+    // Today is HER today (the Square location's time zone), not UTC's: in Australia or New Zealand
+    // the UTC date is still yesterday for most of the morning, so the invoice read "due yesterday".
+    let due = /^\d{4}-\d{2}-\d{2}$/.test(String(b.dueDate || '')) ? String(b.dueDate) : '';
+    if (!due) { let tz = null; try { tz = await resolveLocationTz(ctx.token, locationId); } catch (e) {} due = zonedDateKey(Date.now(), tz); }
+    const pr = { request_type: 'BALANCE', tipping_enabled: !!b.requestTip, due_date: due };
     const inv = await sf('/v2/invoices', { method: 'POST', body: { idempotency_key: kI, invoice: { location_id: locationId, order_id: orderId, primary_recipient: { customer_id: customerId }, delivery_method: 'EMAIL', accepted_payment_methods: { card: true }, payment_requests: [pr] } } });
     const invoice = inv.invoice;
     const pub = await sf('/v2/invoices/' + invoice.id + '/publish', { method: 'POST', body: { version: invoice.version, idempotency_key: kPub } });

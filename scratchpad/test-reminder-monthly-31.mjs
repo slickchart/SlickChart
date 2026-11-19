@@ -28,7 +28,7 @@ ok(!ed.dom && !ed.domUtc && ed.d === 15, 'app: editing the date clears the kept 
 await b.close();
 // Server: the cron's occurrence for the moved reminder (Feb 28 21:00 PST = Mar 1 05:00 UTC) in late March/April.
 const src = fs.readFileSync(ROOT + 'api/cron-provider-reminders.js', 'utf8');
-const fn = src.slice(src.indexOf('export function dueOccurrence'), src.indexOf('\n}\n', src.indexOf('export function dueOccurrence')) + 3).replace('export function', 'function');
+const fn = src.slice(src.indexOf('function _validTz') >= 0 ? src.indexOf('function _validTz') : src.indexOf('export function dueOccurrence'), src.indexOf('\n}\n', src.indexOf('export function dueOccurrence')) + 3).replace('export function', 'function');
 const occ = (rem, now) => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', 'const HOUR=3600*1000,DAY=24*HOUR,STALE_AFTER=2*DAY;\n' + fn + `\nconsole.log(JSON.stringify(dueOccurrence(${JSON.stringify(rem)}, ${now})));`], { env: { ...process.env, TZ: 'UTC' }, encoding: 'utf8' }));
 const moved = { at: seq[0].atMs, repeat: 'monthly', dom: seq[0].dom, domUtc: seq[0].domUtc };
 const apr1 = Date.UTC(2027, 3, 1, 5, 0) + 60e3;   // Mar 31 22:01 PDT

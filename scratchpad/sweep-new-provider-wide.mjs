@@ -35,6 +35,12 @@ const now = Date.now();
 const clients = {}; for (let i = 0; i < 40; i++) { const id = 'sq_CUST' + i; clients[id] = { id, name: ['Ava', 'Bea', 'Cora', 'Dana', 'Eve'][i % 5] + ' ' + ['Lane', 'Moss', 'Reed', 'Stone'][i % 4] + ' ' + i, email: 'c' + i + '@ex.com', phone: '555010' + String(i).padStart(4, '0'), sqId: 'CUST' + i, source: 'square', created: now - 86400000 * 3, _ts: now - 86400000 * 3, visits: [], notes: [] }; }
 const seed = { sc_clients: JSON.stringify(clients), sc_onboarded: '1', sc_professions: JSON.stringify((process.env.PROF || 'esty').split(',')), sc_wsname: JSON.stringify('Frances Skin Studio'),
   sc_bizinfo: JSON.stringify({ name: 'Frances Skin Studio', phone: '5550100000', email: 'studio@ex.com' }) };
+// DATEHOOK=1: record every place the app parses a bare 'YYYY-MM-DD' with new Date()/Date.parse.
+// That reads it as UTC midnight, which is the PREVIOUS day anywhere west of UTC (every US provider).
+if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const hits = window.__dh = {};
+  const rec = s => { if (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)) { const st = (new Error().stack || '').split('\n').slice(2, 4).map(x => x.trim()).join(' < '); hits[st] = (hits[st] || 0) + 1; } };
+  function W(...a) { if (!new.target) return D(); if (a.length === 1) rec(a[0]); return new D(...a); }
+  W.prototype = D.prototype; W.now = D.now; W.UTC = D.UTC; W.parse = s => { rec(s); return D.parse(s); }; window.Date = W; });
 await page.addInitScript(w => { window.__WORDS = w; }, process.env.WORDS || '');
 await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_login_email', 'new@spa.com'); localStorage.setItem('sc_hide_sample', '1'); } catch (e) {}
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
@@ -128,6 +134,7 @@ for (const [k, scr] of seen) {
     taps.push({ screen: k, i, ...r, effect: !!(a.nav || a.opened || a.changed), sheets: a.sheets, overflow: a.overflow, errs: errs.slice(), cerrs: cerrs.slice() });
   }
 }
+if (process.env.DATEHOOK) { const dh = await page.evaluate(() => window.__dh || {}).catch(() => ({})); for (const [k, v] of Object.entries(dh)) console.log('DATE-ONLY  x' + v + '  ' + k); }
 await browser.close(); srv.close();
 fs.writeFileSync(OUT, JSON.stringify({ size: SIZE, bootErrs, screens: [...seen.values()], taps }, null, 1));
 const sErr = [...seen.values()].filter(x => x.renderErr || x.errs.length);
