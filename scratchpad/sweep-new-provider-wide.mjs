@@ -56,6 +56,8 @@ if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const
   function W(...a) { if (!new.target) return D(); if (a.length === 1) rec(a[0]); return new D(...a); }
   W.prototype = D.prototype; W.now = D.now; W.UTC = D.UTC; W.parse = s => { rec(s); return D.parse(s); }; window.Date = W; });
 await page.addInitScript(w => { window.__WORDS = w; }, process.env.WORDS || '');
+await page.addInitScript(v => { window.__ICONONLY = v; }, process.env.ICONONLY || '');
+await page.addInitScript(v => { window.__TINY = v; }, process.env.TINY || '');
 if (process.env.SAFE) await page.addInitScript(() => { window.__SAFE = [47, 34]; });
 if (process.env.DARK) await page.addInitScript(() => { try { localStorage.setItem('sc_provider_theme', 'dark'); } catch (e) {} });
 if (process.env.DIRTY) await page.addInitScript(() => { window.__DIRTY = 1; });
@@ -119,6 +121,20 @@ const geom = () => { // sideways overflow and content wider than the window
   const S = document.getElementById('S'); if (S && S.scrollWidth > S.clientWidth + 4) { const sr = S.getBoundingClientRect(); const wide = Array.from(S.querySelectorAll('*')).filter(e => { const r = e.getBoundingClientRect(); if (!(r.width > 0 && r.right > sr.right + 4)) return false; let q = e.parentElement; while (q && q !== S) { if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(q).overflowX)) return false; q = q.parentElement; } return true; }).slice(0, 2).map(e => e.tagName + '.' + String(e.className || '').slice(0, 20) + '"' + (e.innerText || '').trim().slice(0, 40) + '" right ' + Math.round(e.getBoundingClientRect().right));
     out.push('screen content wider than its box ' + S.scrollWidth + '>' + S.clientWidth + (wide.length ? ' [' + wide.join(' | ') + ']' : '')); }
   const tx = (S || document.body).innerText; const bw = tx.match(/.{0,30}(Invalid Date|\bNaN\b|\bundefined\b|\[object Object\]|\bnull\b).{0,30}/g); if (bw) out.push('bad text: ' + bw.slice(0, 3).join(' | '));
+  // TINY=1: words smaller than 12px, or fainter than 4.5:1 against what is behind them (3:1 for 18px+).
+  if (window.__TINY) { const L = c => { const m = (c || '').match(/[\d.]+/g); if (!m) return 1; const [r, g, b] = m.slice(0, 3).map(v => { v = v / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const tiny = new Set(), faint = new Set();
+    for (const e of (S || document.body).querySelectorAll('*')) { if (!e.offsetParent) continue; const own = [...e.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent.trim()).join(' ').trim(); if (own.length < 2 || e.closest('[aria-hidden=true],input,textarea,select,option')) continue;
+      const cs = getComputedStyle(e); const fs = parseFloat(cs.fontSize); if (cs.visibility === 'hidden' || +cs.opacity === 0) continue;
+      if (fs < 12) tiny.add(own.slice(0, 24) + ' ' + fs + 'px');
+      let p = e, bg; while (p) { bg = getComputedStyle(p).backgroundColor; if (bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg) && !/rgba\([^)]*, 0\.[0-4]\d*\)/.test(bg)) break; p = p.parentElement; }
+      if (getComputedStyle(e).backgroundImage !== 'none' || (p && getComputedStyle(p).backgroundImage !== 'none')) continue;
+      const a = L(cs.color), bb = L(bg || 'rgb(255,255,255)'); const ratio = (Math.max(a, bb) + 0.05) / (Math.min(a, bb) + 0.05); const need = (fs >= 18 || (fs >= 14 && +cs.fontWeight >= 700)) ? 3 : 4.5;
+      if (ratio < need - 0.05 && !e.closest('button[disabled]')) faint.add(own.slice(0, 24) + ' ' + ratio.toFixed(1)); }
+    if (tiny.size) out.push('tiny: ' + [...tiny].slice(0, 5).join(' | ')); if (faint.size) out.push('faint: ' + [...faint].slice(0, 5).join(' | ')); }
+  // ICONONLY=1: buttons that show only an icon, no word (2026-11-19: the AI brief's Rebook button).
+  if (window.__ICONONLY) { const io = [...(S || document.body).querySelectorAll('button, [role=button], a[onclick], div[onclick], span[onclick]')].filter(e => { const r = e.getBoundingClientRect(); return r.width > 1 && r.height > 1 && getComputedStyle(e).visibility !== 'hidden' && !(e.innerText || '').trim() && e.querySelector('i.ti, svg'); });
+    if (io.length) out.push('icon only: ' + io.map(e => (e.querySelector('i.ti') ? (e.querySelector('i.ti').className.match(/ti-[a-z0-9-]+/g) || []).filter(c => c !== 'ti').join('') : 'svg') + '[' + (e.getAttribute('aria-label') || e.getAttribute('title') || 'NO NAME') + ']').join(' ')); }
   if (window.__WORDS) { const ww = tx.match(new RegExp('.{0,40}(' + window.__WORDS + ').{0,40}', 'gi')); if (ww) out.push('words: ' + ww.slice(0, 4).join(' | ')); }
   return out; };
 while (queue.length && seen.size < 300) {

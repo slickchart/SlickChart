@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzt: two faint-text spots
+
+New crawl checks in `sweep-new-provider-wide.mjs`: TINY=1 (words under 12px or under 4.5:1 contrast)
+and ICONONLY=1 (buttons with only an icon; all named and familiar). Found: analysis cards drew
+`var(--accent)` text on `var(--accent-tint)` (1.9:1) in every profession's photo analysis; now
+`_metricCardsHTML` uses `--accent-strong` for that colour. The purple "Start voice note" button
+(`.btnp` on #534AB7) had dark text (2.6:1); now white. Test: `scratchpad/test-faint-text-fixes.mjs`.
+Small-text hits left as design: the Luxe paper form's 10-11px capitals and the chart tabs' 11.5px labels.
+
 ## 2026-11-19 — build 2026-11-19zzs: the client app fills a phone's screen
 
 Client app turned sideways on a phone showed a thin strip of content with the menu floating mid-screen.
