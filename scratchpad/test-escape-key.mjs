@@ -1,4 +1,4 @@
-// REGRESSION (2026-11-18): Escape (e.g. to close the browser's email suggestions) removed the sign-in screen, the paused-account screen and setup.
+// REGRESSION (2026-11-18): (1) a photo dropped outside a drop area opened the file in place of the app. (2) Escape (e.g. to close the browser's email suggestions) removed the sign-in screen, the paused-account screen and setup.
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 import http from 'http'; import fs from 'fs'; import path from 'path';
 const ROOT = new URL('../slickchart-vercel/', import.meta.url).pathname;
@@ -62,5 +62,15 @@ await page.evaluate(() => { const l = document.getElementById('login-screen'); i
 // Paused-account screen stays.
 const locked = await page.evaluate(() => { const m = document.createElement('div'); m.id = 'grow-locked'; m.style.cssText = 'position:fixed;inset:0;z-index:900;background:#fff;'; document.body.appendChild(m); return true; });
 await esc(); ok(await page.evaluate(() => !!document.getElementById('grow-locked')), 'the paused-account screen stays on Escape');
+const dr = await page.evaluate(() => { window.__said = []; const dt = new DataTransfer(); dt.items.add(new File(['x'], 'face.jpg', { type: 'image/jpeg' }));
+  const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }); document.body.dispatchEvent(over);
+  const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }); document.body.dispatchEvent(drop);
+  // A drop area that handles its own drop is left alone.
+  const zone = document.createElement('div'); zone.ondrop = e => { e.preventDefault(); window.__zone = 1; }; document.body.appendChild(zone); window.__said = [];
+  const d2 = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }); zone.dispatchEvent(d2); zone.remove();
+  return { overBlocked: over.defaultPrevented, dropBlocked: drop.defaultPrevented, zone: window.__zone === 1, toastOnZone: window.__said.length }; });
+await page.waitForTimeout(300);
+ok(dr.overBlocked && dr.dropBlocked, 'a file dropped outside a drop area does not open in place of the app ' + JSON.stringify(dr));
+ok(dr.zone && dr.toastOnZone === 0, 'a drop area still gets its drop, with no extra toast');
 ok(!errs.length, 'no page errors ' + JSON.stringify(errs));
 await browser.close(); srv.close(); console.log(fails ? fails + ' FAILED' : 'ALL PASS'); process.exit(fails ? 1 : 0);

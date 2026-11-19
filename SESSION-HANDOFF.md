@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18ze: a photo dropped on the page no longer replaces the app
+
+On a computer, a photo dragged from a folder and dropped anywhere outside a drop area opened the file
+in place of the app (the browser tab, or the installed app's window, left SlickChart). Both apps now
+stop a file drop that no drop area handled (`window` dragover/drop, only when the drag carries Files
+and nothing called preventDefault) and say to use the photo button. The course builder's reorder
+drags carry no files and are unchanged. Tests: `scratchpad/test-escape-key.mjs` (drop cases) and
+`scratchpad/test-client-file-drop.mjs` (needs :8899), both engines.
+
 ## 2026-11-18 — build 2026-11-18zd: Escape no longer removes the sign-in or paused screens
 
 The global Escape handler (`_topOverlay`) treats any tall fixed element as a sheet and removes it. On
