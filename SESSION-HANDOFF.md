@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18za: printing a summary or client file on a computer
+
+`_printSummary` and `_printClientFile` removed their hidden print frame 2 s after `print()`. Chrome
+waits for the print box to close, but Firefox (and some Safari versions) return at once, so the frame
+vanished under an open print preview and a blank page printed. `_dropPrintFrame` removes it on
+`afterprint` (or after 10 min). Test: `scratchpad/test-print-frame.mjs` (simulates a print() that
+returns at once), both engines; the old build fails it.
+
 ## 2026-11-18 — build 2026-11-18z: a client's new phone/email that could not send is sent again
 
 Client app, Profile: changing email or phone with no signal toasted "Saved here, couldn't reach your

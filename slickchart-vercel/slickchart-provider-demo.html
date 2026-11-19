@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18z';
+const APP_BUILD='2026-11-18za';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -11242,7 +11242,7 @@ function _printSummary(id){
   document.body.appendChild(f);
   try{
     const doc=f.contentWindow.document;doc.open();doc.write(html);doc.close();
-    setTimeout(()=>{try{if(_nativePrintFrame(f))return;f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
+    setTimeout(()=>{try{if(_nativePrintFrame(f))return;f.contentWindow.focus();f.contentWindow.print();}catch(e){}_dropPrintFrame(f);},350);
     if(typeof proToast==='function')proToast('Opening print \u2014 choose \u201cSave as PDF\u201d');
   }catch(e){try{f.remove();}catch(_){}if(typeof proToast==='function')proToast('Could not open print on this device');}
 }
@@ -11255,7 +11255,7 @@ function _printClientFile(id){
   try{
     const doc=f.contentWindow.document;
     doc.open();doc.write(html);doc.close();
-    setTimeout(()=>{try{if(_nativePrintFrame(f))return;f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
+    setTimeout(()=>{try{if(_nativePrintFrame(f))return;f.contentWindow.focus();f.contentWindow.print();}catch(e){}_dropPrintFrame(f);},350);
   }catch(e){try{f.remove();}catch(_){}if(typeof proToast==='function')proToast('Could not open print \u2014 try Download instead');}
 }
 // Download the file as a standalone .html the provider can open, print, or keep.
@@ -32563,6 +32563,14 @@ async function _nativeSaveBlob(blob,name){
 // Printing from a hidden frame does nothing inside the app (neither WebView has a print dialog for
 // it). With the new plugins, hand the page over as a file instead: the share sheet's Print, Save to
 // Files or Drive all work from there. Returns true when it took the job.
+// The print frame was removed 2 seconds after print(). Chrome waits for the print box to close
+// first, but Firefox and some Safari versions do not: the frame vanished under an open print preview,
+// which then printed a blank page. Remove it when printing is finished (afterprint), or after 10 min.
+function _dropPrintFrame(f){
+  let gone=false;const drop=function(){if(gone)return;gone=true;try{f.remove();}catch(e){}};
+  try{f.contentWindow.addEventListener('afterprint',function(){setTimeout(drop,500);});}catch(e){}
+  setTimeout(drop,600000);
+}
 function _nativePrintFrame(f){
   if(!_nativeFiles()||!f||!f.contentWindow)return false;
   try{const d=f.contentWindow.document;const t=String(d.title||'SlickChart').replace(/\s+/g,' ').trim()||'SlickChart';
