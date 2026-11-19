@@ -67,6 +67,9 @@ await page.route('**/api/**', async r => { const u = r.request().url(); const m 
   if (netFail && !/cloud-status|billing-status/.test(u) && !(u.includes('/api/store') && m === 'GET')) return NET === 'offline' ? r.abort('internetdisconnected') : NET === '401' ? r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Not signed in"}' }) : r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Something went wrong."}' });
   if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
   if (u.includes('/api/store') && m === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: seed }) });
+  // SQ=off: a provider who never connected Square (or disconnected it): every Square call answers nosquare.
+  if (process.env.SQ === 'off' && u.includes('/api/square/connection')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"oauth":true,"connected":false}' });
+  if (process.env.SQ === 'off' && /\/api\/square\//.test(u)) return r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Square is not connected.","code":"nosquare"}' });
   if (u.includes('/api/square/connection')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"oauth":true,"connected":true,"env":"production","merchantName":"Frances Skin Studio"}' });
   if (u.includes('/api/billing-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"active":true,"status":"trialing","plan":"pro"}' });
   return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{},"clients":[],"events":[],"appointments":[],"items":[]}' }); });
