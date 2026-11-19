@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19m';
+const APP_BUILD='2026-11-19n';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -25717,7 +25717,7 @@ function renderInventory(){try{_applyImportedProducts();}catch(e){}
   ${(aiEnabled&&inv.filter(i=>(+i.qty||0)<=(+i.low||0)).length)?`<div id="reorder-card" style="margin:0 16px 10px;">${_reorderCardHTML()}</div>`:''}
   ${inv.length?_searchBar('Search inventory by item or brand…','.inv-card','inv-noresults'):''}
   ${inv.length===0?emptyState({icon:'ti-package',title:'No items yet',body:'Add the products and supplies you keep on hand to track stock and reorder easily.',action:'Add first item',screen:'add-inventory-item'}):inv.map((item,i)=>{const _max=(+item.max>0)?+item.max:Math.max(1,+item.qty||0);const pct=Math.max(0,Math.min(100,Math.round((+item.qty||0)/_max*100)))||0;const col=item.qty===0?'var(--p-red)':item.qty<=item.low?'var(--accent-strong)':'var(--p-green)';const lbl=item.qty===0?'Out of stock':item.qty<=item.low?`Low · ${item.qty} left`:`In stock · ${item.qty}`;
-  const vend=(item.vendorIdx!=null&&vendors[item.vendorIdx])?vendors[item.vendorIdx]:null;
+  const vend=_invVendorOf(item);
   const reorderUrl=(item.reorderUrl||'').trim()||(vend&&vend.portal?('https://'+String(vend.portal).replace(/^https?:\/\//,'')):'');
   const reorderFrom=vend?vend.name:(item.vendorName||'').trim();
   return`<div class="inv-card" data-search="${((item.name||'')+' '+(item.brand||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;padding:11px 13px;">
@@ -25747,7 +25747,7 @@ function _reorderLowItems(){
   return inv.filter(i=>i&&(+i.qty||0)<=(+i.low||0)).map(i=>{
     const max=(+i.max>0)?+i.max:Math.max(1,(+i.low||0)+2);
     const need=Math.max(1,max-(+i.qty||0));
-    const vend=(i.vendorIdx!=null&&vendors[i.vendorIdx])?vendors[i.vendorIdx].name:((i.vendorName||'').trim());
+    const _v=_invVendorOf(i);const vend=_v?_v.name:((i.vendorName||'').trim());
     return {name:i.name||'Item',brand:(i.brand||'').trim(),qty:(+i.qty||0),need,vendor:vend||'',out:(+i.qty||0)===0};
   });
 }
@@ -25836,6 +25836,17 @@ function deleteInventoryItem(i){
   // already gone), instead of a frozen index silently deleting the wrong row.
   confirmModal({title:'Remove item',body:'Remove "'+(item.name||'this item')+'" from your inventory?',action:'Delete'},function(){const ix=inv.indexOf(item);if(ix>=0){_libForget('sc_inventory',item);inv.splice(ix,1);saveInv();}nav('inventory');});
 }
+// An item points at its vendor by list position AND keeps the vendor's name. The vendor list syncs
+// between devices and can be in a different order on each, so the name decides when it still matches
+// a vendor; the position is only trusted when it agrees (or the item has no name saved).
+function _invVendorOf(item){
+  if(!item||!Array.isArray(vendors))return null;
+  const nm=String(item.vendorName||'').trim().toLowerCase();
+  const at=(typeof item.vendorIdx==='number')?vendors[item.vendorIdx]:null;
+  if(!nm)return at||null;
+  if(at&&String(at.name||'').trim().toLowerCase()===nm)return at;
+  return vendors.find(v=>v&&String(v.name||'').trim().toLowerCase()===nm)||at||null;   // not found by name: renamed vendor
+}
 function renderAddInventoryItem(i){
   setNav('pro');
   const editing=i!=null&&inv[i];
@@ -25865,7 +25876,7 @@ function renderAddInventoryItem(i){
     <span class="fl-lbl">Pick one of your vendors (optional)</span>
     <select class="fi" id="ii-vendor" onchange="_iiVendorPick(this.value)" style="margin-bottom:12px;">
       <option value="">None / use custom link below</option>
-      ${vendors.map((v,vi)=>`<option value="${vi}"${item.vendorIdx===vi?' selected':''}>${v.name}</option>`).join('')}
+      ${(function(){const _cur=_invVendorOf(item);return vendors.map((v,vi)=>`<option value="${vi}"${_cur===v?' selected':''}>${_fileEsc(v.name)}</option>`).join('');})()}
     </select>
     <span class="fl-lbl">Or reorder from (name)</span>
     <input class="fi" id="ii-vendorname" value="${(item.vendorName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Amazon, local supplier" style="margin-bottom:12px;">
@@ -41352,7 +41363,10 @@ function saveVendor(editIdx){
   const notes=g('vn-notes')||'';
   const initials=_initials(name);
   if(editIdx!=null&&vendors[editIdx]){
-    const v=vendors[editIdx];try{if(_libKeyFn('sc_vendors')(v)!==_libKeyFn('sc_vendors')({name:name}))_libForget('sc_vendors',Object.assign({},v));}catch(e){}v.name=name;v.init=initials;v.cat=cat;v.rep=rep;v.phone=phone;v.email=email;v.website=website;v.portal=portal;v.notes=notes;
+    const v=vendors[editIdx];try{if(_libKeyFn('sc_vendors')(v)!==_libKeyFn('sc_vendors')({name:name}))_libForget('sc_vendors',Object.assign({},v));}catch(e){}
+    // Items that reorder from this vendor follow the new name (they match a vendor by name; _invVendorOf).
+    try{const _on=String(v.name||'').trim().toLowerCase();if(_on&&_on!==name.trim().toLowerCase()&&typeof inv!=='undefined'&&Array.isArray(inv)){let _ch=0;inv.forEach(function(it){if(it&&String(it.vendorName||'').trim().toLowerCase()===_on){it.vendorName=name;_ch++;}});if(_ch&&typeof saveInv==='function')saveInv();}}catch(e){}
+    v.name=name;v.init=initials;v.cat=cat;v.rep=rep;v.phone=phone;v.email=email;v.website=website;v.portal=portal;v.notes=notes;
     saveVendors();
     proToast('Vendor updated \u2713');nav('vendor-detail',editIdx);
   }else{

@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19n: inventory keeps the right vendor on every device
+
+- An inventory item pointed at its vendor by list position only (`vendorIdx`). The vendor list
+  syncs and merges by name, so another device can hold it in a different order, and the item then
+  showed (and reordered from) the WRONG vendor there. `_invVendorOf(item)` now matches by the saved
+  `vendorName` first and trusts the position only when it agrees (or the vendor was renamed on this
+  device). Renaming a vendor carries the new name onto its items. Vendor names in the item's picker
+  are escaped.
+- Test: `scratchpad/test-inventory-vendor-match.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19m: Smart rebook tells the truth and takes her own date
 
 - Every real client got the same "2 weeks / 4 weeks" windows captioned "Based on treatment type
