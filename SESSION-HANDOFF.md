@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19o: an automation that could never send now says why on Save
+
+- `saveAuto`: no name made Save do nothing; a blank message saved an automation the server skips
+  (`cron-events`/`cron-automations` drop an empty `msg`), so it silently never sent; "Specific date"
+  with no date saved with `sendAt:0` (never sends); a one-time date already past saved too. Each now
+  says what is missing and focuses that box. A future date still asks to confirm as before.
+- Test: `scratchpad/test-automation-save-checks.mjs` (Chromium + WebKit); `test-auto-dedupe` passes.
+
 ## 2026-11-19 — build 2026-11-19n: inventory keeps the right vendor on every device
 
 - An inventory item pointed at its vendor by list position only (`vendorIdx`). The vendor list

@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19n';
+const APP_BUILD='2026-11-19o';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -40286,9 +40286,12 @@ async function _doAiDraftAutomation(btn,name,trig){
   else{proToast('Couldn’t draft right now. Try again in a moment.');}
 }
 function saveAuto(idx){
-  const name=document.getElementById('auto-name')?.value;
-  if(!name)return;
+  const _bad=(msg,el)=>{if(typeof proToast==='function')proToast(msg);try{const e=document.getElementById(el);if(e)e.focus();}catch(_){}};
+  const name=String(document.getElementById('auto-name')?.value||'').trim();
+  if(!name){_bad('Give it a name first','auto-name');return;}   // Save used to do nothing at all
   const isDate=autoTriggerMode==='date';
+  if(isDate&&!(document.getElementById('auto-specific-date')?.value)){_bad('Pick the date to send it','auto-specific-date');return;}   // saved with no date, it would never send
+  if(!String(document.getElementById('auto-msg')?.value||'').trim()){_bad('Write the message first','auto-msg');return;}
   const trigger=isDate
     ?`On ${document.getElementById('auto-specific-date')?.value||'selected date'} at ${document.getElementById('auto-specific-time')?.value||'09:00'}`
     :document.getElementById('auto-trigger')?.value;
@@ -40305,6 +40308,8 @@ function saveAuto(idx){
   if(isDate&&specificDate){
     try{sendAt=new Date(specificDate+'T'+((specificTime||'09:00'))+':00').getTime();if(isNaN(sendAt))sendAt=0;}catch(e){sendAt=0;}
   }
+  // A one-time send set in the past would go out the moment it saved (or never): say so instead.
+  if(isDate&&sendAt&&sendAt<Date.now()-60000&&(!repeatEvery||repeatEvery==='once')){_bad('That time has already passed. Pick a later date or time.','auto-specific-date');return;}
   // Recipients: [] means "all active clients"; a non-empty array targets exactly those clients (the
   // cron-automations sender filters to them). Ignore stale ids for clients that no longer exist.
   const clientIds=(_autoRecipMode==='some')?Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]&&CL[k]):[];
