@@ -126,14 +126,20 @@ export function confirmationEmail({ name, state, endsSec, trial }) {
   const access = state === 'scheduled' && until
     ? (trial ? 'Your free trial ends on ' + until + ', and you will not be charged.' : 'You can keep using SlickChart until ' + until + '. Nothing more will be charged.')
     : 'Your plan has ended. Nothing more will be charged.';
-  const back = state === 'scheduled'
-    ? 'Changed your mind? Go to Settings, then Security & billing, and tap Keep my subscription.'
-    : 'You are always welcome back. Just sign in at slickchart.app.';
+  // Ashley, 2026-11-19: "make sure to track reasons people cancel though and address those issues right
+  // away. in the cancellation emails alwasy tell them that we addressed the issues, and tell them they
+  // are always welcome baack." This email goes out the moment she cancels, before anything can be fixed,
+  // so it says what is true then: her reasons are read and worked on right away. A personal reply later
+  // says which fix went in (reply-agent.md, cancel rule).
+  const back = (state === 'scheduled'
+    ? 'Changed your mind? Go to Settings, then Security & billing, and tap Keep my subscription. '
+    : '') + 'You are always welcome back. Just sign in at slickchart.app.';
+  const fixes = 'I read every reason people share when they cancel, and I work on fixing it right away.';
   // Ashley, 2026-11-19: every cancel area thanks them for their time and support and says their feedback
   // helps her grow and learn. The same line as the app's _CANCEL_THANKS.
   const thanks = 'Thank you so much for your time and support. SlickChart is a brand new app, and I am a self-taught esthetician building it, so any and all feedback helps me grow and learn.';
   const ask = 'Would you be willing to reply and tell me what made you want to cancel? Screenshots of anything that did not work help a lot, if you have them.';
-  const paras = ['Your SlickChart cancellation is confirmed.', access, 'Your clients, notes and photos stay saved in your account.', back, thanks, ask, 'Ashley'];
+  const paras = ['Your SlickChart cancellation is confirmed.', access, 'Your clients, notes and photos stay saved in your account.', thanks, ask, fixes, back, 'Ashley'];
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   return {
     subject: 'Your SlickChart cancellation is confirmed',
