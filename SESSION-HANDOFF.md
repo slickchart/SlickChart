@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19l: Add session photos sheet (sweep area 9, computer)
+
+- **Save tapped while photos were still being read** closed the sheet, said saved, and dropped
+  them (each photo is downscaled first; a big one takes a moment). Save now says "Reading photos..."
+  and stays off until every chosen photo is in (`_photoReading`, `_photoSaveBtnState`).
+- More than 6 chosen were cut to 6 silently; now it says "Added the first 6". A non-photo file says so.
+- On a computer a photo can be dragged onto the sheet (it used to get the "use the photo button" toast).
+- Test: `scratchpad/test-photo-upload-sheet.mjs` (Chromium + WebKit; old build fails 3).
+
 ## 2026-11-19 — build 2026-11-19k: visit notes and session summary (sweep area 10)
 
 - **New note format:** each section's label box wrote to `noteEditSecs[i]`, so after deleting a

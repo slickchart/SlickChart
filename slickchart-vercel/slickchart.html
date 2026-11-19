@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19k';
+const APP_BUILD='2026-11-19l';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -17517,6 +17517,10 @@ function openPhotoUpload(clientId){
       <button id="upload-save-btn" onclick="savePhotos()" style="flex:2;background:var(--accent);border:1px solid var(--btn-edge);border-radius:12px;padding:11px;font-size:16px;font-weight:500;color:var(--accent-ink);cursor:pointer;opacity:.5;" disabled>Save photos</button>
     </div>
   </div>`;
+  // On a computer a photo can be dragged onto the sheet.
+  m.addEventListener('dragover',function(e){if(e.dataTransfer&&Array.from(e.dataTransfer.types||[]).indexOf('Files')>=0){e.preventDefault();}});
+  m.addEventListener('drop',function(e){if(!e.dataTransfer||!e.dataTransfer.files||!e.dataTransfer.files.length)return;e.preventDefault();handlePhotoSelect({files:e.dataTransfer.files});});
+  _photoReading=0;
   document.querySelector('.shell').appendChild(m);
 }
 
@@ -17526,15 +17530,29 @@ function _uploadAngles(){
   const isBrowOnly=selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('hair')&&!selectedProfessions.includes('barber');
   return isBrowOnly?['Front','Arch L','Arch R','Close-up']:isHairBarber?['Front','Side','Back','Texture']:['Front','Left','Right','Close-up'];
 }
+let _photoReading=0;
+// Save waits until every chosen photo has been read; tapped too soon it used to close the sheet,
+// say saved, and drop the photos still being read (a big photo on a computer takes a moment).
+function _photoSaveBtnState(){
+  const b=document.getElementById('upload-save-btn');if(!b)return;
+  const busy=_photoReading>0,ready=!busy&&_pendingPhotos.length>0;
+  b.disabled=!ready;b.style.opacity=ready?'1':'.5';
+  b.textContent=busy?'Reading photos\u2026':'Save photos';
+}
 function handlePhotoSelect(input){
-  const files=Array.from(input.files).slice(0,6);
-  if(!files.length)return;
+  const all=Array.from((input&&input.files)||[]).filter(f=>!f.type||/^image\//.test(f.type)||/\.(heic|heif)$/i.test(f.name||''));
+  const files=all.slice(0,6);
+  if(!files.length){if(input&&input.files&&input.files.length&&typeof proToast==='function')proToast('That file isn\u2019t a photo');return;}
+  if(all.length>6&&typeof proToast==='function')proToast('Up to 6 photos at a time. Added the first 6.');
   const thumbs=document.getElementById('photo-thumbs');
   const preview=document.getElementById('photo-preview-row');
-  const saveBtn=document.getElementById('upload-save-btn');
+  const _cid=uploadModalClientId;
+  _photoReading+=files.length;_photoSaveBtnState();
   files.forEach(file=>{
     _downscaleImg(file,function(url){
-      if(!url){try{if(typeof proToast==='function')proToast('Couldn\u2019t read '+((file&&file.name)||'a file')+', skipped');}catch(e){}return;}
+      _photoReading=Math.max(0,_photoReading-1);
+      if(uploadModalClientId!==_cid||!document.getElementById('photo-upload-modal')){_photoSaveBtnState();return;}   // sheet closed meanwhile
+      if(!url){_photoSaveBtnState();try{if(typeof proToast==='function')proToast('Couldn\u2019t read '+((file&&file.name)||'a file')+', skipped');}catch(e){}return;}
       _pendingPhotos.push({url:url,ts:Date.now()});
       if(thumbs){
         const div=document.createElement('div');
@@ -17543,13 +17561,14 @@ function handlePhotoSelect(input){
         div.innerHTML=`<img src="${_imgSrc(url)}" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;"><div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.8));padding:6px 4px 3px;"><div style="font-size:12px;color:#fff;font-weight:600;">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div></div>`;
         thumbs.appendChild(div);
       }
+      _photoSaveBtnState();
     },1600);
   });
   if(preview)preview.style.display='block';
-  if(saveBtn){saveBtn.disabled=false;saveBtn.style.opacity='1';}
 }
 
 function savePhotos(){
+  if(_photoReading>0){_photoSaveBtnState();return;}
   const cid=uploadModalClientId;
   // Show the result toast + navigate only AFTER the write actually resolves. persistCapturedPhotos()
   // returns a PROMISE when IndexedDB is available (the normal case), so the old synchronous check
