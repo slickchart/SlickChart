@@ -64,7 +64,7 @@ const NET = process.env.NET || ''; let netFail = false;
 const SLOW = !!(process.env.SLOW || process.env.DUPSAVE); const posts = []; let slowOn = false;
 await page.route('**/api/**', async r => { const u = r.request().url(); const m = r.request().method();
   if (process.env.SLOW && slowOn && m !== 'GET') { posts.push({ t: Date.now(), p: u.replace(/^https?:\/\/[^/]+/, '').split('?')[0], b: (r.request().postData() || '').slice(0, 160) }); await new Promise(z => setTimeout(z, 3000)); }
-  if (netFail && !/cloud-status|billing-status/.test(u) && !(u.includes('/api/store') && m === 'GET')) return NET === 'offline' ? r.abort('internetdisconnected') : r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Something went wrong."}' });
+  if (netFail && !/cloud-status|billing-status/.test(u) && !(u.includes('/api/store') && m === 'GET')) return NET === 'offline' ? r.abort('internetdisconnected') : NET === '401' ? r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Not signed in"}' }) : r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Something went wrong."}' });
   if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
   if (u.includes('/api/store') && m === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: seed }) });
   if (u.includes('/api/square/connection')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"oauth":true,"connected":true,"env":"production","merchantName":"Frances Skin Studio"}' });
