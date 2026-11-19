@@ -1210,6 +1210,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | Endpoint | Methods | Gated by | Purpose |
 |---|---|---|---|
 | `/api/admin-stats` | GET | provider session | GET /api/admin-stats  → owner-only: privacy-safe aggregate adoption metrics. |
+| `/api/admin/activity-watch` | GET | founder, provider session | GET /api/admin/activity-watch?since=<ms>   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/app-launches` | GET | founder, provider session | GET /api/admin/app-launches   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/build-buyers` | GET | provider session | GET /api/admin/build-buyers[?format=csv]  → owner-only: the Build Your Own App buyer list. |
 | `/api/admin/capacity` | GET | founder, provider session | GET /api/admin/capacity   Authorization: Monitor <key>  (or a founder session) |

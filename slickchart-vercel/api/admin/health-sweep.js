@@ -437,6 +437,10 @@ export async function runSweep(q) {
       if (dropped) bits.push('signed out by the app ' + dropped + 'x');
       if (errs) bits.push(errs + ' error(s)');
       if (offline) bits.push('offline page shown ' + offline + 'x');
+      // Saves the server refused as too large (the 2026-11-17 huge-list bug showed up here 34x and no
+      // check read it): her changes on that device were not reaching the account.
+      const big = ev.filter(e => e.e === 'store-413' || e.e === 'store-big-failed');
+      if (big.length) bits.push('saves refused as too large ' + big.length + 'x (' + [...new Set(big.map(e => (/^(sc_[a-z0-9_]+)/i.exec(String(e.d || '')) || [])[1] || '?'))].join(', ') + ')');
       // Browsers log too since 2026-11-18 (web-*); a closed tab is not a crash, so only the apps count cut-offs.
       const web = /^web/.test(String(r.platform || ''));
       if (cut > 1 && !web) bits.push('app closed mid-launch ' + cut + 'x');
