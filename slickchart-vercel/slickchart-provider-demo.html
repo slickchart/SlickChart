@@ -657,7 +657,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zzw';
+const APP_BUILD='2026-11-19zzx';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -6976,6 +6976,32 @@ async function _checkForNewBuild(){
     setTimeout(function(){try{location.reload();}catch(e){}},400);
   }catch(e){}
 }
+// Coming back to an app that has been in the background for hours (2026-11-19, provider watch). A phone
+// app is often only suspended, never relaunched, so the boot-time check above never runs again: one
+// provider's iPhone stayed on 2026-11-17d for two days and kept retrying a save the fix had cured, because
+// the fix reached her only on a relaunch that never came. So when the app comes back after a long time
+// away, and NOTHING is in progress (nothing typed on screen, no save waiting), it checks once more and
+// opens the new build. This is the same as a relaunch at the moment she reopens it, never mid-task.
+let _buildResumeHiddenAt=0;
+const _BUILD_RESUME_MS=6*3600*1000;
+function _buildResumeIdle(){
+  try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud._queue&&Object.keys(Cloud._queue).length)return false;}catch(e){return false;}
+  try{const a=document.activeElement;if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))return false;if(a&&a.isContentEditable)return false;}catch(e){}
+  try{const els=document.querySelectorAll('textarea,input[type="text"],input[type="search"],input:not([type]),[contenteditable="true"]');
+    for(let i=0;i<els.length;i++){const el=els[i];if(!el.offsetParent)continue;const v=el.isContentEditable?el.textContent:el.value;if(v&&String(v).trim()&&el.defaultValue!==v)return false;}}catch(e){return false;}
+  return true;
+}
+function _buildResumeCheck(){
+  try{
+    if(document.visibilityState==='hidden'){_buildResumeHiddenAt=Date.now();return;}
+    const away=_buildResumeHiddenAt?Date.now()-_buildResumeHiddenAt:0;_buildResumeHiddenAt=0;
+    if(away<_BUILD_RESUME_MS||!_buildResumeIdle())return;
+    _buildCheckDone=false;
+    try{_alAdd('resume-build-check',Math.round(away/60000)+' min away');}catch(e){}
+    _checkForNewBuild();
+  }catch(e){}
+}
+try{document.addEventListener('visibilitychange',_buildResumeCheck);}catch(e){}
 // ── Internationalization (i18n) ──────────────────────────────────────────────
 // Square operates in English, Spanish, French, and Japanese markets. We localize
 // the universal entry & account surfaces here. Clinical content (forms, consents,
