@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19b: Edit partner can clear a field
+
+`saveEditPartner` wrote `value||old` for every field, so emptying a partner's phone, email, website,
+offer, type or description put the old value straight back. Name is still kept when emptied; the rest
+now save as typed (trimmed). The description box also escapes its text (`_fileEsc`). Checked every
+other edit screen for the same `value||old` shape: vendors, documents and appointment edits are fine.
+Test: `scratchpad/test-partner-edit-clear.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19a: email and phone boxes open the right keyboard; Enter saves
 
 Sweep of every email/phone input. Add client (both steps), Business info, partner add/edit and vendor
