@@ -9943,6 +9943,18 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzl: a full book on a phone
+
+BUSY=1 crawl mode (Square answers 10 back-to-back today + 4 a day for two weeks) at 320/390/412/iPad:
+Home and the notification feed were 496px wide on every phone, because the "First visit for Ava /
+Next: ... · Send the first-visit package" card's text column (flex:1, nowrap child) could not shrink.
+Fixed there and on the three sibling Home cards (min-width:0). Its Send tap showed nothing while the
+package was pushed (seconds on a weak signal) and a second tap pushed again: it now says "Getting Ava's
+forms ready..." at once and ignores a second tap (`_fvpBusy`, 20 s safety release).
+`scratchpad/test-first-visit-card.mjs` (both engines; 7 fails on zzk). Also this morning, clean:
+payments/checkout/invoices/rebook with long names at 4 sizes, every form at Android 412 and 320
+(`sweep-all-forms` W=/H=), calendar sideways/Android/320/iPad.
+
 ## 2026-11-19 — build 2026-11-19zzk: a removed client link says what to do
 
 Client app opened on a removed link: only "This link is not valid or has been removed." (the server's
