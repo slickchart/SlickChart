@@ -9943,6 +9943,18 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19a: email and phone boxes open the right keyboard; Enter saves
+
+Sweep of every email/phone input. Add client (both steps), Business info, partner add/edit and vendor
+email/phone were plain text boxes, so a phone showed the letter keyboard for a number and an iPhone
+capitalised the first letter of an email. They are now `type="email"` (autocapitalize/autocorrect off)
+and `type="tel"`, with `autocomplete="off"` on client/partner/vendor boxes so the browser does not
+offer the provider's own address. Client name boxes capitalise words. Enter in Add client saves (not
+the date field). Client app: the Contact info edit box gets the same keyboards, Enter saves, and the
+saved value and label are escaped (`_txt`) instead of written into the HTML raw.
+Tests: `scratchpad/test-provider-contact-keyboards.mjs` (Chromium + WebKit),
+`scratchpad/test-contact-keyboards.mjs` (client, both engines).
+
 ## 2026-11-18 — build 2026-11-18ze: a photo dropped on the page no longer replaces the app
 
 On a computer, a photo dragged from a folder and dropped anywhere outside a drop area opened the file
