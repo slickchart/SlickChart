@@ -48,6 +48,8 @@ async function page(opts) {
   await p.goto(BASE + '/slickchart.html' + (opts.query || '')); await p.waitForTimeout(9000);
   return { p, ctx, errs, log, state };
 }
+// 2026-11-19: Cancel subscription asks why first (test-cancel-feedback.mjs); these tests skip it.
+const skipAsk = async p => { await p.waitForTimeout(300); if (await p.$('#cancel-ask')) await p.click('#cancel-ask >> text=Skip and continue to cancel'); };
 const txt = (p, id) => p.evaluate(id => (document.getElementById(id) || {}).innerText || '', id);
 
 // ── 1. Home: the yearly card for a monthly payer in month 3, one card at a time, Not now ───────────────
@@ -92,7 +94,7 @@ const txt = (p, id) => p.evaluate(id => (document.getElementById(id) || {}).inne
   await p.evaluate(() => nav('subscription-billing')); await p.waitForTimeout(1500);
   let t = await txt(p, 'billing-body');
   check('billing shows Active and the yearly switch', /Active/.test(t) && /Switch to yearly/.test(t), t.slice(0, 300));
-  await p.click('text=Cancel subscription'); await p.waitForTimeout(400);
+  await p.click('text=Cancel subscription'); await skipAsk(p); await p.waitForTimeout(400);
   const sheet = await txt(p, 'grow-cancel');
   check('Cancel opens the pause offer first', /Need a break instead\?/.test(sheet) && /Pause for 1 month/.test(sheet) && /Pause for 3 months/.test(sheet) && !/Pause for 4/.test(sheet), sheet);
   check('each pause says when billing starts again', /billing again January 3, 2027/.test(sheet) && /billing again February 3, 2027/.test(sheet) && /billing again March 3, 2027/.test(sheet), sheet);
@@ -114,7 +116,7 @@ const txt = (p, id) => p.evaluate(id => (document.getElementById(id) || {}).inne
   t = await txt(p, 'billing-body');
   check('and the screen is Active again', /Active/.test(t) && !/Paused/.test(t), t.slice(0, 300));
   // Cancel anyway goes to the real cancel screen
-  await p.click('text=Cancel subscription'); await p.waitForTimeout(300);
+  await p.click('text=Cancel subscription'); await skipAsk(p); await p.waitForTimeout(300);
   await p.click('text=Cancel anyway'); await p.waitForTimeout(800);
   check('Cancel anyway goes to Stripe’s cancel screen', log.some(x => x.u === 'portal' && x.j.intent === 'cancel'));
   check('no page errors (2)', !errs.length, errs.join(' | '));
@@ -124,25 +126,25 @@ const txt = (p, id) => p.evaluate(id => (document.getElementById(id) || {}).inne
 {
   const { p, ctx, errs, log } = await page({ pauseFails: true });
   await p.evaluate(() => nav('subscription-billing')); await p.waitForTimeout(1500);
-  await p.click('text=Cancel subscription'); await p.waitForTimeout(300);
+  await p.click('text=Cancel subscription'); await skipAsk(p); await p.waitForTimeout(300);
   await p.click('#grow-pause-1'); await p.waitForTimeout(1200);
   check('a refused pause shows the reason in the sheet', /not available on this plan/.test(await txt(p, 'grow-cancel-msg')));
   check('and the buttons work again', await p.evaluate(() => !document.getElementById('grow-pause-1').disabled));
   await ctx.close();
   const r = await page({ offer: Object.assign({}, OFFER, { canPause: false, pauseWhy: 'used this year' }), sub: Object.assign({}, SUB, { plan_interval: 'year', plan_amount: 17000 }) });
   await r.p.evaluate(() => nav('subscription-billing')); await r.p.waitForTimeout(1500);
-  await r.p.click('text=Cancel subscription'); await r.p.waitForTimeout(800);
+  await r.p.click('text=Cancel subscription'); await skipAsk(r.p); await r.p.waitForTimeout(800);
   check('no pause and yearly already: Cancel goes straight to cancel', !(await r.p.$('#grow-cancel')) && r.log.some(x => x.u === 'portal' && x.j.intent === 'cancel'));
   await r.ctx.close();
   const r2 = await page({ offer: Object.assign({}, OFFER, { canPause: false, pauseWhy: 'used this year' }) });
   await r2.p.evaluate(() => nav('subscription-billing')); await r2.p.waitForTimeout(1500);
-  await r2.p.click('text=Cancel subscription'); await r2.p.waitForTimeout(400);
+  await r2.p.click('text=Cancel subscription'); await skipAsk(r2.p); await r2.p.waitForTimeout(400);
   const sh = await txt(r2.p, 'grow-cancel');
   check('pause used this year: the sheet offers yearly only', /Before you go/.test(sh) && /Switch to yearly/.test(sh) && !/Pause for/.test(sh), sh);
   // an older server with no offer field at all: cancel works exactly as before
   const r3 = await page({ offer: null });
   await r3.p.evaluate(() => nav('subscription-billing')); await r3.p.waitForTimeout(1500);
-  await r3.p.click('text=Cancel subscription'); await r3.p.waitForTimeout(800);
+  await r3.p.click('text=Cancel subscription'); await skipAsk(r3.p); await r3.p.waitForTimeout(800);
   check('older server (no offer): Cancel is one step, as before', !(await r3.p.$('#grow-cancel')) && r3.log.some(x => x.u === 'portal' && x.j.intent === 'cancel'));
   check('no page errors (2b)', !errs.length && !r.errs.length && !r2.errs.length && !r3.errs.length, [...errs, ...r.errs, ...r2.errs, ...r3.errs].join(' | '));
   await r2.ctx.close(); await r3.ctx.close();

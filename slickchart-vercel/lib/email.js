@@ -2,7 +2,8 @@ import { signupPricing } from './pricing.js';
 // Minimal transactional email via Resend's HTTP API (no SDK/deps needed).
 // If RESEND_API_KEY isn't set, we no-op gracefully so the app still works in
 // development / before an email provider is connected.
-export async function sendEmail({ to, subject, html, text, replyTo: replyToOverride, from: fromOverride }) {
+// attachments (optional): [{ filename, content: base64 }] passed straight to Resend (cancel feedback screenshots).
+export async function sendEmail({ to, subject, html, text, replyTo: replyToOverride, from: fromOverride, attachments }) {
   const key = process.env.RESEND_API_KEY || '';
   // The "from" address must be on a domain verified in Resend. slickchart.app is verified, so we
   // default to it; override with EMAIL_FROM in Vercel to use a different address on that domain.
@@ -16,7 +17,7 @@ export async function sendEmail({ to, subject, html, text, replyTo: replyToOverr
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to, reply_to: replyTo, subject, html, text }),
+    body: JSON.stringify(Object.assign({ from, to, reply_to: replyTo, subject, html, text }, attachments && attachments.length ? { attachments } : {})),
     // Time-bounded: a hung request held whole cron runs open until the platform stopped them.
     signal: AbortSignal.timeout(8000)
   });

@@ -26,6 +26,7 @@ import { notifySharer } from '../lib/referral-notify.js';
 import { sendSetupEmailNow } from '../lib/setup-email.js';
 import { emailTypoSuggestion, recordSignupProblem } from '../lib/signup-rescue.js';
 import { recordTrialFromSubscription, recordTrialPayment, claimTrialConversion } from '../lib/trial-outcomes.js';
+import { sendCancelConfirmation, cancelState } from '../lib/cancellations.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
 // never missed even before any env is configured; FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
@@ -404,6 +405,10 @@ export default async function handler(req, res) {
         // The bill can land before this event fills in her row; whichever comes second announces it.
         await notifyFounderTrialConverted(q, sub.id);
       }
+      // "Make sure we make a cancellation confirmation for people" (Ashley, 2026-11-19): one email per
+      // cancellation she chose, to the address on her subscription. Not when another live subscription on
+      // the same email was swapped in above (a duplicate being tidied up), and not for a failed card.
+      await sendCancelConfirmation(q, sub, subEmail || (cancelState(sub) ? await lookupCustomerEmail(customerId) : ''), { stillLive: effSub && effSub.id !== sub.id });
     }
     res.status(200).json({ received: true });
   } catch (e) {

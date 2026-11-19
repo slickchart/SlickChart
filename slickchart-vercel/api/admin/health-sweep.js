@@ -22,6 +22,7 @@ import { maskEmail } from '../../lib/app-launch-log.js';
 import { APP_BUILD } from '../../lib/app-build.js';
 import { ensureCronRunsTable } from '../../lib/cron-runs.js';
 import { syncTrialsFromStripe, trialReport } from '../../lib/trial-outcomes.js';
+import { cancellationReport } from '../../lib/cancellations.js';
 
 async function founderSession(req, q) {
   const secret = process.env.SESSION_SECRET || '';
@@ -584,11 +585,22 @@ export async function runSweep(q) {
     return { level: 'ok', items: trials.last24h, note: t.summary + (sync.error ? ' (Stripe re-read failed: ' + sync.error + ')' : '') };
   });
 
+  // 17. Every cancellation, paying or not, straight from Stripe (2026-11-19, Ashley: "sweep should show all
+  // cancels - especially people who were paying"). The trial check above only sees trials. Paying customers
+  // are listed first. A business signal like the trials (level ok); the brief prints the top-level field.
+  let cancellations = null;
+  await check('cancellations', 'Everyone who cancelled (last 30 days, paying customers first)', async () => {
+    const c = await cancellationReport(q, 30, maskEmail);
+    cancellations = { summary: c.summary, last24h: c.last24h, last30d: c.lines.slice(0, 40),
+      stripe: c.error ? 'could not read Stripe: ' + c.error : 'read ' + c.read + ' subscriptions in Stripe' };
+    return { level: 'ok', items: c.last24h, note: c.summary + (c.error ? ' (Stripe read failed: ' + c.error + ')' : '') };
+  });
+
   const rank = { alert: 0, warn: 1, ok: 2 };
   checks.sort((a, b) => rank[a.level] - rank[b.level]);
   const problems = [];
   checks.filter(c => c.level !== 'ok').forEach(c => c.items.forEach(i => problems.push((c.level === 'alert' ? 'ALERT ' : '') + c.title + ': ' + i)));
-  return { at: new Date().toISOString(), build: APP_BUILD, checks, problems, trials };
+  return { at: new Date().toISOString(), build: APP_BUILD, checks, problems, trials, cancellations };
 }
 
 export default async function handler(req, res) {

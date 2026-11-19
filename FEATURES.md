@@ -84,6 +84,7 @@ saved anywhere", not "does this always call that".
 | `_biTextLink` | `/api/square/payment-link` | direct |
 | `_billingHTML` | `/api/billing-status` | via `_loadBillingStatus` |
 | `_billingHTML` | `/api/create-portal-session` | via `_openBillingPortal` |
+| `_billingHTML` | `/api/feedback` | via `_cancelAskSend` |
 | `_bookCheckSquare` | `/api/consult-slug` | via `_setConsultSlug` |
 | `_bookCheckSquare` | `/api/square/connection` | via `_sqConnState` |
 | `_bookDepositAmount` | `/api/consult-slug` | via `_setConsultSlug` |
@@ -125,6 +126,8 @@ saved anywhere", not "does this always call that".
 | `_calToday` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_calToday` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_calToday` | `/api/square/booking-options` | via `openSquareBook` |
+| `_cancelAsk` | `/api/feedback` | via `_cancelAskSend` |
+| `_cancelAskSend` | `/api/feedback` | direct |
 | `_cbAutosaveFlush` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbAutosaveNow` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbAutosaveNow` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
@@ -382,6 +385,7 @@ saved anywhere", not "does this always call that".
 | `_loadBetaStats` | `/api/waitlist` | via `_downloadWaitlistCSV` |
 | `_loadBillingStatus` | `/api/billing-status` | direct |
 | `_loadBillingStatus` | `/api/create-portal-session` | via `_openBillingPortal` |
+| `_loadBillingStatus` | `/api/feedback` | via `_cancelAskSend` |
 | `_loadBillingStatus` | `/api/referral` | via `_refLoad` |
 | `_loadBookingSlug` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `_loadBookingSlug` | `/api/consult-slug` | via `_loadConsultLink` |
@@ -1346,7 +1350,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcement_emails`, `announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `booking_alert_log`, `booking_blind`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_problems`, `signup_sources`, `square_booking_seen`, `square_connections`, `square_create_log`, `square_webhook_seen`, `subscription_pauses`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
+`announcement_emails`, `announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `booking_alert_log`, `booking_blind`, `build_purchases`, `cancel_confirmations`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_problems`, `signup_sources`, `square_booking_seen`, `square_connections`, `square_create_log`, `square_webhook_seen`, `subscription_pauses`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.

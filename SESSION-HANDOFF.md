@@ -10970,3 +10970,20 @@ photos depending on the options."* She left the design to us.
   (Chromium and WebKit).
 - Still a choice for Ashley, not made here: letting the store apps create an account for someone who
   already paid on the web (kept payment-silent as before).
+
+### 2026-11-19 — Every cancel in the sweep, ask why before cancelling, cancellation confirmation (build 2026-11-19zzl)
+Ashley: "sweep should show all cancels - especially people who were paying. also make sure we make a cancellation
+confirmation for peeople", "automatically have people directed to a feedback section when cancelling through the app
+... before they get the cancellation confirmation", "make sure all cancel areas have a nice message about their feedback
+helping me grow and learn", "and thanking them for their time and support". Trigger: Jackie Boone-Morales emailed that
+she cancelled but "didn't get confirmation"; the trial-only report could not say whether a paying cancel happened.
+- lib/cancellations.js: `cancellationReport` reads Stripe (status=all, every cancel in 30 days, paid invoices per
+  cancel), paying first; health sweep check `cancellations` (level ok) + top-level `cancellations` {summary,last24h,last30d}.
+  `sendCancelConfirmation` from the webhook (subscription.updated/deleted): one email per cancellation she chose
+  (claim row `cancel_confirmations`, released on "Keep my subscription"), none for a failed card or a duplicate sub tidy-up.
+- App: Cancel subscription opens `_cancelAsk` first (7 reason ticks, words, up to 3 screenshots, always skippable,
+  a failed send still goes on). Sent as /api/feedback kind 'cancel' with `shots` (feedback_shots table, emailed to
+  Ashley as attachments, owner-only `?shot=`). `_CANCEL_THANKS` line on the ask, the pause sheet, the Ending screen
+  (with "Tell me what I could do better") and both How to cancel help bodies; same line in the email.
+- Tests: scratchpad/test-cancel-feedback.mjs 25/25 Chromium + WebKit; test-growth-ui.mjs 77/77 both (now skips the ask);
+  scratchpad/test-cancellations-server.mjs 17/17 (`node --import ./scratchpad/stub-neon-loader.mjs ...`).

@@ -20,6 +20,9 @@ import { sendEmail } from '../lib/email.js';
 import { pushFoundersReport, founderPushConfigured } from '../lib/fcm.js';
 import { recordNotify } from '../lib/notify-log.js';
 
+async function ensureShotsTable(q) {
+  await q`CREATE TABLE IF NOT EXISTS feedback_shots (feedback_id bigint NOT NULL, idx int NOT NULL, data text NOT NULL, ts timestamptz DEFAULT now(), PRIMARY KEY (feedback_id, idx))`;
+}
 function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function founderNotifyTo() {
   return String(process.env.FOUNDER_NOTIFY_EMAIL || process.env.FOUNDER_EMAILS || 'botanicalaestheticsbyashley@gmail.com').split(',')[0].trim();
@@ -29,14 +32,15 @@ const TIME_SAVED = { much_less: 'much less time', less: 'less time', same: 'abou
 
 // Tell Ashley. Pulse answers with no words in them (a face, a time-saved pick) are counted in the
 // inbox but do not email: dozens of those a week would bury the reports that need her.
-async function notifyFounder(q, { providerId, email, rating, message, kind, timeSaved }) {
+async function notifyFounder(q, { providerId, email, rating, message, kind, timeSaved, shots }) {
   if (!message) return;
   let name = '';
   try { const r = await q`SELECT name FROM providers WHERE id = ${providerId}`; name = (r[0] && r[0].name) || ''; } catch (e) {}
   const who = name ? `${name} (${email || 'no email on file'})` : (email || 'a provider');
   const when = new Date().toLocaleString('en-US', { timeZone: process.env.FOUNDER_TZ || 'America/Los_Angeles' });
   const face = rating ? (FACES[rating] || '') + ' ' + rating + '/5' : '';
-  const extra = [face && 'Rating: ' + face, timeSaved && 'Time vs before: ' + (TIME_SAVED[timeSaved] || timeSaved), kind === 'pulse' && 'From the check-in survey',
+  const extra = [face && 'Rating: ' + face, timeSaved && 'Time vs before: ' + (TIME_SAVED[timeSaved] || timeSaved), kind === 'pulse' && 'From the check-in survey', kind === 'cancel' && 'Sent from the Cancel subscription screen, before they cancelled',
+    shots && shots.length && (shots.length + (shots.length === 1 ? ' screenshot attached' : ' screenshots attached')),
     kind === 'quote' && 'They gave SlickChart a 5 and said this may go on slickchart.app. Tell Claude which ones to add; they go on word for word.'].filter(Boolean);
   const first = message.replace(/\s+/g, ' ').slice(0, 60) + (message.length > 60 ? '…' : '');
   let emailed = '';
@@ -47,7 +51,8 @@ async function notifyFounder(q, { providerId, email, rating, message, kind, time
         to,
         // Reply-To is the provider, so hitting Reply answers them directly.
         replyTo: email || undefined,
-        subject: kind === 'quote' ? `⭐ A website quote from ${name || email || 'a provider'}: ${first}` : `💬 Feedback from ${name || email || 'a provider'}: ${first}`,
+        attachments: (shots || []).map((d, i) => ({ filename: 'screenshot-' + (i + 1) + '.jpg', content: d })),
+        subject: kind === 'quote' ? `⭐ A website quote from ${name || email || 'a provider'}: ${first}` : kind === 'cancel' ? `🚪 Why ${name || email || 'a provider'} is cancelling: ${first}` : `💬 Feedback from ${name || email || 'a provider'}: ${first}`,
         text: `${who} sent feedback in SlickChart.\n\n${message}\n\n${extra.join('\n')}${extra.length ? '\n' : ''}Sent: ${when}\n\nReply to this email to answer them. Every message is also in Feedback Inbox in the app.\n`,
         html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;">
           <div style="font-size:20px;margin-bottom:6px;">💬 New feedback</div>
@@ -133,10 +138,20 @@ export default async function handler(req, res) {
       let monitor;
       if (!mon) { try { await ensureMonitorTable(q); const m = await q`SELECT extract(epoch from created_at) * 1000 AS c, extract(epoch from last_used) * 1000 AS u FROM feedback_monitor WHERE owner_email = ${owner}`; monitor = m.length ? { on: true, created: Math.round(Number(m[0].c)), lastUsed: m[0].u ? Math.round(Number(m[0].u)) : 0 } : { on: false }; } catch (e) {} }
       const since = Math.max(0, Number((req.query && req.query.since) || 0) || 0);
+      // Owner-only: one screenshot's bytes (?shot=<feedback id>&i=<n>), for the Feedback Inbox.
+      if (req.query && req.query.shot) {
+        await ensureShotsTable(q);
+        const r = await q`SELECT data FROM feedback_shots WHERE feedback_id = ${Number(req.query.shot) || 0} AND idx = ${Number(req.query.i) || 0}`;
+        if (!r[0]) { res.status(404).json({ error: 'not found' }); return; }
+        res.status(200).json({ data: 'data:image/jpeg;base64,' + r[0].data });
+        return;
+      }
       const rows = await q`SELECT f.id, f.rating, f.message, f.email, f.kind, f.time_saved, extract(epoch from f.ts) * 1000 AS ts, p.name
         FROM feedback f LEFT JOIN providers p ON p.id = f.provider_id
         WHERE f.ts > to_timestamp(${since / 1000}) ORDER BY f.ts DESC LIMIT 200`;
-      res.status(200).json({ items: rows.map(r => ({ id: String(r.id), rating: r.rating, message: r.message, email: r.email, name: r.name || '', kind: r.kind, timeSaved: r.time_saved, ts: Math.round(Number(r.ts)) })), monitor });
+      const shotCount = {};
+      try { await ensureShotsTable(q); (await q`SELECT feedback_id, count(*)::int AS n FROM feedback_shots WHERE feedback_id = ANY(${rows.map(r => Number(r.id))}) GROUP BY feedback_id`).forEach(r => { shotCount[String(r.feedback_id)] = r.n; }); } catch (e) {}
+      res.status(200).json({ items: rows.map(r => ({ id: String(r.id), rating: r.rating, message: r.message, email: r.email, name: r.name || '', kind: r.kind, timeSaved: r.time_saved, ts: Math.round(Number(r.ts)), shots: shotCount[String(r.id)] || 0 })), monitor });
     } catch (e) {
       // The brief must SAY it could not read, never report "no new feedback" over a failure.
       if (mon) res.status(500).json({ error: 'read failed' }); else res.status(200).json({ items: [] });
@@ -172,7 +187,13 @@ export default async function handler(req, res) {
     const rating = b.rating ? parseInt(b.rating, 10) : null;
     // Pulse survey fields (from the recurring in-app prompt).
     // 'quote': a provider who gave a 5 wrote a line for the website and said it may be shown (2026-11-16).
-    const kind = (b.kind === 'pulse') ? 'pulse' : (b.kind === 'quote') ? 'quote' : 'adhoc';
+    // 'cancel': the reasons and words a provider gave on the Cancel subscription screen (2026-11-19, Ashley:
+    // "automatically have people directed to a feedback section when cancelling ... i would liek to get as
+    // much feedback as possible from those"). It may carry up to 3 screenshots (JPEG, shrunk on the phone).
+    const kind = (b.kind === 'pulse') ? 'pulse' : (b.kind === 'quote') ? 'quote' : (b.kind === 'cancel') ? 'cancel' : 'adhoc';
+    const shots = (kind === 'cancel' && Array.isArray(b.shots) ? b.shots : []).slice(0, 3)
+      .map(d => String(d || '').replace(/^data:image\/jpeg;base64,/, ''))
+      .filter(d => d && d.length < 1400000 && /^[A-Za-z0-9+/=]+$/.test(d));
     const timeSaved = ['much_less', 'less', 'same', 'more'].includes(b.timeSaved) ? b.timeSaved : null;
     // A pulse response is valid even if it's only a time-saved answer (no rating/message);
     // the plain feedback button still needs at least a message or rating.
@@ -191,10 +212,18 @@ export default async function handler(req, res) {
         const dup = await q`SELECT 1 FROM feedback WHERE provider_id = ${String(p.u)} AND message = ${message} AND ts > now() - interval '10 minutes' LIMIT 1`;
         if (dup.length) { res.status(200).json({ ok: true, duplicate: true }); return; }
       }
-      await q`INSERT INTO feedback (provider_id, email, rating, message, kind, time_saved) VALUES (${p.u}, ${p.e || null}, ${rating}, ${message}, ${kind}, ${timeSaved})`;
+      const ins = await q`INSERT INTO feedback (provider_id, email, rating, message, kind, time_saved) VALUES (${p.u}, ${p.e || null}, ${rating}, ${message}, ${kind}, ${timeSaved}) RETURNING id`;
+      // Screenshots are kept with the feedback (her account only reads them through the owner-only GET)
+      // as well as emailed to Ashley. A failure here never loses the words.
+      if (shots.length && ins[0]) {
+        try {
+          await ensureShotsTable(q);
+          for (let i = 0; i < shots.length; i++) await q`INSERT INTO feedback_shots (feedback_id, idx, data) VALUES (${ins[0].id}, ${i}, ${shots[i]})`;
+        } catch (e) { console.error('[feedback] screenshots not saved:', e && e.message || e); }
+      }
       // Awaited on purpose: a serverless function is frozen after it responds, so a fire-and-forget
       // email may never leave (that is how the Build access email went missing).
-      try { await notifyFounder(q, { providerId: String(p.u), email: (p.e ? String(p.e).toLowerCase() : await resolveEmail(req, q)), rating, message, kind, timeSaved }); } catch (e) {}
+      try { await notifyFounder(q, { providerId: String(p.u), email: (p.e ? String(p.e).toLowerCase() : await resolveEmail(req, q)), rating, message, kind, timeSaved, shots }); } catch (e) {}
       res.status(200).json({ ok: true });
     } catch (e) {
       // Used to answer 200 {ok:false}, which the app read as "sent" — a provider was thanked for
