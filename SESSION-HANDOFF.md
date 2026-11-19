@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zi: CSV exports open right in Excel
+
+- `_downloadCSV` wrote UTF-8 with no byte-order mark, so Excel showed a client named Zoë or José as
+  "ZoÃ«" / "JosÃ©". It now starts with `\uFEFF` (the importer `_parseCSV` already strips it).
+- The formula-injection guard also prefixed plain negative numbers ("-50.00" refunds) with an
+  apostrophe, turning them into text that Excel leaves out of sums. A plain number is now left alone;
+  `=`, `+`, `@`, and text starting with `-` are still neutralised.
+- Test: `scratchpad/test-csv-export-excel.mjs`, Chromium + WebKit. Also new: `sweep-client-contrast.mjs`
+  (client app, light + dark, 13 screens: clean but one 4.19 avatar).
+
 ## 2026-11-19 — build 2026-11-19zh: contrast in dark mode and light mode
 
 - `sweep-contrast.mjs` takes `SC_THEME=dark|light` now (it only ever ran the default). Dark mode:

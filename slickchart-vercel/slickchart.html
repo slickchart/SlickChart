@@ -384,7 +384,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zh';
+const APP_BUILD='2026-11-19zi';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -32401,8 +32401,13 @@ function _downloadCSV(fname,rows){const csv=rows.map(r=>r.map(c=>{c=String(c==nu
   // treated as a formula by Excel/Sheets, so a client-supplied name or note like
   // "=cmd|'/c calc'!A1" could execute on export. Prefix such cells with an apostrophe
   // so spreadsheets render them as plain text.
-  if(/^[=+\-@\t\r]/.test(c))c="'"+c;
-  return /[",\n\r]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');return _downloadFile(fname,csv,'text/csv');}
+  // A plain number is not a formula: a refund of -50.00 became the text '-50.00 in Excel and dropped out of
+  // every sum (2026-11-19).
+  if(/^[=+\-@\t\r]/.test(c)&&!/^-?\d+(\.\d+)?$/.test(c))c="'"+c;
+  return /[",\n\r]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');
+  // The byte-order mark tells Excel the file is UTF-8. Without it a client named Zoë or José opened as
+  // "ZoÃ«" / "JosÃ©" (Numbers and Google Sheets read it either way).
+  return _downloadFile(fname,'\uFEFF'+csv,'text/csv');}
 function _exportServicesCSV(){const rows=[['Service','Price']].concat((_svcMenu||[]).map(s=>[s.name||'',(+s.price||0).toFixed(2)]));if(_downloadCSV('slickchart-services.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Exported '+((_svcMenu||[]).length)+' services');}
 function _exportClientsCSV(){const rows=[['Name','Email','Phone','Date of birth','Current treatment','Last visit','Next visit','Concerns','Allergies']].concat(Object.values(CL).map(c=>[c.name||'',c.email||'',c.phone||'',c.birthday||'',c.treatment||'',c.lastVisit||'',c.nextVisit||'',c.concerns||'',c.allergies||'']));if(_downloadCSV('slickchart-clients.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Exported '+Object.keys(CL).length+' clients');}
 function _exportPaymentsCSV(){const rows=[['Date','Client','Subtotal','Tax','Total','Method','Status','Note']].concat((_payments||[]).map(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;return [p.date||'',p.clientName||'',(total-tax).toFixed(2),tax.toFixed(2),total.toFixed(2),p.method||'',p.status||'',p.note||''];}));if(_downloadCSV('slickchart-sales.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Exported '+((_payments||[]).length)+' payments');}
