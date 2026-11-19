@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zf';
+const APP_BUILD='2026-11-19zg';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -18574,7 +18574,8 @@ function _remDone(id){
   if(typeof proToast==='function')proToast(r.repeat?'Done, set for next time':'Done');
   try{renderReminders();}catch(e){}
 }
-function _remDelete(id){
+function _remDelete(id,_ok){
+  if(!_ok&&typeof confirmModal==='function'){confirmModal({title:'Delete this reminder?',body:'It will stop reminding you. This can\u2019t be undone.',action:'Delete'},function(){_remDelete(id,true);});return;}
   try{_libForget('sc_reminders',id);}catch(e){}
   reminders=reminders.filter(function(x){return !(x&&x.id===id);});
   saveReminders();
@@ -41563,8 +41564,18 @@ function saveEditResource(id){
   _warnGuideFileUploads();
   _fgTab='guides';nav('forms');
 }
-function deleteResource(id){
+// One tap on "Delete guide" (or "Reset to original") on the guide's own screen threw away a guide she
+// wrote, or her edits to a stock one, with no question and no way back (2026-11-19). The trash button
+// on the card already asked first; this asks the same way.
+function deleteResource(id,_ok){
   const isCustom=/^g-custom-/.test(id);
+  if(!_ok&&typeof confirmModal==='function'){
+    const g=(typeof resources!=='undefined'&&Array.isArray(resources)?resources.find(x=>x&&x.id===id):null)||customResources.find(x=>x&&x.id===id)||{};
+    const nm=String(g.title||'this guide').replace(/\s+/g,' ').trim();
+    confirmModal(isCustom?{title:'Delete this guide?',body:'\u201c'+nm+'\u201d will be removed from your guides and from any form it is connected to. Clients you already sent it to keep their copy.',action:'Delete'}
+      :{title:'Reset this guide?',body:'Your changes to \u201c'+nm+'\u201d will be replaced with the original wording.',action:'Reset'},function(){deleteResource(id,true);});
+    return;
+  }
   const i=customResources.findIndex(x=>x.id===id);
   if(i>=0)customResources.splice(i,1);
   // For a CUSTOM guide (a real delete), mark it hidden (pushed immediately) so a cross-device resync

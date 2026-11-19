@@ -9943,6 +9943,19 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zg: deleting a guide or reminder asks first
+
+- A sweep of every delete/remove handler for a confirm or Undo: `deleteResource` (the Delete guide /
+  Reset to original button on a guide's own screen) threw away a guide she wrote, or her edits to a stock
+  one, on one tap, while the card's trash button already asked. `_remDelete` (reminder sheet) the same.
+  Both now `confirmModal` first (second argument `true` skips it for callers that already asked).
+  `_starterDelete`, `removeClientProd`, `_fbSvcRemove`, `_cbRemoveLesson` remove from a sheet that
+  still needs Save, so left as is.
+- `sweep2-lib-tomb-unregistered.mjs` was stale: it failed on the old code too because its fake server
+  did not merge the four delete records the real `api/store.js` now merges. FIX defaults to 2.
+- Also new: `scratchpad/test-two-accounts-one-device.mjs` (§0, clean in both engines).
+- Test: `scratchpad/test-delete-asks-first.mjs`, Chromium + WebKit.
+
 ## 2026-11-19 — build 2026-11-19zf: client app words for every profession
 
 - Routine streak said "your skin thanks you" and the booking note box suggested "skin concerns" to a

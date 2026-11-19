@@ -1,4 +1,5 @@
 // sweep2: the four delete records named in _LIB_TOMB but NOT in _TOMB_OBJ
+// 2026-11-19: FIX defaults to 2 because the real api/store.js now merges these four delete records server-side (line ~132); FIX=0 reproduces the old server.
 // (sc_deleted_svc, sc_deleted_msg_tmpls, sc_deleted_starters, sc_deleted_reminders).
 // (1) After deleting one row, the shrink guard refuses EVERY later upload of that library.
 // (2) A stale device's plain-overwrite of the delete record resurrects the deleted row.
@@ -11,9 +12,9 @@ const srv = makeServer({
   sc_service_menu: JSON.stringify([svc('s1', 'Facial', 90), svc('s2', 'Peel', 120)]),
   sc_service_menu_custom: '1',
 });
-if (+(process.env.FIX || 0) >= 2) srv.newest = { sc_deleted_svc: 1, sc_deleted_msg_tmpls: 1, sc_deleted_starters: 1, sc_deleted_reminders: 1 };
+if (+(process.env.FIX || 2) >= 2) srv.newest = { sc_deleted_svc: 1, sc_deleted_msg_tmpls: 1, sc_deleted_starters: 1, sc_deleted_reminders: 1 };
 // FIX=1 applies the proposed client fix in-page; FIX=2 also server-merges every _TOMB_OBJ key.
-const FIX = +(process.env.FIX || 0);
+const FIX = +(process.env.FIX || 2);
 const b = await launch();
 const applyFix = (p) => FIX ? p.evaluate(() => { ['sc_deleted_svc','sc_deleted_msg_tmpls','sc_deleted_starters','sc_deleted_reminders'].forEach(k => { _TOMB_OBJ[k] = 1; }); }) : null;
 const A = await device(b, srv, 'A');
@@ -25,7 +26,7 @@ await A.evaluate(() => { _remSave({ id: 'r1', title: 'Order retinol x2', at: Dat
 await flush(A);
 check('control: plain edit reaches the account', /retinol x2/.test(srv.kv.sc_reminders || ''), srv.kv.sc_reminders);
 // --- (1) delete on A, then edit another row on A
-await A.evaluate(() => { _remDelete('r1'); });
+await A.evaluate(() => { _remDelete('r1', true); });
 await flush(A);
 await A.evaluate(() => { _remSave({ id: 'r2', title: 'Call landlord TODAY', at: Date.now() + 86400000 }); });
 await A.evaluate(() => { const i = _svcMenu.findIndex(x => x.id === 's1'); _svcDelDo(i); });
@@ -42,7 +43,7 @@ check('A: price change on s2 reached the account', kvSvc.some(x => x.id === 's2'
 const warns = await A.evaluate(() => 0);
 // --- (2) stale device B (has not pulled since) deletes a different reminder -> pushes its own
 // sc_deleted_reminders without r1; then a third device boots
-await B.evaluate(() => { _remDelete('r2'); });
+await B.evaluate(() => { _remDelete('r2', true); });
 await flush(B);
 check('server delete record still holds r1 after B\'s push', /"r1"/.test(srv.kv.sc_deleted_reminders || ''), srv.kv.sc_deleted_reminders);
 const C = await device(b, srv, 'C');
