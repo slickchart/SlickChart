@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18zc: client message Tap to retry resent the wrong message
+
+Client app message ids were `'cm'+counter`, and the counter restarts at 1 on every open. A failed
+message kept from last time and a new failed one both became `cm1`, so Tap to retry on the new one
+found and resent the OLD one, and the new message never went. Ids now carry the time
+(`'cm'+Date.now().toString(36)+'_'+n`). Test: `scratchpad/test-client-msg-retry-id.mjs` (needs
+:8899), both engines; 2 of 2 fail on the old build. Provider side already uses unique `_mid`s.
+
 ## 2026-11-18 — build 2026-11-18za: printing a summary or client file on a computer
 
 `_printSummary` and `_printClientFile` removed their hidden print frame 2 s after `print()`. Chrome
