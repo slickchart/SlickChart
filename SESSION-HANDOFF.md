@@ -9943,6 +9943,13 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zt (Square connect failure in plain words)
+
+- When Square sent her back without connecting, the toast read "Square connection failed: access_denied"
+  (or invalid_state, no_code, a raw exception) in the success style. `_sqConnectFailMsg` turns the
+  reason into plain words with the next step (Tap Connect Square), shown as an error toast for 6 s.
+- Test: `scratchpad/test-square-connect-fail-msg.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19zs (Escape no longer throws away what she typed)
 
 - On a computer, Escape closed any sheet at once, so a half-written feedback note, message or new
