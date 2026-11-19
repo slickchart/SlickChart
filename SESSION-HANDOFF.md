@@ -9943,6 +9943,17 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zo (birthdays from imports and the client card)
+
+- Safari's Date() refuses "03-25-1990", so an iPhone import dropped birthdays a computer kept.
+  "25/03/1990", "25.03.1990", "Mar 4" and "4/3" were dropped everywhere. `_normBirthday(s, dmy)` now
+  reads numbers by hand (any of / . - separators, year first or last, no year = 0000) and month names
+  ("Mar 4", "4th of March", with or without a year). Impossible dates still come back empty.
+- Day-first or month-first is decided once per FILE (`_impDayFirst`): one date with a first number over
+  12 settles it, a second number over 12 settles it the other way, otherwise the device's language
+  (en-GB/AU etc. day-first, en-US month-first). The client card's birthday box uses the same rule.
+- Test: `scratchpad/test-import-birthdays.mjs` (Chromium + WebKit, 9 checks fail on the old code).
+
 ## 2026-11-19 — build 2026-11-19zm (client import: several phone / email columns)
 
 - A list with "Home Phone, Mobile Phone, Work Phone" took the FIRST phone column, usually an empty home

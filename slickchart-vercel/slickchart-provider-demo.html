@@ -642,7 +642,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zn';
+const APP_BUILD='2026-11-19zo';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -2400,7 +2400,7 @@ function _saveClientDetails(id){
   // DOB is now typed as MM/DD/YYYY (or picked from the calendar, which writes the same). Normalize a
   // parseable entry to ISO for storage; keep a not-yet-complete entry as-typed rather than losing it;
   // an empty field clears the DOB.
-  const _dobEl=document.getElementById('cd-dob'); if(_dobEl){const _raw=String(_dobEl.value||'').trim();c.birthday=_raw?(_normBirthday(_raw)||_raw):'';}
+  const _dobEl=document.getElementById('cd-dob'); if(_dobEl){const _raw=String(_dobEl.value||'').trim();c.birthday=_raw?(_normBirthday(_raw,_impDayFirst([_raw]))||_raw):'';}
   saveClients();
   // Send the client list now, through the normal guarded queue. This used to be pushAllLocal(): the
   // WHOLE workspace, last-writer-wins, past the shrink guard, so a device with stale libraries put
@@ -8039,9 +8039,28 @@ function _providerFirstName(){
 }
 function _greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening';}
 // ── Birthdays (from Square sync or intake date-of-birth) ──
-function _normBirthday(s){
+// dmy: the day comes first ("25/03/1990"). Imports pass it when the file or the device says so
+// (_impDayFirst). Numbers are read by hand, never by Date(): Safari's Date() refuses "03-25-1990",
+// so an import on an iPhone dropped birthdays that the same file kept on a computer (2026-11-19).
+function _normBirthday(s,dmy){
   if(!s)return ''; s=String(s).trim();
   let m=s.match(/(\d{4})-(\d{2})-(\d{2})/); if(m)return _validMD(m[2],m[3])?(m[1]+'-'+m[2]+'-'+m[3]):'';
+  m=s.match(/^(\d{4})[\/.](\d{1,2})[\/.](\d{1,2})$/);
+  if(m){const mo=m[2].padStart(2,'0'),da=m[3].padStart(2,'0');return _validMD(mo,da)?(m[1]+'-'+mo+'-'+da):'';}
+  m=s.match(/^(\d{1,2})([\/.-])(\d{1,2})(?:\2(\d{2}|\d{4}))?$/);
+  if(m){
+    const a=+m[1],b=+m[3],df=(dmy||m[2]==='.'||a>12)&&!(b>12&&a<=12);
+    const mo=String(df?b:a).padStart(2,'0'),da=String(df?a:b).padStart(2,'0');
+    let yr=m[4]||'0000';
+    if(yr.length===2){const yy=parseInt(yr,10);const cur2=new Date().getFullYear()%100;yr=(yy>cur2?'19':'20')+yr;}
+    return _validMD(mo,da)?(yr+'-'+mo+'-'+da):'';
+  }
+  // A month by name: "Mar 4", "March 4th, 1990", "4 March". With no year it is still her birthday.
+  const _MN=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  m=s.match(/^([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$/i)||s.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]{3,9})\.?(?:,?\s+(\d{4}))?$/i);
+  if(m){const nm=/^\d/.test(m[1])?m[2]:m[1],dd=/^\d/.test(m[1])?m[1]:m[2],mi=_MN.indexOf(nm.slice(0,3).toLowerCase());
+    if(mi>=0&&('january february march april may june july august september october november december sept'.split(' ').some(w=>w.startsWith(nm.toLowerCase())))){
+      const mo=String(mi+1).padStart(2,'0'),da=String(dd).padStart(2,'0');return _validMD(mo,da)?((m[3]||'0000')+'-'+mo+'-'+da):'';}}
   m=s.match(/(\d{2})-(\d{2})$/); if(m)return _validMD(m[1],m[2])?('0000-'+m[1]+'-'+m[2]):'';
   m=s.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})$/);
   if(m){
@@ -30866,6 +30885,15 @@ function _impCol(headers,aliases,generic){
   return null;
 }
 
+// Does this file write the day first ("25/03/1990")? One date with a first number over 12 settles it
+// for the whole file, a second number over 12 settles the other way, and with neither the device's
+// own language decides (a UK or Australian list is day-first; a US one is not).
+function _impDayFirst(vals){
+  let d=0,m=0;(vals||[]).forEach(v=>{const x=String(v||'').trim().match(/^(\d{1,2})[\/.-](\d{1,2})(?:[\/.-]\d{2,4})?$/);if(!x)return;if(+x[1]>12)d++;else if(+x[2]>12)m++;});
+  if(d||m)return d>m;
+  try{const l=String((navigator.languages&&navigator.languages[0])||navigator.language||'').toLowerCase();
+    return !!l&&!/^en(-us|-ph|-ca)?$|^en-(us|ph)\b|^ja|^zh|^ko|^hu|^lt/.test(l)&&!/^fr-ca/.test(l);}catch(e){return false;}
+}
 // Map rows for a platform. Returns everything the preview needs to be honest: which column fed which
 // field, which columns were ignored, and how many rows were skipped and why.
 function _mapWithProfile(rows,prof){
@@ -30916,6 +30944,8 @@ function _mapWithProfile(rows,prof){
     if(p.join)return p.join.map(i=>String(row[i]||'').trim()).filter(Boolean).join(' ').trim();
     if(p.any){let first='';for(const i of p.any){const v=String(row[i]||'').trim();if(v&&p.ok(v))return v;if(v&&!first)first=v;}return first;}
     return String(row[p.idx]||'').trim();};
+  const dmy=pick.birthday?_impDayFirst(rows.slice(1).map(row=>val(row,pick.birthday))):false;
+  info.dayFirst=dmy;
   let noName=0;
   for(let r=1;r<rows.length;r++){
     const row=rows[r];
@@ -30923,7 +30953,7 @@ function _mapWithProfile(rows,prof){
     const name=val(row,pick.name);
     if(!name){info.skipped++;noName++;continue;}
     info.mapped.push({name,email:val(row,pick.email),phone:val(row,pick.phone),
-      birthday:val(row,pick.birthday),notes:val(row,pick.notes)});
+      birthday:(()=>{const b=val(row,pick.birthday);return b?(_normBirthday(b,dmy)||b):'';})(),notes:val(row,pick.notes)});
   }
   if(noName)info.skipReason=noName+' row'+(noName===1?'':'s')+' had no name we could read';
   else if(info.skipped)info.skipReason=info.skipped+' blank row'+(info.skipped===1?'':'s');
