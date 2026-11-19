@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zp (imported names: "LEE, ANN")
+
+- A list that writes names "LEE, ANN" or "lee, ann" made a client called exactly that, so every
+  message greeted her as "Hi LEE,". `_impTidyName` (in `_mapWithProfile`, so the preview shows it):
+  last-comma-first is turned round, an all-capitals or all-lower-case name gets ordinary capitals
+  (O'Brien, Smith-Jones, Zoë), spaces close up. Mixed case ("McKenzie") is never touched; a suffix
+  ("Ann Smith, Jr.") or a business ("Glow & Co, LLC") stays as written.
+- Test: `scratchpad/test-import-names.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19zo (birthdays from imports and the client card)
 
 - Safari's Date() refuses "03-25-1990", so an iPhone import dropped birthdays a computer kept.

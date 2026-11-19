@@ -642,7 +642,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zo';
+const APP_BUILD='2026-11-19zp';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -30885,6 +30885,20 @@ function _impCol(headers,aliases,generic){
   return null;
 }
 
+// A name as exports write it: "LEE, ANN" or "lee, ann" became a client called "LEE, ANN" whom every
+// message greeted as "Hi LEE," (2026-11-19). Last-comma-first is turned round, a name typed all in
+// capitals or all in lower case gets ordinary capitals, and runs of spaces close up. A name she typed
+// with mixed case ("McKenzie", "de la Cruz") is never touched, and "Ann Smith, Jr." keeps its suffix.
+function _impTidyName(n){
+  let s=String(n||'').replace(/\s+/g,' ').trim();if(!s)return '';
+  const m=s.match(/^([^,]+),\s*([^,]+)$/);
+  if(m&&!/^(jr|sr|ii|iii|iv|md|rn|phd|esq|dds|np|pa)\.?$/i.test(m[2].trim())&&!/&|\band\b|\b(inc|llc|ltd|co)\b/i.test(s)&&m[1].trim().split(' ').length<=3&&/^[\p{L}'’.\- ]+$/u.test(m[1]+m[2]))
+    s=m[2].trim()+' '+m[1].trim();
+  const letters=s.replace(/[^\p{L}]/gu,'');
+  if(letters.length>1&&(letters===letters.toUpperCase()||letters===letters.toLowerCase())&&letters.toUpperCase()!==letters.toLowerCase())
+    s=s.toLowerCase().replace(/(^|[\s'’\-])(\p{L})/gu,(x,a,b)=>a+b.toUpperCase());
+  return s;
+}
 // Does this file write the day first ("25/03/1990")? One date with a first number over 12 settles it
 // for the whole file, a second number over 12 settles the other way, and with neither the device's
 // own language decides (a UK or Australian list is day-first; a US one is not).
@@ -30950,7 +30964,7 @@ function _mapWithProfile(rows,prof){
   for(let r=1;r<rows.length;r++){
     const row=rows[r];
     if(!row||!row.some(c=>String(c||'').trim())){info.skipped++;continue;}   // blank line
-    const name=val(row,pick.name);
+    const name=_impTidyName(val(row,pick.name));
     if(!name){info.skipped++;noName++;continue;}
     info.mapped.push({name,email:val(row,pick.email),phone:val(row,pick.phone),
       birthday:(()=>{const b=val(row,pick.birthday);return b?(_normBirthday(b,dmy)||b):'';})(),notes:val(row,pick.notes)});
