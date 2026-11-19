@@ -3,7 +3,7 @@
 // The Invoices API forbids orders that use auto_apply_taxes, so we attach the seller's
 // ENABLED catalog taxes explicitly and reference them only on taxable lines (so a line
 // toggled "No tax" — e.g. a gift — is excluded). Then create + publish an emailed invoice.
-import { squareFetch as _sqf, sqContext, resolveLocationId, resolveLocationTz, zonedDateKey } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId, resolveLocationTz, resolveLocationCurrency, zonedDateKey } from '../../lib/square.js';
 import { logSquareCreate } from '../../lib/db.js';
 
 export default async function handler(req, res) {
@@ -24,6 +24,7 @@ export default async function handler(req, res) {
 
   try {
     const locationId = await resolveLocationId(ctx.token, ctx.locationId);
+    const currency = await resolveLocationCurrency(ctx.token, locationId);
 
     // Seller's enabled catalog taxes (scope LINE_ITEM so we can exempt individual lines).
     let catTaxes = [];
@@ -43,14 +44,14 @@ export default async function handler(req, res) {
         const qty = String(Math.max(1, parseInt(li.quantity, 10) || 1));
         const line = li.variationId
           ? { catalog_object_id: li.variationId, quantity: qty }
-          : { name: String(li.name || 'Item').slice(0, 500), quantity: qty, base_price_money: { amount: Math.round(parseFloat(li.price) * 100), currency: 'USD' } };
+          : { name: String(li.name || 'Item').slice(0, 500), quantity: qty, base_price_money: { amount: Math.round(parseFloat(li.price) * 100), currency } };
         if (li.taxable !== false && catTaxes.length) line.applied_taxes = applyTaxes(idx);
         return line;
       });
     } else {
       const amount = Math.round(parseFloat(b.amount) * 100);
       if (!amount || amount <= 0) { res.status(400).json({ error: 'Add at least one line item or an amount.' }); return; }
-      const line = { name: String(b.title || 'Service'), quantity: '1', base_price_money: { amount, currency: 'USD' } };
+      const line = { name: String(b.title || 'Service'), quantity: '1', base_price_money: { amount, currency } };
       if (catTaxes.length) line.applied_taxes = applyTaxes(0);
       orderLineItems = [line];
     }

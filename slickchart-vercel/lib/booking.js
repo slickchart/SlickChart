@@ -19,7 +19,7 @@
 // be an enumeration oracle for her client list. Free/busy is reduced to start+end times before it
 // leaves this module; the appointments it was computed from never go over the wire.
 import { sql, getKVValue, logSquareCreate } from './db.js';
-import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey, zonedMinutes, zonedWallToUtc, squareIdemKey } from './square.js';
+import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, resolveLocationCurrency, zonedDayRange, zonedDateKey, zonedMinutes, zonedWallToUtc, squareIdemKey } from './square.js';
 import { getGoogleConnection, googleBusyMinutes } from './google-cal.js';
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -618,11 +618,12 @@ export async function depositLinkFor(providerId, { amount, serviceName, email, c
   try { conn = await getConnection(providerId); } catch (e) { return ''; }
   if (!conn || !conn.token) return '';
   try {
+    let currency = 'USD'; try { currency = await resolveLocationCurrency(conn.token, conn.locationId); } catch (e) {}
     const body = {
       idempotency_key: 'sc-dep-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10),
       quick_pay: {
         name: ('Deposit — ' + (serviceName || 'Appointment')).slice(0, 255),
-        price_money: { amount: cents, currency: 'USD' },
+        price_money: { amount: cents, currency },
         location_id: conn.locationId || undefined
       },
       payment_note: ('SCDEP:' + String(clientId || '').slice(0, 40)).slice(0, 500)

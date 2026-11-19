@@ -1,6 +1,6 @@
 // POST /api/square/payment-link  { amount, name, email?, phone?, note?, allowTip? }
 // Creates a Square hosted checkout link (client pays on Square's secure page).
-import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId, resolveLocationCurrency } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -12,9 +12,10 @@ export default async function handler(req, res) {
   if (!amount || amount <= 0) { res.status(400).json({ error: 'Enter a valid amount.' }); return; }
   try {
     const locationId = await resolveLocationId(ctx.token, ctx.locationId);
+    const currency = await resolveLocationCurrency(ctx.token, locationId);
     const body = {
       idempotency_key: 'sc-pl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10),
-      quick_pay: { name, price_money: { amount, currency: 'USD' }, location_id: locationId }
+      quick_pay: { name, price_money: { amount, currency }, location_id: locationId }
     };
     // `note` rides onto the resulting Square Payment, which is what lets the webhook match a completed
     // payment back to the client and course it was for (see api/square/webhook.js). Bounded length;

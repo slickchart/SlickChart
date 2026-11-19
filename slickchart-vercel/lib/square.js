@@ -94,6 +94,22 @@ export async function resolveLocationId(token, stored) {
   return pick ? pick.id : null;
 }
 
+// The currency of her Square location. Square refuses money in any currency but the location's, so
+// a hard-coded 'USD' failed every charge, payment link, invoice and deposit for a seller in Canada,
+// the UK, Australia, Ireland, France or Spain. Amounts here are always sent in hundredths, so a
+// currency with no hundredths (JPY) falls back to 'USD': Square then refuses it, as before, rather
+// than charging 100 times the price.
+const _ZERO_DECIMAL = new Set(['JPY', 'KRW', 'VND', 'CLP', 'ISK', 'UGX', 'XAF', 'XOF', 'PYG', 'RWF', 'KMF', 'GNF', 'DJF', 'BIF', 'VUV', 'XPF', 'MGA']);
+export async function resolveLocationCurrency(token, stored) {
+  try {
+    const data = await squareFetch('/v2/locations', {}, token);
+    const all = data.locations || [];
+    const pick = (stored && all.find(l => l.id === stored)) || all.filter(l => l.status === 'ACTIVE')[0] || all[0];
+    const c = pick && typeof pick.currency === 'string' ? pick.currency.toUpperCase() : '';
+    return (/^[A-Z]{3}$/.test(c) && !_ZERO_DECIMAL.has(c)) ? c : 'USD';
+  } catch (e) { return 'USD'; }
+}
+
 // ── Location timezone & day windows ──────────────────────────────────────────
 // A booking day is a day in HER shop's timezone, never the server's. Vercel runs in UTC, so
 // `new Date('2026-10-10T00:00:00')` parsed there is 5pm the PREVIOUS day in Pacific — searching

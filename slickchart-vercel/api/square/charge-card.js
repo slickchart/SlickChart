@@ -1,6 +1,6 @@
 // GET  /api/square/charge-card?customerId=... → { cards:[{id,last4,brand,exp}] }
 // POST /api/square/charge-card  { customerId, cardId, amount, note? } → charges the saved card
-import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId, resolveLocationCurrency } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   const ctx = await sqContext(req, res); if (!ctx) return;
@@ -20,6 +20,7 @@ export default async function handler(req, res) {
       if (!amount || amount <= 0) { res.status(400).json({ error: 'Enter a valid amount.' }); return; }
       if (!b.cardId) { res.status(400).json({ error: 'Pick a saved card.' }); return; }
       const locationId = await resolveLocationId(ctx.token, ctx.locationId);
+      const currency = await resolveLocationCurrency(ctx.token, locationId);
       // Prefer the client's stable idempotency key so a retried/duplicated request (lost response,
       // double-tap after a timeout) resolves to the SAME Square payment instead of charging twice.
       // Only fall back to a generated key if the client didn't send one. Square caps the key at 45 chars.
@@ -28,7 +29,7 @@ export default async function handler(req, res) {
       const p = await sf('/v2/payments', { method: 'POST', body: {
         idempotency_key: idemKey,
         source_id: b.cardId, customer_id: b.customerId || undefined,
-        amount_money: { amount, currency: 'USD' }, location_id: locationId,
+        amount_money: { amount, currency }, location_id: locationId,
         note: String(b.note || 'SlickChart').slice(0, 500)
       } });
       res.status(200).json({ ok: true, status: p.payment && p.payment.status, paymentId: p.payment && p.payment.id, receiptUrl: p.payment && p.payment.receipt_url });
