@@ -33,6 +33,8 @@ page.on('popup', p => p.close().catch(() => {}));
 // A brand-new esthetician, Square connected, clients imported from Square, setup finished.
 const now = Date.now();
 const clients = {}; for (let i = 0; i < 40; i++) { const id = 'sq_CUST' + i; clients[id] = { id, name: ['Ava', 'Bea', 'Cora', 'Dana', 'Eve'][i % 5] + ' ' + ['Lane', 'Moss', 'Reed', 'Stone'][i % 4] + ' ' + i, email: 'c' + i + '@ex.com', phone: '555010' + String(i).padStart(4, '0'), sqId: 'CUST' + i, source: 'square', created: now - 86400000 * 3, _ts: now - 86400000 * 3, visits: [], notes: [] }; }
+// TOKENS=1: every client already has her app link (most real clients do), so sends go straight out.
+if (process.env.TOKENS) for (const c of Object.values(clients)) c._token = 'tok_' + c.id;
 // LONG=1: real-world long names (hyphenated surnames, long studio names, long emails) to catch text that pushes a phone screen sideways.
 if (process.env.LONG) for (const c of Object.values(clients)) { c.name = c.name.replace(' ', ' Montgomery-Vanderbilt-') + ' Alexandrina-Rosalind'; c.email = 'alexandrina.montgomery.vanderbilt.' + c.id.toLowerCase() + '@extremelylongdomainname-example.com'; }
 const BIZ = process.env.LONG ? 'The Botanical Aesthetics Skin Wellness and Lash Studio of Southern California' : 'Frances Skin Studio';
