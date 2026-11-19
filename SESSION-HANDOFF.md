@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zq (imported allergies)
+
+- Import never read an Allergies column, so every imported client said "None on file", even from
+  SlickChart's own client export (which has one). A health field showing a false "none" is the
+  dangerous direction. `_mapWithProfile` now maps `/allerg/` (or a platform `aliases.allergies`) to
+  `allergies`; "none", "N/A", "-" still read as None on file. An "Allergy notes" column feeds
+  allergies and the Notes field takes another column, never the same one twice.
+- Round trip checked: our client export imports back with name, email, phone, birthday, concerns
+  and allergies. Test: `scratchpad/test-import-allergies.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19zp (imported names: "LEE, ANN")
 
 - A list that writes names "LEE, ANN" or "lee, ann" made a client called exactly that, so every

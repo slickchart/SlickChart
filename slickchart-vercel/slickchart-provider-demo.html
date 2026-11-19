@@ -642,7 +642,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zp';
+const APP_BUILD='2026-11-19zq';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -30921,8 +30921,13 @@ function _mapWithProfile(rows,prof){
     email:_impCol(headers,al.email,/e-?mail/),
     phone:_impCol(headers,al.phone,/phone|mobile|cell/),
     birthday:_impCol(headers,al.birthday,/birth|dob/),
-    notes:_impCol(headers,al.notes,/note|concern|comment/)
+    notes:_impCol(headers,al.notes,/note|concern|comment/),
+    // Allergies used to be left behind and every imported client read "None on file" (2026-11-19).
+    allergies:_impCol(headers,al.allergies,/allerg/)
   };
+  // "Allergy notes" matches both: it is the allergies, and notes take another column if there is one.
+  if(pick.notes&&pick.allergies&&pick.notes.idx!=null&&pick.notes.idx===pick.allergies.idx){
+    const i=headers.findIndex(h=>/note|concern|comment/i.test(h)&&!/allerg/i.test(h));pick.notes=i>=0?{idx:i,label:headers[i]}:null;}
   // A name may also be split across generic First/Last columns with no profile match.
   if(!pick.name){
     const H=headers.map(h=>h.toLowerCase());
@@ -30967,7 +30972,7 @@ function _mapWithProfile(rows,prof){
     const name=_impTidyName(val(row,pick.name));
     if(!name){info.skipped++;noName++;continue;}
     info.mapped.push({name,email:val(row,pick.email),phone:val(row,pick.phone),
-      birthday:(()=>{const b=val(row,pick.birthday);return b?(_normBirthday(b,dmy)||b):'';})(),notes:val(row,pick.notes)});
+      birthday:(()=>{const b=val(row,pick.birthday);return b?(_normBirthday(b,dmy)||b):'';})(),notes:val(row,pick.notes),allergies:val(row,pick.allergies)});
   }
   if(noName)info.skipReason=noName+' row'+(noName===1?'':'s')+' had no name we could read';
   else if(info.skipped)info.skipReason=info.skipped+' blank row'+(info.skipped===1?'':'s');
@@ -31036,7 +31041,7 @@ function _impUndo(batchId){
 
 // ── Import UI: pick where you're coming from, see what will happen, undo if it's wrong ───────────
 function _impEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-const _IMP_FIELD_LABEL={name:'Name',email:'Email',phone:'Phone',birthday:'Birthday',notes:'Notes'};
+const _IMP_FIELD_LABEL={name:'Name',email:'Email',phone:'Phone',birthday:'Birthday',notes:'Notes',allergies:'Allergies'};
 
 function _impSetSource(id){
   _impSource=id||'';
@@ -31139,7 +31144,7 @@ function _mapProductRows(rows){
 function _makeClientFromRow(row){
   const parts=String(row.name).trim().split(/\s+/);
   const initials=((parts[0]||'?')[0]+((parts[1]||'')[0]||'')).toUpperCase();
-  return {name:row.name,initials,bg:'var(--p-amber-bg)',tc:'var(--accent-strong)',skin:'\u2014',concerns:row.notes||'\u2014',allergies:'None on file',fitz:'\u2014',lastVisit:'\u2014',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,email:row.email||'',phone:row.phone||'',birthday:(typeof _normBirthday==='function'?_normBirthday(row.birthday):(row.birthday||''))||'',source:'import'};
+  return {name:row.name,initials,bg:'var(--p-amber-bg)',tc:'var(--accent-strong)',skin:'\u2014',concerns:row.notes||'\u2014',allergies:(row.allergies&&!/^(none|n\/?a|no|-+|\u2014)$/i.test(String(row.allergies).trim()))?String(row.allergies).trim():'None on file',fitz:'\u2014',lastVisit:'\u2014',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,email:row.email||'',phone:row.phone||'',birthday:(typeof _normBirthday==='function'?_normBirthday(row.birthday):(row.birthday||''))||'',source:'import'};
 }
 function _importClientsFromRows(rows){
   let n=0;const ids=[];(rows||[]).forEach((row,k)=>{
