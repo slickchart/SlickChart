@@ -55,7 +55,7 @@ console.log('  request carries a real service   :', CAT.includes(a.selected)?'YE
 const c=await run('Provider with NO services listed', []);
 if(c.chips.length){console.log('  *** invented chips for a provider with no catalog:',c.chips);bad++;}
 if(c.selected){console.log('  *** invented a service name:',c.selected);bad++;}
-const honest=/hasn't listed her services here yet/.test(c.body);
+const honest=/hasn't listed (her )?services here yet/.test(c.body);
 console.log('  no invented chips                :', c.chips.length?'*** NO ***':'YES');
 console.log('  says so honestly instead         :', honest?'YES':'*** NO ***');
 if(!honest)bad++;

@@ -32,7 +32,7 @@ ok(out.due === 3 && out.refreshed === 2 && out.failed === 1, 'expired + soon + r
 ok(new Date(rows.expired.expires_at) > new Date(Date.now() + 29 * 864e5) && new Date(rows.soon.expires_at) > new Date(Date.now() + 29 * 864e5), 'the expired and the expiring connection now last 30 days');
 ok(new Date(rows.fine.expires_at) < new Date(Date.now() + 26 * 864e5), 'a connection with weeks left is left alone');
 ok(/revoked/.test(rows.revoked.refresh_error || ''), 'a failed refresh is recorded with Square\'s reason', rows.revoked.refresh_error);
-ok(!calls.filter(Boolean).length || calls.length === 3, 'the one that failed an hour ago is not retried yet', String(calls.length));
+ok(calls.filter(Boolean).length === 3 && !calls.includes('rt-bad-1h'), 'the one that failed an hour ago is not retried yet (3 token refreshes)', JSON.stringify(calls));
 const c = await getConnection('revoked');
 ok(c === null, 'an expired connection that cannot refresh returns nothing (she must reconnect)');
 await db.query("UPDATE square_connections SET expires_at = now() - interval '1 day', refresh_error = 'old' WHERE provider_id = 'expired'");

@@ -9,7 +9,7 @@ const db = new PGlite(); globalThis.__db = db;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evc-')); fs.mkdirSync(path.join(dir, 'lib'));
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
 for (const f of fs.readdirSync(path.join(SRC, 'lib'))) if (f.endsWith('.js')) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
-fs.writeFileSync(path.join(dir, 'lib/db.js'), `export function dbEnabled(){return true;}
+fs.writeFileSync(path.join(dir, 'lib/db.js'), `export function dbEnabled(){return true;} export async function schemaInPlace(){ return false; }
 export function sql(){ return async (strs, ...v) => { let t=''; strs.forEach((s,i)=>{t+=s+(i<v.length?'$'+(i+1):'');}); const r = await globalThis.__db.query(t, v); return r.rows; }; }
 export async function ensureTable(){} export async function ensureProvidersTable(){} export async function ensureFilesTable(){}`);
 const L = await import(pathToFileURL(path.join(dir, 'lib/clients.js')));

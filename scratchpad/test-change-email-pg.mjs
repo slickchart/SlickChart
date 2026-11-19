@@ -39,7 +39,7 @@ const lib = root + '/lib', api = root + '/api';
 fs.mkdirSync(lib, { recursive: true }); fs.mkdirSync(api, { recursive: true });
 fs.writeFileSync(root + '/package.json', '{"type":"module"}');
 fs.writeFileSync(lib + '/db.js', DBSTUB);
-for (const f of ['auth.js', 'totp.js', 'stripe-subs.js']) fs.copyFileSync(VERCEL + '/lib/' + f, lib + '/' + f);
+for (const f of ['auth.js', 'totp.js', 'stripe-subs.js', 'pricing.js']) fs.copyFileSync(VERCEL + '/lib/' + f, lib + '/' + f);
 fs.writeFileSync(lib + '/email.js', `export async function sendEmail(m){ globalThis.__MAIL.push(m); return {}; } export function trustedOrigin(){ return 'https://slickchart.app'; }`);
 globalThis.__MAIL = [];
 for (const f of ['change-email.js', 'login.js', 'billing-status.js']) fs.copyFileSync(VERCEL + '/api/' + f, api + '/' + f);

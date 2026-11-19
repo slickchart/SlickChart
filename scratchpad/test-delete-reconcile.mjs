@@ -10,7 +10,7 @@ const db = new PGlite(); globalThis.__db = db;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'recon-')); fs.mkdirSync(path.join(dir, 'lib'));
 fs.copyFileSync(path.join(SRC, 'lib/clients.js'), path.join(dir, 'lib/clients.js'));
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
-fs.writeFileSync(path.join(dir, 'lib/db.js'), `export function dbEnabled(){return true;}
+fs.writeFileSync(path.join(dir, 'lib/db.js'), `export function dbEnabled(){return true;} export async function schemaInPlace(){ return false; }
 export function sql(){ return async (strs, ...v) => { let t=''; strs.forEach((s,i)=>{t+=s+(i<v.length?'$'+(i+1):'');}); const r = await globalThis.__db.query(t, v); return r.rows; }; }`);
 for (const f of fs.readdirSync(path.join(SRC, 'lib'))) if (f.endsWith('.js') && !fs.existsSync(path.join(dir, 'lib', f))) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
 let fail = 0; const ok = (c, m, x) => { console.log((c ? 'PASS ' : 'FAIL ') + m + (c ? '' : '  :: ' + (x || ''))); if (!c) fail++; };

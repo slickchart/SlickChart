@@ -2,7 +2,10 @@
 // using the exact snapshot the provider app sends (formTmpls -> _assembleClientData shape).
 import { BASE, launch, clientRecord, mockApi } from './sweep2-client-lib.mjs';
 import fs from 'fs';
-const src=fs.readFileSync('/tmp/claude-0/-home-user-SlickChart/be0fe3b4-54df-5d41-bda7-89dbec145231/scratchpad/ec/forms.js','utf8');
+// The generated source of 2026-10-16 lived in a scratchpad that is gone: read the bundled copy from the app itself.
+const _html=fs.readFileSync('/home/user/SlickChart/slickchart-vercel/slickchart.html','utf8');
+const _i=_html.indexOf('const EC_FORMS={');
+const src=_html.slice(_i, _html.indexOf('\n};', _i)+3);
 const F=new Function(src+';return EC_FORMS')();
 const res=[];const check=(n,p,d)=>{res.push(p);console.log((p?'  ok   ':'  FAIL ')+n+(d?'  :: '+d:''));};
 for (const fid of Object.keys(F)) {

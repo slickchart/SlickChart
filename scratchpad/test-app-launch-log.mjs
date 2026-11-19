@@ -37,7 +37,9 @@ posts = await run(true, 401);
 ok(posts.some(x => x.body.events.some(e => e.e === 'signin-refused' && /incorrect/.test(e.d))), 'a refused sign-in is recorded with the reason the app showed');
 ok(posts.some(x => !x.auth), 'and it is sent with nobody signed in');
 posts = await run(false, 200);
-ok(!posts.length, 'a browser sends nothing (installed app only)');
+// Since 2026-11-18 a plain browser logs too, but only once a provider is signed in (_alBrowserOn).
+ok(!posts.some(x => !x.auth), 'a browser sends nothing before she is signed in');
+ok(posts.some(x => /tok-1/.test(x.auth) && x.body.platform !== 'ios'), 'a signed-in browser sends its log, not named as the iPhone app');
 posts = await run(false, 200, true);
 ok(posts.length && posts.every(x => x.body.platform === 'android-homescreen') && posts[0].body.events.some(e => e.e === 'launch'), 'an app added to the home screen sends its log too, named as such');
 await b.close(); srv.close(); console.log(fails ? fails + ' FAILED' : 'ALL PASS'); process.exit(fails ? 1 : 0);

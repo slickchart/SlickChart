@@ -13,6 +13,7 @@ export const calls = []; export let TZ = null; export function setTz(t) { TZ = t
 export async function sqContext() { return { token: 'T', locationId: 'L1' }; }
 export async function resolveLocationId() { return 'L1'; }
 export async function resolveLocationTz() { return TZ; }
+export async function resolveLocationCurrency() { return 'USD'; }
 export async function squareFetch(p, o) { calls.push({ p, body: o && o.body });
   if (p.startsWith('/v2/catalog')) return { objects: [] };
   if (p === '/v2/orders') return { order: { id: 'O1', total_money: { amount: 5000 } } };

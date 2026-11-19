@@ -29,6 +29,7 @@ export function sql() { return async (strs, ...v) => {
 }; }`);
 fs.writeFileSync(path.join(dir, 'lib/email.js'), 'export async function sendEmail(m){ (globalThis.__mail ||= []).push(m); }');
 fs.writeFileSync(path.join(dir, 'lib/announce-push.js'), 'export async function pushAnnouncementToProviders(t){ (globalThis.__push ||= []).push(t); return { sent: 3, devices: 3 }; }');
+fs.writeFileSync(path.join(dir, 'lib/announce-email.js'), 'export async function emailAnnouncementToProviders(){ return { sent: 0 }; } export async function announcementRecipients(){ return []; }');
 fs.writeFileSync(path.join(dir, 'lib/fcm.js'), 'export async function pushFoundersReport(){return{}} export function founderPushConfigured(){return false}');
 fs.writeFileSync(path.join(dir, 'lib/notify-log.js'), 'export async function recordNotify(){}');
 process.env.SESSION_SECRET = 'test-secret'; process.env.OWNER_EMAIL = 'owner@x.com';

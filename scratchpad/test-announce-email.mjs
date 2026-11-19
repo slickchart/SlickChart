@@ -13,7 +13,7 @@ fs.copyFileSync(SRC + '/api/announcements.js', dir + '/api/announcements.js');
 const nurtureImports = [...fs.readFileSync(SRC + '/lib/nurture.js', 'utf8').matchAll(/from '\.\/([^']+)'/g)].map(m => m[1]);
 fs.writeFileSync(dir + '/lib/db.js', `export function dbEnabled(){return true;} export async function ensureProvidersTable(){}
 export function sql(){ return async (strs, ...v) => { let t=''; strs.forEach((s,i)=>{t+=s+(i<v.length?'$'+(i+1):'');}); return (await globalThis.__db.query(t, v)).rows; }; }`);
-for (const f of nurtureImports) if (f !== 'db.js' && !fs.existsSync(dir + '/lib/' + f)) fs.copyFileSync(SRC + '/lib/' + f, dir + '/lib/' + f);
+for (const f of [...nurtureImports, 'founder-settings.js', 'stripe-safe.js']) if (f !== 'db.js' && !fs.existsSync(dir + '/lib/' + f)) fs.copyFileSync(SRC + '/lib/' + f, dir + '/lib/' + f);
 fs.writeFileSync(dir + '/lib/email.js', 'export async function sendEmail(m){ (globalThis.__mail ||= []).push(m); return {}; } export function trustedOrigin(){ return "https://slickchart.app"; }');
 fs.writeFileSync(dir + '/lib/auth.js', 'export function verifyToken(){ return null; } export async function sessionOk(){ return true; }');
 fs.writeFileSync(dir + '/lib/announce-push.js', 'export async function pushAnnouncementToProviders(){ return { sent: 3 }; }');

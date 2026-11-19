@@ -10,7 +10,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orph-'));
 for (const d of ['api/admin', 'lib']) fs.mkdirSync(path.join(dir, d), { recursive: true });
 fs.copyFileSync(path.join(SRC, 'api/admin/orphans.js'), path.join(dir, 'api/admin/orphans.js'));
 fs.copyFileSync(path.join(SRC, 'api/cron-orphan-checkout.js'), path.join(dir, 'api/cron-orphan-checkout.js'));
-for (const f of ['founder-settings.js', 'auth.js', 'app-launch-log.js', 'setup-email.js']) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
+for (const f of ['founder-settings.js', 'auth.js', 'app-launch-log.js', 'setup-email.js', 'signup-rescue.js', 'notify-log.js']) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
 fs.writeFileSync(path.join(dir, 'api/feedback.js'), 'export async function monitorKeyOk(req){return String(req.headers.authorization||"")==="Monitor good";}');
 fs.writeFileSync(path.join(dir, 'lib/db.js'), `
@@ -20,7 +20,7 @@ fs.writeFileSync(path.join(dir, 'lib/nurture.js'), `export async function ensure
   await q\`CREATE TABLE IF NOT EXISTS nurture_sends (email text NOT NULL, seq text NOT NULL, step int NOT NULL, sent_at timestamptz DEFAULT now(), UNIQUE(email, seq, step))\`;
   await q\`CREATE TABLE IF NOT EXISTS nurture_optout (email text PRIMARY KEY, ts timestamptz DEFAULT now())\`; }`);
 fs.writeFileSync(path.join(dir, 'lib/email.js'), 'export async function sendEmail(m){(globalThis.__mail=globalThis.__mail||[]).push(m);} export function trustedOrigin(){return "https://slickchart.app";}');
-fs.writeFileSync(path.join(dir, 'lib/fcm.js'), 'export async function pushFounders(m){(globalThis.__push=globalThis.__push||[]).push(m);}');
+fs.writeFileSync(path.join(dir, 'lib/fcm.js'), 'export async function pushFounders(m){(globalThis.__push=globalThis.__push||[]).push(m);} export async function pushFoundersReport(m){(globalThis.__push=globalThis.__push||[]).push(m);return{};} export function founderPushConfigured(){return false;}');
 fs.writeFileSync(path.join(dir, 'lib/cron-runs.js'), 'export function withCronRun(n,h){return h;}');
 process.env.SESSION_SECRET = 'test-secret'; process.env.FOUNDER_EMAILS = 'boss@sc.com'; process.env.CRON_SECRET = 'cron'; process.env.OWNER_EMAIL = 'boss@sc.com';
 const { signToken } = await import(pathToFileURL(path.join(dir, 'lib/auth.js')));
