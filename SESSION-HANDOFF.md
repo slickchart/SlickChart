@@ -9943,6 +9943,13 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zb: client app toasts, same fix
+
+- The client's `showToast` showed a green check for failures passed without `false` ("Saved here,
+  couldn't reach your provider", "can't use your camera"), and sat at z-index 999 under every sheet
+  (9999+). Failure words now get the warning look; z-index 100002. Test:
+  `scratchpad/test-client-toast-look.mjs` (old code fails both), Chromium + WebKit.
+
 ## 2026-11-19 — build 2026-11-19za: failure toasts look like failures; refund errors in plain words
 
 - `proToast` showed a GREEN CHECK for ~140 untoned failure messages ("Refund failed", "Could not reach
