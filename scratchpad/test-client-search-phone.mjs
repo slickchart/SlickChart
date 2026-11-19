@@ -58,6 +58,8 @@ let r = await search('Ava'); ok(r.length >= 8, 'name search still works (' + r.l
 r = await search('12'); ok(r.every(n => /12/.test(n)), 'two digits do not match phone numbers: ' + JSON.stringify(r));
 const ph = await page.evaluate(() => { const i = document.querySelector('input[placeholder^="Search name"]'); return i.scrollWidth <= i.clientWidth + 1; });
 ok(ph, 'placeholder fits the box');
+const mc = await page.evaluate(() => [_matchClients('555-010-7777'), _matchClients('dana.reed@gm'), _matchClients('Cora').length]);
+ok(mc[0].length === 1 && mc[0][0] === 'sq_CUST7' && mc[1][0] === 'sq_CUST7' && mc[2] >= 8, 'send-to pickers match phone and email too ' + JSON.stringify(mc));
 ok(!errs.length, 'no errors ' + errs.join('|'));
 await browser.close(); srv.close();
 console.log(fails ? 'FAILED ' + fails : 'ALL PASS'); process.exit(fails ? 1 : 0);
