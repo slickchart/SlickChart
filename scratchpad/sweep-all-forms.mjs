@@ -11,7 +11,7 @@ import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 import { BASE, clientRecord, mockApi } from './sweep2-client-lib.mjs';
 const out=[];const bug=(where,fid,msg)=>out.push(where+' | '+fid+' | '+msg);
 const b=await pw.chromium.launch({executablePath:'/opt/pw-browsers/chromium-1194/chrome-linux/chrome'});
-const ctx=await b.newContext({viewport:{width:390,height:844}});
+const ctx=await b.newContext({viewport:{width:+(process.env.W||390),height:+(process.env.H||844)},hasTouch:!!process.env.W});   // W=412 H=915: an Android phone
 const p=await ctx.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));
 await p.addInitScript(()=>{localStorage.setItem('sc_token','TESTTOKEN');localStorage.setItem('sc_onboarded','1');localStorage.setItem('sc_hide_sample','1');localStorage.setItem('sc_cloud_seeded','1');});
 const kv={sc_hide_sample:'1',sc_professions:JSON.stringify(['esty']),sc_bizinfo:JSON.stringify({name:'Glow Studio',email:'hi@glow.test',phone:'555-0100'}),sc_clients:JSON.stringify({c1:{id:'c1',name:'Dana Client',_token:'t_c1'}})};
