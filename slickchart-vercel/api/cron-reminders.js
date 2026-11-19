@@ -64,6 +64,9 @@ function authorized(req) {
   return false;
 }
 
+// "Facial · 10:00 AM", or just "Facial" / "Your appointment" with no stray space before the full stop.
+function _apptLine(a) { const t = String((a && a.treatment) || '').trim() || 'Your appointment'; const l = String((a && a.label) || '').trim(); return l ? t + ' \u00b7 ' + l : t; }
+
 async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
@@ -180,7 +183,7 @@ async function handler(req, res) {
             due.push({
               rkey: 'apptbefore:' + apptL.date + ':' + a.at,
               title: 'Appointment tomorrow',
-              body: (a.treatment ? a.treatment + ' ' : 'Your appointment ') + (a.label ? '· ' + a.label : '') + '. See you then!',
+              body: _apptLine(a) + '. See you then!',
               screen: 'previsit'   // tap opens the pre-visit check-in / intake
             });
             // (Pre-visit check-in auto-send now lives in the dedicated, provider-driven cron-checkins.js,
@@ -194,7 +197,7 @@ async function handler(req, res) {
             due.push({
               rkey: 'apptday:' + apptL.date + ':' + a.at,
               title: 'Appointment today',
-              body: (a.treatment ? a.treatment + ' ' : 'Your appointment ') + (a.label ? '· ' + a.label : '') + '. Looking forward to seeing you!',
+              body: _apptLine(a) + '. Looking forward to seeing you!',
               screen: 'previsit'   // tap opens the pre-visit check-in / intake
             });
           }

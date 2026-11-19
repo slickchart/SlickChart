@@ -9943,6 +9943,11 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zk: appointment reminder push wording
+
+- `api/cron-reminders.js` built "Your appointment . See you then!" (and "Facial . See you then!") when a
+  booking had no time label. `_apptLine` joins treatment and time with " · " only when both exist.
+
 ## 2026-11-19 — build 2026-11-19zj: automation messages fill every token
 
 - The automation editor offers {client_name}, {appointment_date}, {treatment_name} and {business_name}
