@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zm (client import: several phone / email columns)
+
+- A list with "Home Phone, Mobile Phone, Work Phone" took the FIRST phone column, usually an empty home
+  line, so clients came in with no number. Same for "Email, Email 2". `_mapWithProfile` now reads every
+  such column when no platform alias names one (mobile/cell first, plain "Email"/primary first) and
+  takes the first value that looks like a phone (7+ digits) or an email (@). Fax, opt-in, consent,
+  type, status and similar columns are never read and stay on the "not imported" list.
+- Test: `scratchpad/test-import-multi-phone.mjs` (Chromium + WebKit; 4 checks fail on the old code).
+  `test-csv-delimiters` and `sweep-dup-create-csv` still pass.
+
 ## 2026-11-19 — build 2026-11-19zl: "Square isn't connected" in words that fit every screen
 
 - `sqContext` (lib/square.js) answered every Square endpoint with "Connect your own Square account to
