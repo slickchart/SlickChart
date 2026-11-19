@@ -9943,6 +9943,20 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzf: a tap outside or Android's back asks before throwing away typed words
+
+- **BACK=1 / DIRTY=1 crawl modes** (`sweep-new-provider-wide.mjs`): after every tap that opens a sheet,
+  call `_scBack()` (Android's back) and require the sheet to close; with DIRTY=1 first type into its
+  textarea and require a question. Every sheet closes on back. With words typed, four closed without
+  asking: Send to clients (`ss-msg`), New reminder note, Share feedback, Referrals message.
+- **Fix:** Escape already asked (`_ovTyped`, only text she really typed counts). Now `_scBack()` and a
+  tap on a sheet's own dark backdrop (capture-phase click on a fixed overlay that has an onclick) ask
+  the same "Close without saving?" first. A close the app makes itself sets `ov.__scClosing` and
+  passes. Untyped sheets close at once as before; buttons inside a sheet are untouched.
+- Test: `scratchpad/test-sheet-typed-guard.mjs` (both engines). Escape tests still pass.
+- Client app: its only textarea sheet (`reviewClientForm`) is the sample provider's; real forms are
+  screens with drafts. Not changed.
+
 ## 2026-11-19 — build 2026-11-19zze: long names on a phone, client initials contrast
 
 - **LONG=1 crawl** (new mode on `sweep-new-provider-wide.mjs`: hyphenated client names, 80-character

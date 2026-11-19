@@ -652,7 +652,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zze';
+const APP_BUILD='2026-11-19zzf';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -3376,12 +3376,24 @@ try{document.addEventListener('keydown',function(e){
   e.preventDefault();
   // Prefer the overlay's own backdrop-close (dispatch a click with the overlay as target);
   // fall back to removing it if the click didn't dismiss it.
-  const shut=()=>{try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){}
+  const shut=()=>{ov.__scClosing=1;try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){}
     if(document.body.contains(ov)){try{ov.remove();}catch(_){}}};
   // On a computer Escape closed a sheet she was typing in and the words were gone: a feedback note, a
   // message, a new booking (2026-11-19 sweep). If anything was typed there, ask first.
   if(_ovTyped(ov)){confirmModal({title:'Close without saving?',body:'What you typed here will be lost.',action:'Close'},shut);return;}
   shut();
+},true);}catch(e){}
+// A tap on the dark area outside a sheet closes it, and on a phone that tap is easy to make by accident
+// mid-sentence: a message to clients, a reminder note, feedback (2026-11-19 phone sweep). The same
+// question Escape asks (above) now comes first when something was typed. Only an overlay that closes
+// on its own backdrop tap (it has an onclick) is held, and a close the app itself makes passes.
+try{document.addEventListener('click',function(e){
+  const ov=e.target;
+  if(!ov||!ov.onclick||ov.__scClosing||ov.id==='confirm-modal'||document.getElementById('confirm-modal'))return;
+  let fixed=false;try{fixed=getComputedStyle(ov).position==='fixed';}catch(_){}
+  if(!fixed||!_ovTyped(ov))return;
+  e.stopImmediatePropagation();e.preventDefault();
+  confirmModal({title:'Close without saving?',body:'What you typed here will be lost.',action:'Close'},function(){ov.__scClosing=1;try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){}});
 },true);}catch(e){}
 function _ovTyped(ov){try{return [...ov.querySelectorAll('textarea,input')].some(el=>{
   const t=(el.type||'text').toLowerCase();if(!/^(text|email|tel|number|url|textarea)$/.test(el.tagName==='TEXTAREA'?'textarea':t))return false;
@@ -10001,7 +10013,10 @@ function _scBack(){
       // Overlays that own something live (a recording, the camera) close through their own function.
       if(ov.id==='voice-overlay'){_voiceSafeClose();return true;}
       if(ov.id==='ghost-cam'){try{_ghostClose();}catch(_){}return true;}
-      try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){} if(document.body.contains(ov)){try{ov.remove();}catch(_){}} return true;
+      // Android's back on a sheet with typed text asks first, as Escape and a tap outside do.
+      const shut=()=>{ov.__scClosing=1;try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){} if(document.body.contains(ov)){try{ov.remove();}catch(_){}}};
+      if(typeof _ovTyped==='function'&&_ovTyped(ov)){confirmModal({title:'Close without saving?',body:'What you typed here will be lost.',action:'Close'},shut);return true;}
+      shut();return true;
     }
     if(_navStack.length){navBack();return true;}
     const cur=(_navCur&&_navCur.screen)||'';

@@ -46,6 +46,7 @@ if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const
   W.prototype = D.prototype; W.now = D.now; W.UTC = D.UTC; W.parse = s => { rec(s); return D.parse(s); }; window.Date = W; });
 await page.addInitScript(w => { window.__WORDS = w; }, process.env.WORDS || '');
 if (process.env.SAFE) await page.addInitScript(() => { window.__SAFE = [47, 34]; });
+if (process.env.DIRTY) await page.addInitScript(() => { window.__DIRTY = 1; });
 await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_login_email', 'new@spa.com'); localStorage.setItem('sc_hide_sample', '1'); } catch (e) {}
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
   window.__opened = []; window.open = function (u) { window.__opened.push(String(u)); return null; };
@@ -148,6 +149,14 @@ for (const [k, scr] of seen) {
       });
       return { nav: window.__navs || 0, opened: (window.__opened || []).length, sheets, overflow: document.documentElement.scrollWidth > innerWidth + 2,
         changed: ((document.getElementById('tt') || {}).innerHTML || '') !== s.tt || S.innerHTML !== s.sh || document.querySelectorAll('body *').length !== s.kids }; }).catch(() => ({ changed: true, gone: true, sheets: [] }));
+    // BACK=1: Android's back button (the app's _scBack) must close whatever sheet the tap opened, and throw nothing.
+    if (process.env.BACK) { const bk = await page.evaluate(() => { const fresh = () => Array.from(document.querySelectorAll('body *')).filter(x => { try { return !window.__fixedBefore.has(x) && document.body.contains(x) && getComputedStyle(x).position === 'fixed' && x.offsetWidth > 120 && x.offsetHeight > 80; } catch (e) { return false; } });
+        const before = fresh(); if (!before.length) return null; let ret, threw = '';
+        let typed = null; if (window.__DIRTY) { for (const sh of before) { const ta = Array.from(sh.querySelectorAll('textarea')).find(t => t.offsetWidth > 0 && !t.readOnly && !t.disabled); if (ta) { ta.focus(); ta.value = (ta.value ? ta.value + ' ' : '') + 'Typed by the sweep, several sentences of a note.'; ta.dataset.typed = '1'; ta.dispatchEvent(new Event('input', { bubbles: true })); typed = ta.id || ta.placeholder || 'textarea'; break; } } if (!typed) return null; } try { ret = _scBack(); } catch (e) { threw = String(e.message).slice(0, 120); }
+        return new Promise(res => setTimeout(() => { const left = before.filter(x => x.id !== 'pro-toast' && document.body.contains(x) && getComputedStyle(x).display !== 'none' && x.offsetWidth > 0); res({ ret, typed, asked: !!document.getElementById('confirm-modal'), threw, left: left.map(x => (x.id || x.className || x.tagName) + ':' + (x.innerText || '').trim().slice(0, 40).replace(/\s+/g, ' ')) }); }, 450)); }).catch(e => ({ threw: String(e.message).slice(0, 100), left: [] }));
+      if (bk && bk.typed && !bk.left.length && !bk.asked) a.sheets = (a.sheets || []).concat('BACK with typed text: closed without asking (' + bk.typed + ')');
+      try { await page.evaluate(() => { const c = document.getElementById('confirm-modal'); if (c) { const x = c.querySelector('#_cf-cancel,#_is-cancel'); if (x) x.click(); else c.remove(); } }); } catch (e) {}
+      if (bk && !bk.typed && (bk.threw || bk.left.length || bk.ret === false)) a.sheets = (a.sheets || []).concat('BACK button: ' + (bk.threw ? 'threw ' + bk.threw : bk.ret === false ? 'did nothing' : 'sheet stayed open ' + bk.left.join(' | '))); }
     taps.push({ screen: k, i, ...r, effect: !!(a.nav || a.opened || a.changed), sheets: a.sheets, overflow: a.overflow, errs: errs.slice(), cerrs: cerrs.slice() });
   }
 }
