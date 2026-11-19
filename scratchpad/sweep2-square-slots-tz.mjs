@@ -20,7 +20,7 @@ fs.writeFileSync(path.join(root, 'lib', 'db.js'), `
 export const KV = {};
 export function dbEnabled(){ return true; }
 export async function getKVValue(o,k){ return KV[o+'|'+k] ?? null; }
-export async function ensureProvidersTable(){} export async function ensureSquareCreateLog(){}
+export async function ensureProvidersTable(){} export async function ensureSquareCreateLog(){} export async function logSquareCreate(){}
 export function sql(){ return (s, ...v) => { const t = s.join('?');
   if (/FROM square_connections WHERE provider_id/.test(t)) return Promise.resolve([{ provider_id:'p1', access_token:'SQTOK', refresh_token:'R', expires_at: new Date(Date.now()+90*864e5).toISOString(), merchant_id:'M1', location_id:'L1' }]);
   if (/FROM google_accounts WHERE provider_id/.test(t)) return Promise.resolve(globalThis.__GOOGLE_ON ? [{ id:'p1:g', provider_id:'p1', label:'her', access_token:'GTOK', refresh_token:'GR', expires_at: Date.now()+3600e3, calendar_ids:'primary', event_map:'{}', private_titles:false, created_at:1 }] : []);

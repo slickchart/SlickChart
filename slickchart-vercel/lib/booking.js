@@ -323,7 +323,8 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
       const startAt = dr.start.toISOString();
       const endAt = new Date(dr.end.getTime() + 1000).toISOString();
       const qs = new URLSearchParams({ start_at_min: startAt, start_at_max: endAt, limit: '200' });
-      if (conn.locationId) qs.set('location_id', conn.locationId);
+      // Every location: she is one person, so a booking at her second location makes her busy here too.
+      // (Filtering to the saved location offered those times again, and a client could double-book her.)
       const d = await squareFetch('/v2/bookings?' + qs.toString(), {}, conn.token);
       (d && d.bookings || []).forEach(b => {
         const st = String(b.status || '').toUpperCase();
