@@ -9943,7 +9943,7 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
-## 2026-11-19 — build 2026-11-19zzt: two faint-text spots
+## 2026-11-19 — build 2026-11-19zzu: two faint-text spots
 
 New crawl checks in `sweep-new-provider-wide.mjs`: TINY=1 (words under 12px or under 4.5:1 contrast)
 and ICONONLY=1 (buttons with only an icon; all named and familiar). Found: analysis cards drew
