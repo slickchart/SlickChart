@@ -79,6 +79,7 @@ ok(find('setup-stuck', 'new')[0]?.level === 'fix', 'account 4h old, setup never 
 ok(find('setup-stuck', 'fre').length === 0, 'account 20 minutes old is given time');
 ok(find('signup:checkout-typo').length === 1 && find('signup:signup-refused').length === 0, 'sign-up problems inside the window only');
 ok(find('signup:moved')[0]?.level === 'watch', 'a payment Ashley moved herself is not urgent');
+ok(Math.abs(find('save-refused', 'ros')[0].last - (now - 38 * 60000)) < 1000, 'last = when the trouble happened, not the device\'s newest event');
 ok(r.problems[0].level === 'urgent', 'worst first');
 const keys = r.problems.map(p => p.key); ok(new Set(keys).size === keys.length, 'every key is unique');
 const r2 = await runWatch((strs, ...v) => { let t = ''; strs.forEach((s, i) => { t += s + (i < v.length ? '$' + (i + 1) : ''); }); return db.query(t, v).then(x => x.rows); }, since);
