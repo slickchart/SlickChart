@@ -1,6 +1,8 @@
 // POST /api/request-reset  { email }  — emails a password-reset link.
 // Always returns 200 so we never reveal whether an email is registered.
-import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
+import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
+import { resendSetupEmail } from '../lib/setup-email.js';
+import { recordSignupProblem } from '../lib/signup-rescue.js';
 import { makeToken, tooManyAttempts, recordAttempt } from '../lib/auth.js';
 import { sendEmail, trustedOrigin } from '../lib/email.js';
 
@@ -42,6 +44,18 @@ export default async function handler(req, res) {
             html: '<p>Someone requested a password reset for your SlickChart account.</p><p><a href="' + link + '">Reset your password</a> (link expires in 1 hour). If this wasn\u2019t you, you can ignore this email.</p>'
           });
         } catch (e) { /* ignore send errors */ }
+      } else {
+        // No account, but this address PAID: a reset can never arrive, because there is no password
+        // yet (2026-11-18, a new provider was refused at Sign in, asked for a reset, and got nothing).
+        // Send the create-your-account email instead, to this address only, and tell Ashley. The
+        // answer stays the same 200 either way.
+        try {
+          if (await hasActiveSubscription(email)) {
+            const r = await resendSetupEmail(q, email);
+            await recordSignupProblem(q, { email, kind: 'reset-no-account',
+              extra: r === 'sent' ? 'Instead of a reset, the create-your-account email was sent to her automatically.' : 'Setup email: ' + r + '.' });
+          }
+        } catch (e) { /* never change the answer */ }
       }
     }
     res.status(200).json({ ok: true });

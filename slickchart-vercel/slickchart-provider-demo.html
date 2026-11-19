@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-18f';
+const APP_BUILD='2026-11-18g';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -4678,8 +4678,8 @@ const Cloud={
     this.enabled=false;this.statusUnknown=true;this._statusKnown=true;
     return this.enabled;
   },
-  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
-  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;this._pulledOnce=true;/* a brand-new account has nothing to read */try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.status=r.status;err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
+  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.status=r.status;err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;this._pulledOnce=true;/* a brand-new account has nothing to read */try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
@@ -6862,6 +6862,19 @@ function _setLang(l){if(!I18N[l])return;_lang=l;try{localStorage.setItem('sc_lan
 }
 let _loginMode='login';let _resetToken='';let _resetSentTo='';let _pendingTotpEmail='';let _pendingTotpPw='';
 function _setLoginMode(m){_loginMode=m;renderLogin();}
+// A refused Sign in, for someone who may have paid but never made the account (2026-11-18: 3 of the 5
+// people who paid and never got an account had tried Sign in, up to 6 times). Shown on every
+// "incorrect" refusal (the server never says whether an account exists), with the email carried over.
+function _signinRefusedHint(email){
+  const er=document.getElementById('login-err');if(!er)return;
+  const d=document.createElement('div');d.id='login-create-hint';d.style.cssText='margin-top:8px;color:var(--p-mut);line-height:1.5;';
+  // The store apps never create accounts (payment-silent, renderLogin), so there it points to the
+  // email the server has just sent her (api/login.js resends the setup email when this address paid).
+  if(_isNativeApp()){d.innerHTML='Just subscribed? Your account is not made yet. Check your email for <b>Create your account</b> from SlickChart, finish it at <b style="color:var(--p-amber);">slickchart.app</b>, then sign in here.';er.appendChild(d);return;}
+  d.innerHTML='Just subscribed? You still need to make your account. <button type="button" style="background:none;border:none;color:var(--accent-strong);font-weight:600;cursor:pointer;font-family:inherit;font-size:16px;">Create your account</button>';
+  d.querySelector('button').onclick=function(){_signupEmail=email||'';_setLoginMode('signup');};
+  er.appendChild(d);
+}
 // Set when someone arrives from the "finish creating your account" rescue email, so the address they
 // paid with is already in the box. Deliberately NOT written to localStorage: it is a convenience for
 // this one render, not a claim that this browser belongs to a returning provider.
@@ -6991,7 +7004,7 @@ function renderLogin(err){
   } else if(mode==='reset'){
     inner=`<div style="font-size:16px;color:var(--p-mut);margin-bottom:22px;">${t('reset_sub')}</div>
       <label class="fl-lbl" for="login-email">${t('email')}</label>
-      <input id="login-email" type="email" autocomplete="email" value="${_prefillEmail()}" onkeydown="if(event.key==='Enter')doRequestReset()" style="${ic}">
+      <input id="login-email" type="email" autocomplete="email" value="${_fileEsc(_prefillEmail())}" onkeydown="if(event.key==='Enter')doRequestReset()" style="${ic}">
       <div id="login-err" role="alert" style="font-size:16px;color:var(--p-red);min-height:16px;margin-bottom:10px;">${err||''}</div>
       <button onclick="doRequestReset()" style="${btn}">${t('send_reset')}</button>
       <div style="text-align:center;margin-top:16px;font-size:16px;color:var(--p-mut);"><button onclick="_setLoginMode('login')" style="background:none;border:none;color:var(--accent-strong);font-weight:600;cursor:pointer;font-family:inherit;font-size:16px;">${t('back_login')}</button></div>`;
@@ -7037,7 +7050,7 @@ function renderLogin(err){
     inner=`<div style="font-size:16px;color:var(--p-mut);margin-bottom:22px;">${signup?t('sub_signup'):t('sub_login')}</div>
       ${signup?`<label class="fl-lbl" for="login-name">${t('name')}</label><input id="login-name" autocomplete="name" placeholder="${t('name_ph')}" style="${ic}">`:''}
       <label class="fl-lbl" for="login-email">${t('email')}</label>
-      <input id="login-email" type="email" autocomplete="email" value="${_prefillEmail()}" onkeydown="if(event.key==='Enter'){document.getElementById('login-pw').focus()}" style="${ic}">
+      <input id="login-email" type="email" autocomplete="email" value="${_fileEsc(_prefillEmail())}" onkeydown="if(event.key==='Enter'){document.getElementById('login-pw').focus()}" style="${ic}">
       <label class="fl-lbl" for="login-pw">${t('password')}</label>
       <div style="position:relative;margin-bottom:6px;"><input id="login-pw" type="password" autocomplete="${signup?'new-password':'current-password'}" onkeydown="if(event.key==='Enter'){${signup?'doSignup()':'doLogin()'}}" style="width:100%;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:12px 44px 12px 14px;font-size:16px;color:var(--p-ink);outline:none;box-sizing:border-box;"><button type="button" onclick="_togglePw('login-pw',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
       ${signup?`<div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">${t('min8')}</div>`:`<div style="text-align:right;margin-bottom:6px;"><button onclick="_setLoginMode('reset')" style="background:none;border:none;color:var(--p-mut);cursor:pointer;font-family:inherit;font-size:16px;">${t('forgot')}</button></div>`}
@@ -7121,6 +7134,7 @@ function doLogin(){
     try{_alAdd('signin-refused',String((e&&e.message)||'').slice(0,120));_alSend(true);}catch(_){}
     if(e&&e.requiresTotp){_pendingTotpEmail=email;_pendingTotpPw=pw;_setLoginMode('totp');return;}
     _loginErr(e,'Login failed');
+    try{if(e&&e.status===401&&!e.checkoutUrl)_signinRefusedHint(email);}catch(_){}
   });
 }
 function doLoginTotp(){
@@ -7141,11 +7155,14 @@ function doSignup(){
   const er=document.getElementById('login-err');if(er)er.textContent='';
   if(!name){if(er)er.textContent='Enter your name.';return;}
   if(!email||!pw){if(er)er.textContent='Enter your email and a password.';return;}
+  try{_alAdd('signup-tap');}catch(e){}
   Cloud.signup(email,pw,name,optIn).then(async()=>{
+    try{_signupEmail='';_alAdd('signup-ok');_alSend(true);}catch(e){}
     try{await Cloud.pushAllLocal();}catch(e){}
     try{if(name&&typeof bizInfo!=='undefined'){if(!bizInfo.ownerName||bizInfo.ownerName===_LEGACY_DEMO_OWNER)bizInfo.ownerName=name;if(typeof saveBizInfo==='function')saveBizInfo();if(typeof _syncProviderAvatar==='function')_syncProviderAvatar();}}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
   }).catch(e=>{
+    try{_alAdd('signup-refused',String((e&&e.status)||'')+' '+String((e&&e.message)||'').slice(0,100));_alSend(true);}catch(_){}
     const er=document.getElementById('login-err');
     if(er){
       if(e&&e.checkoutUrl&&!_isNativeApp()){const _u=(typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';const _m=String(e.message||'Sign up failed').replace(/</g,'&lt;').replace(/>/g,'&gt;');er.innerHTML=_m+(_u?(' <a href="'+_urlAttr(_u)+'" style="color:var(--accent-strong);text-decoration:underline;">Subscribe now &rarr;</a>'+_yearLinkHTML(e)):'');}
@@ -35521,7 +35538,16 @@ async function _founderOrphans(){
   const people=(j.people||[]).map(function(x){
     const sent=(x.emailedAt?('Setup email sent '+when(x.emailedAt)):esc(x.status||''))+(x.resentAt?'<br>Sent again '+esc(when(x.resentAt)):'');
     return '<div style="padding:10px 0;border-top:1px solid var(--p-line);"><div style="font-size:16px;color:var(--p-ink);word-break:break-all;">'+esc(x.email)+'</div>'
-      +'<div style="font-size:15px;color:var(--p-mut);line-height:1.5;">Paid '+esc(when(x.paidAt))+'<br>'+sent+(x.alertedAt?'<br>You were told '+esc(when(x.alertedAt)):'')+(x.failedSignIns?'<br>'+x.failedSignIns+' failed sign-in'+(x.failedSignIns===1?'':'s')+' with this email':'')+'</div></div>';
+      +'<div style="font-size:15px;color:var(--p-mut);line-height:1.5;">Paid '+esc(when(x.paidAt))+'<br>'+sent+(x.alertedAt?'<br>You were told '+esc(when(x.alertedAt)):'')+(x.failedSignIns?'<br>'+x.failedSignIns+' failed sign-in'+(x.failedSignIns===1?'':'s')+' with this email':'')+'</div>'
+      // Paid under an address she cannot reach (a typo like tahoo.com): one tap moves the payment to
+      // the right one and sends the setup email there (api/admin/orphans.js, 2026-11-18).
+      +'<div style="display:flex;gap:6px;margin-top:8px;"><input class="orph-move-to" data-from="'+esc(x.email)+'" type="email" placeholder="Her right email" value="'+esc(x.suggest||'')+'" style="flex:1;min-width:0;padding:9px 10px;border-radius:10px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-ink);font-size:16px;font-family:inherit;"><button class="btng orph-move" style="border-radius:10px;padding:9px 12px;font-size:15px;white-space:nowrap;">Move payment</button></div>'
+      +(x.suggest?'<div style="font-size:14px;color:var(--p-mut);margin-top:4px;">She probably meant this one.</div>':'')
+      +'<div class="orph-move-msg" style="font-size:15px;color:var(--p-mut);min-height:0;margin-top:4px;"></div></div>';
+  }).join('');
+  const probs=(j.signupProblems||[]).filter(function(x){return x.kind!=='signup-refused'||!x.solved;}).slice(0,15).map(function(x){
+    return '<div style="padding:8px 0;border-top:1px solid var(--p-line);"><div style="font-size:16px;color:var(--p-ink);word-break:break-all;">'+esc(x.email)+(x.solved?' <span style="color:var(--p-green);">has an account now</span>':'')+'</div>'
+      +'<div style="font-size:15px;color:var(--p-mut);line-height:1.5;">'+esc(x.what)+(x.times>1?' ('+x.times+' times)':'')+'<br>'+esc(when(x.last))+(x.match?'<br>Paid as '+esc(x.match):'')+'</div></div>';
   }).join('');
   const field=function(k){const d=lb[k]||{};return '<label style="display:block;margin-bottom:12px;"><div style="font-size:15px;color:var(--p-mut);margin-bottom:4px;">'+esc(d.label||k)+'</div>'
     +'<input id="orph-'+k+'" type="number" inputmode="numeric" min="'+(d.min||1)+'" max="'+(d.max||720)+'" value="'+esc(st[k])+'" style="width:110px;padding:10px;border-radius:10px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-ink);font-size:16px;font-family:inherit;"> <span style="font-size:15px;color:var(--p-mut);">hours</span></label>';};
@@ -35530,11 +35556,22 @@ async function _founderOrphans(){
     +field('orphan_email_hours')
     +'<label style="display:flex;align-items:center;gap:10px;margin-bottom:12px;cursor:pointer;"><input id="orph-orphan_alert_on" type="checkbox"'+(st.orphan_alert_on?' checked':'')+' style="width:22px;height:22px;accent-color:var(--accent);"><span style="font-size:15px;color:var(--p-ink);">'+esc((lb.orphan_alert_on&&lb.orphan_alert_on.label)||'Tell me when someone still has no account')+'</span></label>'
     +field('orphan_alert_hours')
+    +'<label style="display:flex;align-items:center;gap:10px;margin-bottom:12px;cursor:pointer;"><input id="orph-signup_problem_alert_on" type="checkbox"'+(st.signup_problem_alert_on!==0?' checked':'')+' style="width:22px;height:22px;accent-color:var(--accent);"><span style="font-size:15px;color:var(--p-ink);">'+esc((lb.signup_problem_alert_on&&lb.signup_problem_alert_on.label)||'Tell me right away when someone who paid is turned away at sign-up')+'</span></label>'
     +'<div id="orph-msg" style="font-size:15px;color:var(--p-mut);min-height:20px;margin-bottom:8px;"></div>'
     +'<div style="display:flex;gap:8px;margin-bottom:14px;"><button class="btng" id="orph-close" style="flex:1;border-radius:12px;padding:11px;">Close</button><button id="orph-save" style="flex:1;border:none;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--accent);color:var(--accent-ink);">Save</button></div>'
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:2px;">'+((j.people||[]).length?((j.people||[]).length+' waiting'):'Nobody waiting')+'</div>'
     +((j.people||[]).length?'<button id="orph-resend" style="width:100%;margin:6px 0 4px;border:none;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--accent);color:var(--accent-ink);">Send setup email again to all '+(j.people||[]).length+'</button><div id="orph-resend-msg" style="font-size:15px;color:var(--p-mut);min-height:20px;margin-bottom:6px;"></div>':'')
-    +(people||'<div style="font-size:15px;color:var(--p-mut);">Everyone who paid in the last 60 days has an account.</div>');
+    +(people||'<div style="font-size:15px;color:var(--p-mut);">Everyone who paid in the last 60 days has an account.</div>')
+    +(probs?'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin:16px 0 2px;">Turned away at sign-up, last 14 days</div>'+probs:'');
+  box.querySelectorAll('.orph-move').forEach(function(b){b.onclick=async function(){
+    const row=b.parentNode,inp=row.querySelector('.orph-move-to'),m=row.parentNode.querySelector('.orph-move-msg');
+    const to=String(inp.value||'').trim();if(!to){m.textContent='Type the email she can get to.';return;}
+    b.disabled=true;m.textContent='Moving\u2026';
+    try{const r=await fetch('/api/admin/orphans',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({move:{from:inp.getAttribute('data-from'),to:to}})});const k=await r.json().catch(()=>null);
+      if(!r.ok||!k||!k.ok){m.textContent=(k&&k.error)||'Couldn\u2019t move it. Try again.';b.disabled=false;return;}
+      m.style.color='var(--p-green)';m.innerHTML='Moved to '+esc(k.to)+'. '+(k.setup==='sent'?'The setup email went to her there.':'Setup email: '+esc(k.setup)+'.')+((k.notes||[]).length?'<br>'+k.notes.map(esc).join('<br>'):'');
+    }catch(e){m.textContent='Couldn\u2019t move it. Try again.';b.disabled=false;}
+  };});
   box.querySelector('#orph-close').onclick=()=>ov.remove();
   {const rb=box.querySelector('#orph-resend');if(rb)rb.onclick=async function(){
     const m=box.querySelector('#orph-resend-msg');rb.disabled=true;m.textContent='Sending\u2026';
@@ -35548,6 +35585,7 @@ async function _founderOrphans(){
     const msg=box.querySelector('#orph-msg');const body={};
     ['orphan_email_hours','orphan_alert_hours'].forEach(function(k){const el=box.querySelector('#orph-'+k);if(el&&el.value!=='')body[k]=Number(el.value);});
     {const cb=box.querySelector('#orph-orphan_alert_on');if(cb)body.orphan_alert_on=cb.checked?1:0;}
+    {const cb=box.querySelector('#orph-signup_problem_alert_on');if(cb)body.signup_problem_alert_on=cb.checked?1:0;}
     msg.textContent='Saving\u2026';
     try{const r=await fetch('/api/admin/orphans',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)});const k=await r.json().catch(()=>null);
       if(!r.ok||!k||!k.ok){msg.textContent=(k&&k.error)||'Couldn\u2019t save. Try again.';return;}

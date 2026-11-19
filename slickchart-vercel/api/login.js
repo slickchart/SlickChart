@@ -7,6 +7,8 @@ import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription, getSubscri
 import { verifyToken as verifyTotp } from '../lib/totp.js';
 import { liveSubForEmail, repairSubscriptionRow, pastDueForEmail } from '../lib/stripe-subs.js';
 import { renewPricing } from '../lib/pricing.js';
+import { resendSetupEmail } from '../lib/setup-email.js';
+import { recordSignupProblem } from '../lib/signup-rescue.js';
 
 // A valid-format (salt:hash) decoy so an UNKNOWN email still runs the same slow scrypt a known one does.
 // Without it, the intentionally-generic "Email or password is incorrect" reply leaked which emails are
@@ -122,6 +124,19 @@ export default async function handler(req, res) {
         return;
       }
       await recordAttempt(q, email, ip);
+      // Paid, but no account yet: she thinks paying made one (2026-11-18: 3 of 5 people who paid and
+      // never got in had tried Sign in, up to 6 times, and the phone apps showed them nothing else).
+      // Email HER the create-your-account link again (only ever to the address typed, at most once an
+      // hour, lib/setup-email.js) and tell Ashley. The answer to the caller does not change.
+      if (!rows.length) {
+        try {
+          if (await hasActiveSubscription(email)) {
+            const r = await resendSetupEmail(q, email);
+            await recordSignupProblem(q, { email, kind: 'signin-no-account',
+              extra: r === 'sent' ? 'The create-your-account email was sent to her again automatically.' : 'Setup email: ' + r + '.' });
+          }
+        } catch (e) { /* never change the answer */ }
+      }
       // Single generic message for both "no account" and "wrong password" so login can't be used to
       // enumerate which emails are registered.
       res.status(401).json({ error: 'Email or password is incorrect.' });

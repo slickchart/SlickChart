@@ -13,6 +13,10 @@ export const FOUNDER_SETTINGS = {
   // providers the reminder email to get set up". Off stops only the push + email to her; the
   // provider's own "finish your account" email always goes.
   orphan_alert_on: { def: 0, min: 0, max: 1, label: 'Tell me when someone still has no account' },
+  // 1 = on. 2026-11-18, two new providers in a row "couldn't make an account" and Ashley only heard
+  // from them: "make sure it doesnt happen again". Separate from the one above on purpose: this one
+  // fires only when someone who paid is actively being turned away (lib/signup-rescue.js).
+  signup_problem_alert_on: { def: 1, min: 0, max: 1, label: 'Tell me right away when someone who paid is turned away at sign-up' },
 };
 
 let _ready = false;

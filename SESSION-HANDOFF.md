@@ -9919,3 +9919,35 @@ health check reads it exactly as before.
   it; 6.5M-character list with quotes/emoji saves identically, never half a list, another account
   cannot complete it, a failed piece is retried, the newest edit wins, read back whole. WebKit is not
   installed in this container, so not run in Safari's engine yet.
+## 2026-11-18 — Two new providers in a row "couldn't make an account" (hotfix build 2026-11-18g, live early at her request)
+
+**What was observed (server records, read 2026-11-19 02:50 UTC, no one was asked):**
+- The provider who signed up the morning of 2026-11-18 paid at 8:45am Pacific as `cm_…@tahoo.com`
+  (Stripe checkout, an obvious typo of yahoo.com). The setup email went to that address at once and the
+  rescue email at 12:40pm; `tahoo.com` is a parked domain, so neither can have reached her. No account.
+- Paid-but-no-account list (`/api/admin/orphans`): 5 people in 30 days, and 3 of them had failed
+  SIGN-IN attempts under the paid address (2, 6 and 1). They thought paying made the account.
+- An iPhone app (launch log device `1r1l5r`, not signed in) tried Sign in at 6:24am and 5:23pm, was
+  refused both times, then asked for a password reset at 5:24pm. Not proven to be her.
+- The store apps are payment-silent on purpose (`renderLogin` forces signup -> login), so the only
+  way in there was Sign in, and a refusal said only "Email or password is incorrect".
+
+**What changed:**
+- `lib/signup-rescue.js` + table `signup_problems`: every Create-account refusal is recorded; four
+  stuck cases alert Ashley at once (email + every device via `pushFoundersReport`), once per address
+  per 12 h, 20 a day max, switch `signup_problem_alert_on` (default on) in Admin tools > Paid but no
+  account: `signup-unpaid` (402, with the near-match paid address), `signin-no-account`,
+  `reset-no-account`, `checkout-typo` (Stripe webhook, domain one or two keys off gmail/yahoo/...).
+- Sign in or reset with a paid, no-account address re-sends the create-your-account email to that
+  address (hourly cap). The caller's answer is unchanged (non-enumerable).
+- Refused Sign in now says "Just subscribed? You still need to make your account" (web: button to
+  Create account with the email carried over; store apps: points to the email, no link).
+- 402 wording: check the email for a typo, use the one typed at checkout, Ashley has been told.
+- Founder "Move payment" in Paid but no account (founder session only): moves the subscription row
+  and Stripe customer to the right address and sends the setup email there. Suggestion prefilled
+  from the typo fix or from the address she was refused with.
+- Fixed a reflected injection: `?signup=1&email=` went into the input's `value` unescaped.
+- Tests: `scratchpad/test-signup-rescue-pg.mjs` (real Postgres, 34 checks), `test-signup-rescue-ui.mjs`
+  (Chromium and WebKit).
+- Still a choice for Ashley, not made here: letting the store apps create an account for someone who
+  already paid on the web (kept payment-silent as before).

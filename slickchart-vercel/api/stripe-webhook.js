@@ -24,6 +24,7 @@ import { liveSubForEmail } from '../lib/stripe-subs.js';
 import { recordReferralFromCheckout, markReferralCanceled, rewardOnInvoice, getReferralSettings, recordSignupSource, sourceLine } from '../lib/referral.js';
 import { notifySharer } from '../lib/referral-notify.js';
 import { sendSetupEmailNow } from '../lib/setup-email.js';
+import { emailTypoSuggestion, recordSignupProblem } from '../lib/signup-rescue.js';
 import { recordTrialFromSubscription, recordTrialPayment, claimTrialConversion } from '../lib/trial-outcomes.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
@@ -294,6 +295,16 @@ export default async function handler(req, res) {
         // when she has no account yet, once ever. Never throws, so Stripe still gets its 200.
         const setup = await sendSetupEmailNow(q, email);
         console.log('[stripe-webhook] setup email for new checkout: ' + setup);
+        // A mistyped email at checkout ("tahoo.com", 2026-11-18) means that setup email can never
+        // arrive and the address she owns has no payment under it. Tell Ashley now, with the address
+        // she most likely meant, instead of when the provider writes in (lib/signup-rescue.js).
+        try {
+          const meant = emailTypoSuggestion(email);
+          if (meant && setup !== 'has-account' && setup !== 'founder') {
+            await recordSignupProblem(q, { email, kind: 'checkout-typo', match: meant,
+              extra: 'Stripe has her as ' + email + '. Nothing reaches that address, so she has no way to make her account until the payment is moved.' });
+          }
+        } catch (e) { /* never block the webhook */ }
         if (ref && ref.status === 'trial') {
           let rs = null; try { rs = await getReferralSettings(q); } catch (e) {}
           await notifySharer(ref.referrer_email, 'joined', { friend: ref.friend_first_name, rewardOnPayment: !rs || !!rs.ref_reward_on_payment });
