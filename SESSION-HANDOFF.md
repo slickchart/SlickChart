@@ -9943,6 +9943,17 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19m: Smart rebook tells the truth and takes her own date
+
+- Every real client got the same "2 weeks / 4 weeks" windows captioned "Based on treatment type
+  and recovery period" and "session history"; nothing was based on either (§1f: never decide a
+  number for her). Now: her own next-treatment pick from the session summary leads ("Hydrafacial in
+  about 6 weeks", counted from when she saved it) when it is still ahead; otherwise plain "In 2
+  weeks" / "In 4 weeks" with no made-up reason. An "Or pick a date" box sends an invite for any
+  date (`_rebookPicked`). An upcoming appointment shows as "Already booked: ...". Demo client unchanged.
+- Test: `scratchpad/test-smart-rebook.mjs` (Chromium + WebKit). Rebook service UI, next-treatment and
+  keyboard tests pass.
+
 ## 2026-11-19 — build 2026-11-19l: Add session photos sheet (sweep area 9, computer)
 
 - **Save tapped while photos were still being read** closed the sheet, said saved, and dropped

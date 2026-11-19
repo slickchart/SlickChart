@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19l';
+const APP_BUILD='2026-11-19m';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -17636,20 +17636,42 @@ function renderRebook(id){
   setNav('clients');const c=CL[id]||Object.values(CL)[0]||{};
   document.getElementById('tt').textContent='Smart Rebook';
   const _fmtWeeksOut=(wk)=>{const d=new Date();d.setDate(d.getDate()+wk*7);return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});};
-  const recs=id==='maya'?[{lbl:'Ideal · Hydrafacial follow-up',date:'Jul 17, 2026',weeks:3,reason:'Completing series on schedule. PIH protocol benefits from consistent 3-week cadence.',hi:true},{lbl:'Extended · if skin needs rest',date:'Jul 24, 2026',weeks:4,reason:'Alternative if barrier shows stress post-brightening booster.',hi:false}]:[{lbl:'Ideal · next treatment window',date:_fmtWeeksOut(2),weeks:2,reason:'Based on treatment type and recovery period.',hi:true},{lbl:'Alternative window',date:_fmtWeeksOut(4),weeks:4,reason:'Slightly longer rest if needed.',hi:false}];
+  const recs=id==='maya'?[{lbl:'Ideal · Hydrafacial follow-up',date:'Jul 17, 2026',weeks:3,reason:'Completing series on schedule. PIH protocol benefits from consistent 3-week cadence.',hi:true},{lbl:'Extended · if skin needs rest',date:'Jul 24, 2026',weeks:4,reason:'Alternative if barrier shows stress post-brightening booster.',hi:false}]:(function(){
+    // Her own pick from the session summary ("Facial in about 6 weeks") leads; otherwise two plain
+    // windows with no made-up reason. A date of her own choosing is always one tap below.
+    const nr=c.nextRec,w=parseInt(nr&&nr.weeks,10);
+    const _due=(nr&&nr.svc&&w>=1)?new Date((Number(nr.at)||Date.now())+w*7*864e5):null;
+    if(_due&&_due.getTime()>Date.now()){const d=_due;const left=Math.max(0,Math.round((d.getTime()-Date.now())/(7*864e5)));
+      return [{lbl:'Your recommendation',date:d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),weeks:left,reason:_fileEsc(nr.svc)+' in about '+w+' week'+(w===1?'':'s')+', from the session summary.',hi:true}];}
+    return [{lbl:'In 2 weeks',date:_fmtWeeksOut(2),weeks:2,reason:'',hi:true},{lbl:'In 4 weeks',date:_fmtWeeksOut(4),weeks:4,reason:'',hi:false}];
+  })();
+  const _booked=(id!=='maya'&&typeof _nextApptForClient==='function')?(function(){try{return _nextApptForClient(id);}catch(e){return null;}})():null;
+  const _todayIso=(typeof _isoToday==='function')?_isoToday():'';
   S.innerHTML=`
   
-  <div style="padding:12px 16px 0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:2px;">Smart rebook</div><div style="font-size:16px;color:var(--p-mut);margin-bottom:10px;">Suggested rebooking windows based on treatment type and session history. Sending an invite messages the client their booking link.</div></div>
+  <div style="padding:12px 16px 0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:2px;">Smart rebook</div><div style="font-size:16px;color:var(--p-mut);margin-bottom:10px;">${id!=='maya'&&recs[0]&&recs[0].lbl==='Your recommendation'?'From the next treatment you picked in the session summary.':'Pick a window or a date of your own.'} Sending an invite messages the client their booking link.</div></div>
   ${recs.map(r=>`<div style="margin:0 16px 10px;background:${r.hi?'var(--p-purple-bg)':'var(--p-surf3)'};border:1px solid ${r.hi?'#3d2d7a':'var(--p-chip)'};border-radius:12px;overflow:hidden;">
     <div style="padding:12px 14px;border-bottom:1px solid ${r.hi?'var(--p-purple-line)':'var(--p-chip)'};">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><span class="bdg ${r.hi?'bp':'bm'}" style="font-size:16px;">${r.lbl}</span>${r.hi?'<span class="bdg bg" style="font-size:16px;">Recommended</span>':''}</div>
-      <div style="font-size:18px;font-weight:500;color:var(--p-ink);">${r.date}</div><div style="font-size:16px;color:var(--p-mut);">${r.weeks} weeks from today</div>
+      <div style="font-size:18px;font-weight:500;color:var(--p-ink);">${r.date}</div><div style="font-size:16px;color:var(--p-mut);">${r.weeks>=1?r.weeks+' week'+(r.weeks===1?'':'s')+' from today':'Due now'}</div>
     </div>
-    <div style="padding:10px 14px;font-size:16px;color:var(--p-mut);line-height:1.6;">${r.reason}</div>
+    ${r.reason?`<div style="padding:10px 14px;font-size:16px;color:var(--p-mut);line-height:1.6;">${r.reason}</div>`:''}
     <div style="border-top:1px solid ${r.hi?'var(--p-purple-line)':'var(--p-chip)'};padding:10px 14px;">
       <button onclick="_sendRebookInvite('${id}','${_jsAttr(r.date)}')" class="${r.hi?'btnp':'btng'}" style="border-radius:8px;padding:9px;width:100%;"><i class="ti ti-send"></i> Send rebook invite for ${r.date}</button>
     </div>
-  </div>`).join('')}`;
+  </div>`).join('')}
+  <div style="margin:0 16px 16px;background:var(--p-surf3);border:1px solid var(--p-chip);border-radius:12px;padding:12px 14px;">
+    <label for="rb-date" style="display:block;font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:8px;">Or pick a date</label>
+    <input id="rb-date" type="date" min="${_todayIso}" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:10px 12px;font-size:16px;color:var(--p-ink);font-family:inherit;margin-bottom:8px;">
+    <button onclick="_rebookPicked('${id}')" class="btng" style="border-radius:8px;padding:9px;width:100%;"><i class="ti ti-send"></i> Send rebook invite for this date</button>
+  </div>`;
+  if(_booked&&_booked.dateLabel){S.insertAdjacentHTML('afterbegin',`<div style="margin:12px 16px 0;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-green);"><i class="ti ti-calendar-check" aria-hidden="true"></i> Already booked: ${_fileEsc(_booked.dateLabel)}</div>`);}
+}
+function _rebookPicked(id){
+  const v=(document.getElementById('rb-date')||{}).value||'';
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){if(typeof proToast==='function')proToast('Pick a date first');return;}
+  const d=new Date(v+'T12:00:00');
+  _sendRebookInvite(id,d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}));
 }
 
 // ── PHOTO CONSULTS ──
