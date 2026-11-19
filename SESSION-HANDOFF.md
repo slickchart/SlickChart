@@ -9943,6 +9943,17 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19p: no made-up names, prices or products on Save
+
+- Shop product (`saveAffiliate`) and inventory item (`saveInventoryItem`): emptying an existing
+  name renamed it "New Product" / "New item" on every client's shop. An emptied name now keeps the
+  old one; a NEW one with no name says "Give it a name first".
+- Shop bundle (`saveBundle`): a blank price saved as "$99" and no products as "Product 1, Product
+  2", shown to clients (§1f). Now: a name is required, at least one product is required, and a blank
+  price stays blank (the card reads "bundle", not "$99 bundle").
+- Partner (`savePartner`): no name saved "New Partner"; now asks for one.
+- Test: `scratchpad/test-affiliate-name-keep.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19o: an automation that could never send now says why on Save
 
 - `saveAuto`: no name made Save do nothing; a blank message saved an automation the server skips

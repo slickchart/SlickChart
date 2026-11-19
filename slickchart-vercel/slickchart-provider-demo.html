@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19o';
+const APP_BUILD='2026-11-19p';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -26160,8 +26160,9 @@ function saveInventoryItem(i){
   const g=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
   const vendorSel=document.getElementById('ii-vendor');
   const vendorIdx=(vendorSel&&vendorSel.value!=='')?parseInt(vendorSel.value,10):null;
+  if(!g('ii-name')&&!(i!=null&&inv[i])){if(typeof proToast==='function')proToast('Give the item a name first');try{document.getElementById('ii-name').focus();}catch(e){}return;}
   const item={
-    name:g('ii-name')||'New item',
+    name:g('ii-name')||(inv[i]&&inv[i].name)||'Item',
     brand:g('ii-brand'),
     cat:g('ii-cat')||'Retail',
     icon:g('ii-icon')||'📦',
@@ -28923,7 +28924,7 @@ function renderShopBundle(i){
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;">
     <div style="width:64px;height:64px;border-radius:16px;background:${_fileEsc(b.col)};display:flex;align-items:center;justify-content:center;font-size:26px;">${b.icon}</div>
     <div style="font-size:18px;font-weight:500;color:var(--p-ink);">${b.name}</div>
-    <div style="font-size:16px;color:var(--p-mut);">${b.price} bundle</div>
+    <div style="font-size:16px;color:var(--p-mut);">${b.price?_fileEsc(b.price)+' ':''}bundle</div>
   </div>
   <div style="padding:0 16px;">
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin:14px 0 8px;">Products in this bundle</div>
@@ -40200,7 +40201,8 @@ function renderAddPartner(){
   </div>`;
 }
 function savePartner(){
-  const name=document.getElementById('ap-name')?.value||'New Partner';
+  const name=String(document.getElementById('ap-name')?.value||'').trim();
+  if(!name){if(typeof proToast==='function')proToast('Give the partner a name first');try{document.getElementById('ap-name').focus();}catch(e){}return;}
   const type=document.getElementById('ap-type')?.value||'Partner';
   const desc=document.getElementById('ap-desc')?.value||'';
   const disc=document.getElementById('ap-disc')?.value||'';
@@ -40677,7 +40679,11 @@ function deleteAffiliate(ei){
   });
 }
 function saveAffiliate(ei){
-  const name=document.getElementById('af-name')?.value||'New Product';
+  // An emptied name used to save as "New Product" (renaming a real product on every client's shop).
+  const _nm=String(document.getElementById('af-name')?.value||'').trim();
+  const _old=(typeof ei==='number'&&affiliateLinks[ei])?affiliateLinks[ei]:null;
+  if(!_nm&&!_old){if(typeof proToast==='function')proToast('Give the product a name first');try{document.getElementById('af-name').focus();}catch(e){}return;}
+  const name=_nm||_old.name||'Product';
   const brand=document.getElementById('af-brand')?.value||'';
   const icon=document.getElementById('af-icon')?.value||'🛍️';
   const url=(document.getElementById('af-url')?.value||'').trim().replace(/^https?:\/\//i,'');
@@ -40757,11 +40763,15 @@ function renderAddBundle(){
   </div>`;
 }
 function saveBundle(){
-  const name=document.getElementById('bn-name')?.value||'New Bundle';
-  const price=document.getElementById('bn-price')?.value||'$99';
+  // A blank price used to save as "$99" and no products as "Product 1, Product 2": numbers and items
+  // she never chose, shown to clients. Ask for what is missing instead (§1f).
+  const name=String(document.getElementById('bn-name')?.value||'').trim();
+  if(!name){if(typeof proToast==='function')proToast('Give the bundle a name first');try{document.getElementById('bn-name').focus();}catch(e){}return;}
+  const price=String(document.getElementById('bn-price')?.value||'').trim();
   const icon=document.getElementById('bn-icon')?.value||'✨';
   const products=affiliateLinks.filter((_,i)=>document.getElementById('bn-prod-'+i)?.checked).map(a=>a.name);
-  shopBundles.push({id:'b'+Date.now(),name,icon,col:'var(--accent-tint)',ic:'var(--accent-strong)',products:products.length?products:['Product 1','Product 2'],price,sent:0,clicks:0});
+  if(!products.length){if(typeof proToast==='function')proToast('Pick at least one product for the bundle');return;}
+  shopBundles.push({id:'b'+Date.now(),name,icon,col:'var(--accent-tint)',ic:'var(--accent-strong)',products,price,sent:0,clicks:0});
   try{persistShopBundles();}catch(e){}  // was missing, new shop bundles were lost on reload
   activeShopTab='bundles';
   nav('shop');
