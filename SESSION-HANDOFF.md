@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzk: a removed client link says what to do
+
+Client app opened on a removed link: only "This link is not valid or has been removed." (the server's
+words replaced the app's own next step) in 13px, plus a notification bell with a "1" for nobody. Now
+it adds "Please ask your provider to send you a new link." at 15px, and both the dead-link and the
+can't-connect screens hide the bell (visibility, restored by setNav). `scratchpad/test-client-dead-link.mjs`.
+Also today, all clean: weak-signal crawls (SLOW=1 with/without TOKENS=1, sweep-client-slow.mjs, the
+booking pages), DUPSAVE=1 (double-tapped saves leave one copy), NET=401 (session ends mid-use).
+
 ## 2026-11-19 — build 2026-11-19zzj: one tap = one send on a weak signal
 
 SLOW=1 mode in `scratchpad/sweep-new-provider-wide.mjs`: after boot every non-GET /api call takes 3 s,
