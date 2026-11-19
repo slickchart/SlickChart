@@ -384,7 +384,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zl';
+const APP_BUILD='2026-11-19zm';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -30621,13 +30621,25 @@ function _mapWithProfile(rows,prof){
     if(!taken.has(0)&&headers[0]&&!/^(id|ref|reference|code|e-?mail|phone|mobile|cell|date|created|birth|dob)\b/i.test(headers[0]))
       pick.name={idx:0,label:headers[0]};
   }
+  // Several phone (or email) columns: "Home Phone, Mobile Phone, Work Phone". The first one was taken, and
+  // in most lists that is the empty home line, so clients came in with no number (2026-11-19). Without a
+  // platform alias, every such column is read, mobile/cell first, and the first one filled in wins.
+  const _multi=(k,re,pref,skip)=>{const p=pick[k];if(!p||p.join||(al[k]&&al[k].length&&headers.some(h=>al[k].some(a=>a.toLowerCase()===h.toLowerCase()))))return;
+    const idxs=headers.map((h,i)=>[h.toLowerCase(),i]).filter(([h])=>re.test(h)&&!(skip&&skip.test(h)));
+    if(idxs.length<2)return;
+    idxs.sort((a,b)=>(pref.test(b[0])?1:0)-(pref.test(a[0])?1:0));
+    pick[k]={any:idxs.map(x=>x[1]),ok:k==='email'?(v=>/@/.test(v)):(v=>v.replace(/\D/g,'').length>=7),label:idxs.map(x=>headers[x[1]]).join(' / ')};};
+  const _notData=/opt|consent|verif|type|status|market|subscri|allow|reminder|notif|valid|confirm|bounc/;
+  _multi('phone',/phone|mobile|cell/,/mobile|cell/,new RegExp('fax|'+_notData.source));
+  _multi('email',/e-?mail/,/^e-?mail$|primary/,_notData);
   const usedIdx=new Set();
   Object.keys(pick).forEach(k=>{const p=pick[k];if(!p)return;
     info.used[k]=p.label;
-    (p.join||[p.idx]).forEach(i=>usedIdx.add(i));});
+    (p.join||p.any||[p.idx]).forEach(i=>usedIdx.add(i));});
   info.unmapped=headers.filter((h,i)=>h&&!usedIdx.has(i));
   const val=(row,p)=>{if(!p)return '';
     if(p.join)return p.join.map(i=>String(row[i]||'').trim()).filter(Boolean).join(' ').trim();
+    if(p.any){let first='';for(const i of p.any){const v=String(row[i]||'').trim();if(v&&p.ok(v))return v;if(v&&!first)first=v;}return first;}
     return String(row[p.idx]||'').trim();};
   let noName=0;
   for(let r=1;r<rows.length;r++){
