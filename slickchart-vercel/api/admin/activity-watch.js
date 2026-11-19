@@ -146,7 +146,7 @@ export async function runWatch(q, since) {
     if (t && t[0] && t[0].t) {
       const rows = await q`SELECT lower(email) AS email, kind, max(detail) AS detail, count(*)::int AS n, max(at) AS last FROM signup_problems
         WHERE at > ${sinceTs} GROUP BY lower(email), kind ORDER BY last DESC LIMIT 30`;
-      for (const r of rows) problems.push({ level: 'urgent', kind: 'signup:' + r.kind, account: maskEmail(r.email) || '(no email)', where: 'create account / sign in',
+      for (const r of rows) problems.push({ level: r.kind === 'moved' ? 'watch' : 'urgent', kind: 'signup:' + r.kind, account: maskEmail(r.email) || '(no email)', where: 'create account / sign in',
         detail: String(r.kind) + ': ' + String(r.detail || '').slice(0, 140) + (r.n > 1 ? ' (' + r.n + 'x)' : ''), count: r.n,
         last: new Date(r.last).getTime(), key: 'signup:' + r.kind + '|' + maskEmail(r.email) });
     }
