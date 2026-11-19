@@ -9943,6 +9943,17 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19za: failure toasts look like failures; refund errors in plain words
+
+- `proToast` showed a GREEN CHECK for ~140 untoned failure messages ("Refund failed", "Could not reach
+  Square"...). `_toastLooksLikeErr` now gives those the amber warning style unless the caller passes
+  'ok' or the text carries a check mark. The toast also sat at z-index 600, BEHIND the payment detail
+  sheet (9999), so a refund failure was invisible; it is now 10050.
+- `_payRefund`: disconnected/revoked Square says "Square isn't connected right now, so nothing was
+  refunded" and opens Square (was "Connect your own Square account to sync your customers" / "Square
+  API error (401)"); Square refusals and offline say nothing was refunded.
+- Test: `scratchpad/test-refund-errors.mjs` (old code fails 5 of 6), Chromium + WebKit.
+
 ## 2026-11-19 — build 2026-11-19z: payment detail offers only what fits its status
 
 On a refunded or canceled payment, "Mark paid" was shown and did nothing (`_payMarkPaid` refuses

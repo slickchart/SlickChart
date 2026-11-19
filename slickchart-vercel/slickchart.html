@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19z';
+const APP_BUILD='2026-11-19za';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -28998,12 +28998,16 @@ function proToast(msg,ms,tone){
   // An error toast must LOOK like an error, the old code always used the green success
   // styling + check icon, so a background sync failure ("Could not save…") showed up as a
   // green checkmark, which read as success. Errors now get amber styling and a warning icon.
-  const isErr=(tone==='error');
+  // A failure that a caller did not mark 'error' still has to look like one (2026-11-19): ~140 calls
+  // such as "Refund failed" or "Could not reach Square" passed no tone and showed a GREEN CHECK, which
+  // reads as "it worked". The words decide unless the caller said 'ok'; a message with a check mark is
+  // a success that mentions something else.
+  const isErr=(tone==='error')||(tone!=='ok'&&_toastLooksLikeErr(msg));
   // A message telling her something did not work goes into the launch log (words only, cut short), so a
   // provider who leaves saying "it didn't work" has left a trace of WHAT did not work (2026-11-18).
   try{const _m=String(msg==null?'':msg);if(isErr||/couldn|could not|can.t |cannot|failed|error|try again|not able|unable|didn.t work|went wrong|not connected/i.test(_m))_alAdd('toast-err',(_alLastNav?_alLastNav+': ':'')+_alScrub(_m));}catch(e){}
   const bg=isErr?'#241a08':'var(--p-surf2)', bd=isErr?'var(--p-amber)':'var(--p-green)', fg=isErr?'var(--p-amber)':'var(--p-green)', ic=isErr?'ti-alert-triangle':'ti-check';
-  t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:'+bg+';border:1px solid '+bd+';color:'+fg+';border-radius:12px;padding:10px 16px;font-size:16px;z-index:600;white-space:normal;display:flex;align-items:center;gap:7px;box-shadow:0 6px 24px rgba(0,0,0,.4);';
+  t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:'+bg+';border:1px solid '+bd+';color:'+fg+';border-radius:12px;padding:10px 16px;font-size:16px;z-index:10050;white-space:normal;display:flex;align-items:center;gap:7px;box-shadow:0 6px 24px rgba(0,0,0,.4);';
   t.innerHTML=`<i class="ti ${ic}" aria-hidden="true" style="font-size:16px;flex-shrink:0;"></i><span></span>`;
   const _span=t.querySelector('span');if(_span)_span.textContent=String(msg==null?'':msg);
   // Tap anywhere on a toast to get rid of it. Every toast is dismissable, so a message can
@@ -29019,6 +29023,11 @@ function proToast(msg,ms,tone){
   _proToastTimer=setTimeout(()=>{t.remove();_proToastTimer=null;},dur);
 }
 let _proToastTimer=null;
+function _toastLooksLikeErr(msg){
+  const m=String(msg==null?'':msg);
+  if(!m||/\u2713|\u2714|no errors?\b|\b0 failed/i.test(m))return false;
+  return /couldn|could not|can[\u2019']t |cannot|failed|went wrong|unable to|not able to|didn[\u2019']t work|isn[\u2019']t connected|not connected|try again|\berror\b/i.test(m);
+}
 // Alias some screens/handlers call instead of proToast
 function showToast(msg){return proToast(msg);}
 // Optional in-app notification (guarded callers); routes to the provider notify feed
@@ -32907,12 +32916,22 @@ async function _payRefund(idv){
       const _idem=('sc-rf-'+String(idv).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,28)+'-'+Math.round((+amt||0)*100)).slice(0,45);
       const r=await fetch('/api/square/refund',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({paymentId:p.squarePaymentId,amount:amt,reason:'SlickChart refund',idempotencyKey:_idem})});
       const j=await r.json().catch(()=>({}));
-      if(!r.ok||!j.ok){if(typeof proToast==='function')proToast((j&&j.code==='scope')?'Reconnect Square to issue refunds.':((j&&j.error)||'Refund failed'),0);return;}
+      if(!r.ok||!j.ok){
+        // In her words, not Square's: a disconnected account said "Connect your own Square account to sync
+        // your customers", and a revoked one "Square API error (401)".
+        const gone=(j&&(j.code==='nosquare'||j.code==='auth'))||r.status===401;
+        const msg=gone?'Square isn\u2019t connected right now, so nothing was refunded. Reconnect Square, then try the refund again.'
+          :(j&&j.code==='scope')?'Reconnect Square to issue refunds. Nothing was refunded.'
+          :(r.status>=500&&!(j&&j.error))?'Square didn\u2019t answer, so nothing was refunded. Try again in a minute.'
+          :('The refund didn\u2019t go through'+((j&&j.error)?(': '+String(j.error).replace(/\.$/,'')):'')+'. Nothing was refunded.');
+        if(typeof proToast==='function')proToast(msg,0,'error');
+        if(gone){try{const _m=document.getElementById('pay-detail');if(_m)_m.remove();nav('square-sync');}catch(e){}}
+        return;}
       p.status='refunded';try{_savePayments();}catch(e){}
       const _m=document.getElementById('pay-detail');if(_m)_m.remove();
       if(typeof proToast==='function')proToast('Refunded $'+amt.toFixed(2)+(j.status?(' · '+String(j.status).toLowerCase()):''));
       if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
-    }catch(e){if(typeof proToast==='function')proToast('Could not reach Square, try again');}
+    }catch(e){if(typeof proToast==='function')proToast((typeof navigator!=='undefined'&&navigator.onLine===false)?'You\u2019re offline, so nothing was refunded. Try again when you have signal.':'Couldn\u2019t reach Square, so nothing was refunded. Try again in a minute.',0,'error');}
   };
   confirmModal({title:'Refund $'+amt.toFixed(2)+'?',body:'This refunds the payment in Square and marks it refunded here. This can’t be undone.',action:'Refund'},go);
 }
