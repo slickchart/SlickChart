@@ -9943,6 +9943,12 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19e: courses and "send to their app" to an uninvited client open the invite too
+
+Same dead end as 19d in `confirmSendCourse` and `_confirmSentToApp`: both now open
+`inviteClientToApp` instead of the "invite them first" toast. No "invite them first" toast is left in
+the app. Test: `scratchpad/test-send-form-uninvited.mjs` (form + course, Chromium and WebKit).
+
 ## 2026-11-19 — build 2026-11-19d: sending a form to a client with no link opens the invite
 
 `confirmSendForm` for a client with no `_token` put the form on their record and then only toasted

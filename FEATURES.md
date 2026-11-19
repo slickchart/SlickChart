@@ -205,6 +205,9 @@ saved anywhere", not "does this always call that".
 | `_confirmDisableTotp` | `/api/totp-verify` | direct |
 | `_confirmEmailChange` | `/api/change-email` | direct |
 | `_confirmSentToApp` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_confirmSentToApp` | `/api/logout` | via `_doLogout` |
+| `_confirmSentToApp` | `/api/native-push` | via `_doLogout` |
+| `_confirmSentToApp` | `/api/provider-push` | via `_doLogout` |
 | `_confirmTotpEnroll` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_confirmTotpEnroll` | `/api/totp-verify` | direct |
 | `_consultLinkCardHTML` | `/api/consult-requests` | via `_loadConsultRequests` |
@@ -870,6 +873,9 @@ saved anywhere", not "does this always call that".
 | `cloudLogout` | `/api/provider-push` | via `_doLogout` |
 | `cloudLogout` | `/api/store` | via `_flushBeforeSignOut` |
 | `confirmSendCourse` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `confirmSendCourse` | `/api/logout` | via `_doLogout` |
+| `confirmSendCourse` | `/api/native-push` | via `_doLogout` |
+| `confirmSendCourse` | `/api/provider-push` | via `_doLogout` |
 | `confirmSendForm` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendForm` | `/api/logout` | via `_doLogout` |
 | `confirmSendForm` | `/api/native-push` | via `_doLogout` |

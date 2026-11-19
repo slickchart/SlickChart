@@ -57,7 +57,15 @@ const r = await page.evaluate(async () => {
   const txt = document.body.innerText;
   return { fid, tok: CL[cid]._token || '', pending: (CL[cid].pendingForms || []).map(f => f.id || f), sheet: /Text it/.test(txt), said: window.__said.slice(-4) };
 });
+const r2 = await page.evaluate(async () => {
+  document.querySelectorAll('#invite-sheet,#share-sheet,.share-sheet').forEach(e => e.remove());
+  const cid = 'sq_CUST2'; delete CL[cid]._token;
+  if (!courses.length) courses.push({ id: 'co_t', title: 'Test course', lessons: [] });
+  await confirmSendCourse(courses[0].id, cid); await new Promise(r => setTimeout(r, 2500));
+  return { sheet: /Text it/.test(document.body.innerText), said: window.__said.slice(-4) };
+});
 const fail = [];
+if (!r2.sheet || r2.said.some(s => /invite them first/.test(s))) fail.push('course to uninvited client did not open the invite: ' + JSON.stringify(r2));
 if (!r.sheet) fail.push('invite sheet did not open: ' + JSON.stringify(r));
 if (!r.pending.length) fail.push('form not waiting on the client: ' + JSON.stringify(r));
 if (r.said.some(s => /invite them first/.test(s))) fail.push('old dead-end toast still shown');
