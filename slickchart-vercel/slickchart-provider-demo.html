@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zb';
+const APP_BUILD='2026-11-19zc';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -11120,7 +11120,7 @@ function renderClients(){
   // Consults card are noise on a near-empty account, so they appear once there are a few clients to work with.
   const _clCount=Object.keys(CL).length;
   S.innerHTML=`
-  ${(_clCount>=3)?_searchBar('Search clients by name or treatment…','.client-card','clients-noresults'):''}
+  ${(_clCount>=3)?_searchBar('Search name, phone, email or treatment…','.client-card','clients-noresults'):''}
   <div id="clients-tools">
   ${(aiEnabled&&_clCount>=3)?`<div style="margin:0 16px 10px;">
     <button onclick="_askBookToggle()" id="askbook-btn" style="width:100%;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:9px;cursor:pointer;font-family:inherit;text-align:left;">
@@ -11198,7 +11198,7 @@ function renderClients(){
       // An animal's row is searchable by its owner's name as well, so "Sarah" finds Sarah's horses.
       const _oid=(typeof _ownerIdOf==='function')?_ownerIdOf(id):'';
       const _extra=_oid?(' '+String((CL[_oid]&&CL[_oid].name)||'')):'';
-      return `<div class="card client-card" data-owner="${_oid?'1':''}"${_oid?' style="margin-left:26px;"':''} data-search="${((c.name||'')+' '+(c.treatment||'')+_extra).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row"><div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:16px;font-weight:500;color:var(--p-ink);">${_oid?'\u{1F40E} ':''}${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:12px;font-weight:700;color:var(--p-mut2);border:1px solid var(--p-green-line);background:var(--p-surf3);border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-top:2px;font-size:16px;color:${_rs.color};overflow:hidden;"><i class="ti ${_rs.icon}" style="font-size:16px;flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_rs.text)}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${_rb}<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div></div></div>`;}).join('');})()}
+      return `<div class="card client-card" data-owner="${_oid?'1':''}"${_oid?' style="margin-left:26px;"':''} data-search="${((c.name||'')+' '+(c.treatment||'')+_extra+' '+String(c.email||'')+' '+String(c.phone||'').replace(/\D/g,'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row"><div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:16px;font-weight:500;color:var(--p-ink);">${_oid?'\u{1F40E} ':''}${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:12px;font-weight:700;color:var(--p-mut2);border:1px solid var(--p-green-line);background:var(--p-surf3);border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-top:2px;font-size:16px;color:${_rs.color};overflow:hidden;"><i class="ti ${_rs.icon}" style="font-size:16px;flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_rs.text)}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${_rb}<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div></div></div>`;}).join('');})()}
   ${_noRes('clients-noresults','No clients match your search.')}`;
 }
 // ── "Ask your book": natural-language search over the client roster (who's due, allergies, etc.). ──
@@ -21391,7 +21391,11 @@ function searchList(q,cardSel,noResId){
   let total=0;
   // Toggle a hide CLASS rather than clearing style.display — clearing inline display on a flex
   // <label>/<button> row would revert it to inline and stack its children.
-  document.querySelectorAll(cardSel).forEach(c=>{const m=!q||(c.getAttribute('data-search')||'').includes(q);c.classList.toggle('srch-hide',!m);if(m)total++;});
+  // A phone number typed with dashes or brackets ("(555) 010-1234") normalises to "555 010 1234"; the
+  // client row holds the digits run together, so a number is matched on its digits alone (2026-11-19:
+  // a provider with a text from a number could not find who it was).
+  const qd=/^[0-9 ]+$/.test(q)?q.replace(/ /g,''):'';
+  document.querySelectorAll(cardSel).forEach(c=>{const ds=(c.getAttribute('data-search')||'');const m=!q||ds.includes(q)||(qd.length>=3&&ds.includes(qd));c.classList.toggle('srch-hide',!m);if(m)total++;});
   if(noResId){const nr=document.getElementById(noResId);if(nr)nr.style.display=(q&&total===0)?'':'none';}
   // While searching clients, fold away the buttons and cards above the list so the matches sit right
   // under the search box instead of below the fold (Ashley, 2026-10-14).

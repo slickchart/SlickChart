@@ -9943,6 +9943,13 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zc: find a client by phone or email
+
+- The Clients search only matched name and treatment, so a provider with a text from a number could
+  not find who sent it. The row's `data-search` now holds the email and the phone digits, and
+  `searchList` matches a typed number on its digits ("(555) 010-7777", "555-010-7777"). Placeholder
+  "Search name, phone, email or treatment…". Test: `scratchpad/test-client-search-phone.mjs`.
+
 ## 2026-11-19 — build 2026-11-19zb: client app toasts, same fix
 
 - The client's `showToast` showed a green check for failures passed without `false` ("Saved here,
