@@ -371,6 +371,7 @@ saved anywhere", not "does this always call that".
 | `_inviteToTemplate` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_inviteToTemplate` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_inviteToTemplate` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_leaveTyped` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_libSafeToPersist` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_libSafeToPersist` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_libSafeToPersist` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
