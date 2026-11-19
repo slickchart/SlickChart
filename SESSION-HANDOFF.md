@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19v: client booking screen uses the provider's name, not "she"
+
+The client's booking screen said "She'll confirm the exact time" and "hasn't listed her services",
+which is wrong for a barber or tattoo artist who is a man. It now uses the provider's first name
+("Marco will confirm the exact time"), with "your provider" / "they" when there is no name.
+Test: `scratchpad/test-client-rebook-wording.mjs`. A grep of the public booking page, booking emails
+and client endpoints found "she/her" only in code comments.
+
 ## 2026-11-19 — build 2026-11-19u: photo viewer buttons fit a phone
 
 With Remove added, "Save photo" wrapped onto two lines at 390px. The row now wraps whole buttons
