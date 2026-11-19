@@ -8,6 +8,14 @@ import { pushFoundersReport, founderPushConfigured } from '../lib/fcm.js';
 import { recordNotify } from '../lib/notify-log.js';
 import crypto from 'crypto';
 import { signupPricing } from '../lib/pricing.js';
+import { recordSignupProblem, nearPaidEmails } from '../lib/signup-rescue.js';
+
+// Every refusal leaves a row (lib/signup-rescue.js), so a provider stuck at Create account is seen by
+// the server, not only when she writes to Ashley (2026-11-18). Best-effort, never changes the answer.
+async function noteRefusal(email, status, error) {
+  if (!email || !dbEnabled()) return;
+  try { await recordSignupProblem(sql(), { email, kind: 'signup-refused', extra: status + ': ' + String(error || '').slice(0, 160) }); } catch (e) {}
+}
 
 // Escape user-supplied text before dropping it into the founder-notification HTML email.
 function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -23,7 +31,7 @@ export default async function handler(req, res) {
   const password = String(b.password || '');
   const name = String(b.name || '').trim();
   if (!email || !/.+@.+\..+/.test(email)) { res.status(400).json({ error: 'Please enter a valid email address.' }); return; }
-  if (password.length < 8) { res.status(400).json({ error: 'Password must be at least 8 characters.' }); return; }
+  if (password.length < 8) { await noteRefusal(email, 400, 'short password'); res.status(400).json({ error: 'Password must be at least 8 characters.' }); return; }
 
   // Payment gate — off by default so this can be deployed and tested safely
   // before it's actually enforced. Set REQUIRE_PAYMENT=true in Vercel once the
@@ -33,8 +41,17 @@ export default async function handler(req, res) {
       const paid = await hasActiveSubscription(email);
       if (!paid) {
         const price = signupPricing();
+        // She may well have paid, under a slightly different email (a typo at checkout is the usual
+        // one: 2026-11-18, "tahoo.com"). Tell Ashley straight away with the address she likely paid
+        // under; the answer below is the same either way, so this never reveals anyone's payment.
+        try {
+          const q0 = sql();
+          const near = await nearPaidEmails(q0, email);
+          await recordSignupProblem(q0, { email, kind: 'signup-unpaid', match: near[0] || null,
+            extra: near.length ? 'She typed this email at Create account; the payment is under the one above.' : '' });
+        } catch (e) { /* never block the answer */ }
         res.status(402).json({
-          error: 'This email hasn\u2019t completed checkout yet. Please subscribe first, then come back and create your account with the same email.',
+          error: 'We can\u2019t find a subscription under this email yet. If you already paid, check the email for a typo and use the exact one you typed at checkout. We\u2019ve let Ashley know too, so she can help. Not subscribed yet? Subscribe first, then come back here.',
           checkoutUrl: price.checkoutUrl,
           checkoutUrlYear: price.checkoutUrlYear,
           priceMonth: price.month,
@@ -42,14 +59,14 @@ export default async function handler(req, res) {
         });
         return;
       }
-    } catch (e) { res.status(500).json({ error: 'Could not verify payment status. Please try again.' }); return; }
+    } catch (e) { await noteRefusal(email, 500, 'payment check failed'); res.status(500).json({ error: 'Could not verify payment status. Please try again.' }); return; }
   }
 
   try {
     await ensureProvidersTable();
     const q = sql();
     const existing = await q`SELECT id FROM providers WHERE email = ${email}`;
-    if (existing.length) { res.status(409).json({ error: 'An account with that email already exists — try logging in.' }); return; }
+    if (existing.length) { await noteRefusal(email, 409, 'already has an account'); res.status(409).json({ error: 'An account with that email already exists — try logging in.' }); return; }
 
     const id = 'p_' + crypto.randomBytes(8).toString('hex');
     await q`INSERT INTO providers (id, email, name, pass_hash, verified, marketing_opt_in) VALUES (${id}, ${email}, ${name}, ${hashPassword(password)}, false, ${!!b.optIn})`;
@@ -165,9 +182,11 @@ export default async function handler(req, res) {
     // SELECT above and trips the UNIQUE(email) constraint. Surface the friendly 409, not a 500.
     const code = e && (e.code || (e.cause && e.cause.code));
     if (code === '23505' || /duplicate key|unique constraint/i.test(String(e && e.message || ''))) {
+      await noteRefusal(email, 409, 'already has an account (race)');
       res.status(409).json({ error: 'An account with that email already exists — try logging in.' });
       return;
     }
+    await noteRefusal(email, 500, (e && e.message) || 'error');
     console.error('[signup] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' });
   }
 }

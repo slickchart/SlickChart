@@ -714,6 +714,7 @@ saved anywhere", not "does this always call that".
 | `_shareGuideLink` | `/api/provider-push` | via `_doLogout` |
 | `_showPhotoViewer` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_signedOutBannerHTML` | `/api/client-code` | via `_clientSendCode` |
+| `_signinRefusedHint` | `/api/client-code` | via `_clientSendCode` |
 | `_sqApptsErrHTML` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_sqApptsErrHTML` | `/api/square/connect` | via `_sqConnect` |
 | `_sqApptsRetry` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -915,6 +916,7 @@ saved anywhere", not "does this always call that".
 | `doResetPw` | `/api/app-launch` | via `_alSend` |
 | `doResetPw` | `/api/billing-status` | via `_checkBillingBanner` |
 | `doResetPw` | `/api/client-code` | via `_clientSendCode` |
+| `doSignup` | `/api/app-launch` | via `_alSend` |
 | `editSavedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `editSentRoutine` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `editSummaryNote` | `/api/ai` | via `_aiComplete` |
@@ -1343,7 +1345,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcement_emails`, `announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `booking_alert_log`, `booking_blind`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_sources`, `square_booking_seen`, `square_connections`, `square_create_log`, `square_webhook_seen`, `subscription_pauses`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
+`announcement_emails`, `announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `booking_alert_log`, `booking_blind`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_problems`, `signup_sources`, `square_booking_seen`, `square_connections`, `square_create_log`, `square_webhook_seen`, `subscription_pauses`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.

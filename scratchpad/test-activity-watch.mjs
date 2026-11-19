@@ -33,7 +33,7 @@ CREATE TABLE signup_problems (email text, kind text, match text, detail text, al
 const P = [['p_ok', 'happyprovider@gmail.com', 300], ['p_big', 'rosalind@yahoo.com', 300], ['p_new', 'newbie@gmail.com', 4], ['p_fresh', 'fresh@gmail.com', 0.3]];
 for (const [id, e, h] of P) await db.query('INSERT INTO providers VALUES ($1,$2,$3)', [id, e, new Date(now - h * H).toISOString()]);
 await db.exec(`INSERT INTO sessions VALUES ('s1','p_ok'),('s2','p_big'),('s3','p_new'); INSERT INTO kv VALUES ('p_ok','sc_onboarded','true'),('p_big','sc_onboarded','true');`);
-await db.query(`INSERT INTO signup_problems (email, kind, detail, at) VALUES ('tahoo@tahoo.com','checkout-typo','paid as ...@tahoo.com', $1), ('old@x.com','signup-refused','409 old', $2)`, [new Date(now - 0.5 * H).toISOString(), new Date(now - 30 * H).toISOString()]);
+await db.query(`INSERT INTO signup_problems (email, kind, detail, at) VALUES ('tahoo@tahoo.com','checkout-typo','paid as ...@tahoo.com', $1), ('old@x.com','signup-refused','409 old', $2), ('moved@x.com','moved','Ashley moved the payment', $1)`, [new Date(now - 0.5 * H).toISOString(), new Date(now - 30 * H).toISOString()]);
 for (let i = 0; i < 4; i++) await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['stuck@gmail.com', new Date(now - (1 + i * 0.1) * H).toISOString()]);
 await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['longago@gmail.com', new Date(now - 20 * H).toISOString()]);
 await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['longago@gmail.com', new Date(now - 21 * H).toISOString()]);
@@ -78,12 +78,13 @@ ok(find('failed-sign-in', 'lon').length === 0, 'failed sign-ins before since are
 ok(find('setup-stuck', 'new')[0]?.level === 'fix', 'account 4h old, setup never finished');
 ok(find('setup-stuck', 'fre').length === 0, 'account 20 minutes old is given time');
 ok(find('signup:checkout-typo').length === 1 && find('signup:signup-refused').length === 0, 'sign-up problems inside the window only');
+ok(find('signup:moved')[0]?.level === 'watch', 'a payment Ashley moved herself is not urgent');
 ok(r.problems[0].level === 'urgent', 'worst first');
 const keys = r.problems.map(p => p.key); ok(new Set(keys).size === keys.length, 'every key is unique');
 const r2 = await runWatch((strs, ...v) => { let t = ''; strs.forEach((s, i) => { t += s + (i < v.length ? '$' + (i + 1) : ''); }); return db.query(t, v).then(x => x.rows); }, since);
 ok(JSON.stringify(r2.problems.map(p => p.key)) === JSON.stringify(keys), 'keys are stable across runs');
 ok(shape('Could not save 3 photos') === shape('Could not save 12 photos'), 'message shape ignores numbers');
 const txt = JSON.stringify(r);
-ok(!/rosalind@|happyprovider@|newbie@|stuck@gmail|tahoo@tahoo/.test(txt), 'no full email anywhere in the reply');
+ok(!/rosalind@|happyprovider@|newbie@|stuck@gmail|tahoo@tahoo|moved@x/.test(txt), 'no full email anywhere in the reply');
 console.log(fail ? fail + ' FAILED' : 'ALL PASS');
 process.exit(fail ? 1 : 0);
