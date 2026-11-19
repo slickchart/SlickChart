@@ -14,8 +14,8 @@ const ROOT = new URL('../slickchart-vercel/', import.meta.url).pathname;
 const SIZE = process.env.SIZE || 'mac';
 const OUT = process.argv[2] || `/tmp/claude-0/sweep-wide-${SIZE}.json`;
 const SHOTS = process.env.SHOTS || '';
-const VP = { mac: { width: 1440, height: 900 }, ipad: { width: 1032, height: 1376 }, imac: { width: 2048, height: 1152 }, phone: { width: 390, height: 844 }, se: { width: 375, height: 667 }, small: { width: 320, height: 568 }, land: { width: 844, height: 390 } }[SIZE];
-const TOUCH = ['ipad', 'phone', 'se', 'small', 'land'].includes(SIZE);
+const VP = { mac: { width: 1440, height: 900 }, ipad: { width: 1032, height: 1376 }, imac: { width: 2048, height: 1152 }, phone: { width: 390, height: 844 }, android: { width: 412, height: 915 }, se: { width: 375, height: 667 }, small: { width: 320, height: 568 }, land: { width: 844, height: 390 } }[SIZE];
+const TOUCH = ['ipad', 'phone', 'se', 'small', 'land', 'android'].includes(SIZE);
 const PORT = 8000 + Math.floor(Math.random() * 900);
 const srv = http.createServer((q, s) => { const p = decodeURIComponent(q.url.split('?')[0]); const f = p === '/slickchart' ? path.join(ROOT, 'slickchart.html') : path.join(ROOT, p);
   if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.statusCode = 404; return s.end(); }
@@ -47,6 +47,7 @@ if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const
 await page.addInitScript(w => { window.__WORDS = w; }, process.env.WORDS || '');
 if (process.env.SAFE) await page.addInitScript(() => { window.__SAFE = [47, 34]; });
 if (process.env.DIRTY) await page.addInitScript(() => { window.__DIRTY = 1; });
+if (process.env.TEXTZOOM) await page.addInitScript(z => { window.__TZOOM = z; }, +process.env.TEXTZOOM);
 await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_login_email', 'new@spa.com'); localStorage.setItem('sc_hide_sample', '1'); } catch (e) {}
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
   window.__opened = []; window.open = function (u) { window.__opened.push(String(u)); return null; };
@@ -80,6 +81,14 @@ const seen = new Map(); const queue = [['home', null], ['calendar', null], ['pay
 const perScreen = {};
 const geom = () => { // sideways overflow and content wider than the window
   const vw = innerWidth; const out = [];
+  // TEXTZOOM=1.3: Android's "font size" setting scales every text in the app's web view (textZoom).
+  if (window.__TZOOM) { const els = Array.from(document.querySelectorAll('body *')).filter(e => !e.__tz && e.childNodes.length); const fs = els.map(e => parseFloat(getComputedStyle(e).fontSize)); els.forEach((e, i) => { e.__tz = 1; if (fs[i]) e.style.setProperty('font-size', (fs[i] * window.__TZOOM).toFixed(1) + 'px', 'important'); });
+    Array.from(document.querySelectorAll('#S button, .nav .ni, #S [role=button]')).forEach(e => { const st = getComputedStyle(e); if (e.offsetWidth > 0 && e.scrollWidth > e.clientWidth + 3 && /(hidden|clip)/.test(st.overflow + st.overflowX)) out.push('text cut off: "' + (e.innerText || '').trim().slice(0, 30) + '" ' + e.scrollWidth + '>' + e.clientWidth); });
+  }
+  // A button past the edge of the window that no sideways-scrolling row can bring back.
+  Array.from(document.querySelectorAll('#S button')).forEach(e => { const r = e.getBoundingClientRect(); if (!(e.offsetWidth > 0 && (r.right > vw + 2 || r.left < -2))) return;
+    let q = e.parentElement; while (q && q.id !== 'S' && q !== document.body) { if (/(auto|scroll)/.test(getComputedStyle(q).overflowX)) return; q = q.parentElement; }
+    out.push('button past the edge: "' + ((e.innerText || '').trim() || e.getAttribute('aria-label') || '').slice(0, 30) + '"'); });
   if (document.documentElement.scrollWidth > vw + 2) out.push('page scrolls sideways ' + document.documentElement.scrollWidth + '>' + vw);
   const S = document.getElementById('S'); if (S && S.scrollWidth > S.clientWidth + 4) out.push('screen content wider than its box ' + S.scrollWidth + '>' + S.clientWidth);
   const tx = (S || document.body).innerText; const bw = tx.match(/.{0,30}(Invalid Date|\bNaN\b|\bundefined\b|\[object Object\]|\bnull\b).{0,30}/g); if (bw) out.push('bad text: ' + bw.slice(0, 3).join(' | '));

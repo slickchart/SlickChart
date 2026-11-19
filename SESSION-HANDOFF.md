@@ -9943,6 +9943,22 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzi: a Remove button past the edge on phones; Android large text
+
+- **TEXTZOOM=1.3/1.6 + SIZE=android crawl** (Android's system font size scales text in the app's web
+  view; nothing sets textZoom): every screen still fits; only the sideways-scrolling pill rows reach
+  past the edge, by design. The new "button past the edge" check (skips buttons inside a row that
+  scrolls sideways, but NOT `#S` itself, whose overflow-y makes overflow-x auto) found check-in
+  settings' heat options at normal size: the label box (flex:1) would not shrink, so Remove sat past
+  the right edge at 390/412 (and Toggle too at 320).
+- **Fix:** CSS in both apps, `input/textarea/select[style*="flex:1"]{min-width:0}`. Re-crawl at 320,
+  390 and 412: 0 buttons past the edge.
+- Also: three dialogs capped at `calc(100vh - Npx)` now also cap at `100dvh`, so in Safari (toolbar
+  showing) a long one keeps its buttons on screen.
+- Test: `scratchpad/test-row-input-shrink.mjs` (both engines; fails on the previous build).
+- Also checked: double-tap Save (payment, reminder, new client) makes one; the app left open past
+  midnight moves Home to the new day.
+
 ## 2026-11-19 — build 2026-11-19zzh: the client's half-written message survives leaving the chat
 
 - Client app, same LEAVE check by hand on every screen with a box: the message box (`#cinput`) lost a
