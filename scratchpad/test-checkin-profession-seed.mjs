@@ -39,7 +39,7 @@ const BARBER = 'Any changes to how you want your fade or cut?';
 }
 // 2) A barber's account that already holds the untouched esthetician seed (made by the old build).
 {
-  const def = await (async () => { const { ctx, page } = await fresh(); await page.goto(URL0, { waitUntil: 'load' }); await page.waitForTimeout(1500); const d = await page.evaluate(() => _CI_DEFAULT_JSON || null).catch(() => null); await ctx.close(); return d; })();
+  const def = await (async () => { const { ctx, page } = await fresh(); await page.goto(URL0, { waitUntil: 'load' }); await page.waitForTimeout(1500); const d = await page.evaluate(() => _ciDefaultJson || null).catch(() => null); await ctx.close(); return d; })();
   ok(!!def, 'default snapshot exists');
   const { ctx, page, pushed } = await fresh({ sc_professions: JSON.stringify(['barber']), sc_onboarded: '1', sc_checkin_cfg: def });
   await page.addInitScript(() => { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'T'); localStorage.setItem('sc_login_email', 'b@x.com'); });

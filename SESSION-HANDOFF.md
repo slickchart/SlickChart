@@ -9951,7 +9951,7 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
   picks the profession, and saved the starting copy to `sc_checkin_cfg`; `loadCheckinCfg()` then
   assigned that saved copy over the profession preset on every later launch.
 - Now the seeded copy carries `_auto` = a fingerprint of its content (`_ciSig`). While the saved copy is
-  automatic (`_ciIsAutoSeed`: mark matches content, or an unmarked copy equal to `_CI_DEFAULT_JSON` key
+  automatic (`_ciIsAutoSeed`: mark matches content, or an unmarked copy equal to `_ciDefaultJson` key
   for key, i.e. the old seed), `applyProfessionConfig()` rebuilds it from the starting copy + her
   profession preset and saves/pushes/posts that (`_ciRefreshAutoSeed`). `saveCheckinCfg()` drops the mark,
   so her own copy is never replaced. A fingerprint, not `true`, because an older build keeps the mark in
