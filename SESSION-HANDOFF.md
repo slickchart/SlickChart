@@ -9943,6 +9943,12 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzq: client Shop "Buy · 0 ways to get it"
+
+Busy client sweep (phone): a recommended product with no store, brand or Amazon link showed
+"Buy · 0 ways to get it", while its sheet offers Buy in office and her Shop. The label now counts the
+same rows `openBuyOptions` draws. Test: `scratchpad/test-client-buy-count.mjs` (both engines).
+
 ## 2026-11-19 — build 2026-11-19zzp: a long chat opens at the newest message (both apps)
 
 Phone sweep with a busy client (150 messages): in BOTH the client app and the provider's conversation
