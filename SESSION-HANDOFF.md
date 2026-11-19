@@ -9943,6 +9943,11 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zf: client app words for every profession
+
+- Routine streak said "your skin thanks you" and the booking note box suggested "skin concerns" to a
+  barber's or nail artist's clients. Both now neutral. Wording only; `test-client-rebook-wording` passes.
+
 ## 2026-11-19 — build 2026-11-19ze: Suggested forms lists her forms, not all 179
 
 - Client profile → "Suggested for this visit" → edit listed EVERY bundled form (179: all eight
