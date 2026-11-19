@@ -49,7 +49,7 @@ if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const
 await page.addInitScript(w => { window.__WORDS = w; }, process.env.WORDS || '');
 if (process.env.SAFE) await page.addInitScript(() => { window.__SAFE = [47, 34]; });
 if (process.env.DIRTY) await page.addInitScript(() => { window.__DIRTY = 1; });
-if (process.env.SLOW) await page.addInitScript(() => { window.__SLOW = 1; });
+if (process.env.SLOW || process.env.DUPSAVE) await page.addInitScript(() => { window.__SLOW = 1; });
 if (process.env.TEXTZOOM) await page.addInitScript(z => { window.__TZOOM = z; }, +process.env.TEXTZOOM);
 await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_login_email', 'new@spa.com'); localStorage.setItem('sc_hide_sample', '1'); } catch (e) {}
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
@@ -61,9 +61,9 @@ await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onb
 const NET = process.env.NET || ''; let netFail = false;
 // SLOW=1: after boot every non-GET /api call takes 3 s to answer (a weak phone signal), each is recorded,
 // and every tap is a quick double tap. A Save/Send/Charge that sends twice is reported.
-const SLOW = !!process.env.SLOW; const posts = []; let slowOn = false;
+const SLOW = !!(process.env.SLOW || process.env.DUPSAVE); const posts = []; let slowOn = false;
 await page.route('**/api/**', async r => { const u = r.request().url(); const m = r.request().method();
-  if (SLOW && slowOn && m !== 'GET') { posts.push({ t: Date.now(), p: u.replace(/^https?:\/\/[^/]+/, '').split('?')[0], b: (r.request().postData() || '').slice(0, 160) }); await new Promise(z => setTimeout(z, 3000)); }
+  if (process.env.SLOW && slowOn && m !== 'GET') { posts.push({ t: Date.now(), p: u.replace(/^https?:\/\/[^/]+/, '').split('?')[0], b: (r.request().postData() || '').slice(0, 160) }); await new Promise(z => setTimeout(z, 3000)); }
   if (netFail && !/cloud-status|billing-status/.test(u) && !(u.includes('/api/store') && m === 'GET')) return NET === 'offline' ? r.abort('internetdisconnected') : r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Something went wrong."}' });
   if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
   if (u.includes('/api/store') && m === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: seed }) });
@@ -151,6 +151,7 @@ for (const [k, scr] of seen) {
     return Array.from(S.querySelectorAll('button,[onclick],a[href],[role=button]')).filter(e => e.offsetParent || e.getClientRects().length).length; }, [scr.s, scr.d]).catch(() => 0);
   for (let i = 0; i < Math.min(n, 70); i++) {
     errs = []; cerrs = []; const pBefore = posts.length;
+    if (process.env.DUPSAVE) await page.evaluate(() => { const snap = {}; try { for (const k of _lsAllKeys()) { if (!/^sc_/.test(k)) continue; let v; try { v = JSON.parse(_lsGet(k)); } catch (e) { continue; } if (v && typeof v === 'object') snap[k] = new Set((Array.isArray(v) ? v : Object.values(v)).map(x => JSON.stringify(x))); } } catch (e) {} window.__dsnap = snap; }).catch(() => {});
     const r = await page.evaluate(([s, d, i, skipSrc]) => {
       document.querySelectorAll('.shell > div[id], body > div[id], .shell > div.ov, body > div.ov').forEach(x => { try { if (getComputedStyle(x).position === 'fixed' && x.id !== 'app') x.remove(); } catch (e) {} });
       try { d == null ? nav(s) : nav(s, d); } catch (e) { return null; }
@@ -209,6 +210,10 @@ for (const [k, scr] of seen) {
       const dup = Object.entries(byP).filter(([k, n]) => n > 1 && !/^\/api\/(store|device-report|app-launch|client-log|log)/.test(k));
       if (dup.length) a.sheets = (a.sheets || []).concat('DOUBLE SEND (' + (lbl || r.label) + '): ' + dup.map(([k, n]) => n + 'x ' + k.slice(0, 120)).join(' ; '));
       void t0; }
+    if (process.env.DUPSAVE) { await page.waitForTimeout(600); const d = await page.evaluate(() => { const out = []; const snap = window.__dsnap || {}; const strip = x => { if (!x || typeof x !== 'object') return JSON.stringify(x); const o = {}; for (const k of Object.keys(x).sort()) if (!/^(id|_id|_ts|ts|at|created|createdAt|updated|updatedAt|_uAt|key|uid)$/.test(k)) o[k] = x[k]; return JSON.stringify(o); };
+        try { for (const k of _lsAllKeys()) { if (!/^sc_/.test(k) || /log|seen|launch|history|tomb|deleted|hidden|audit|report|queue|cache|recent/.test(k)) continue; let v; try { v = JSON.parse(_lsGet(k)); } catch (e) { continue; } if (!v || typeof v !== 'object') continue; const before = snap[k] || new Set();
+          const vals = Array.isArray(v) ? v : Object.values(v).filter(x => x && typeof x === 'object' && 'id' in x); const fresh = vals.filter(x => !before.has(JSON.stringify(x)) && x && typeof x === 'object'); const seen = {}; for (const x of fresh) { const h = strip(x); if (seen[h]) { out.push(k + ': ' + h.slice(0, 90)); break; } seen[h] = 1; } } } catch (e) {} return out; }).catch(() => []);
+      if (d.length) a.sheets = (a.sheets || []).concat('TWO COPIES SAVED: ' + d.join(' ; ')); }
     // BACK=1: Android's back button (the app's _scBack) must close whatever sheet the tap opened, and throw nothing.
     if (process.env.BACK) { const bk = await page.evaluate(() => { const fresh = () => Array.from(document.querySelectorAll('body *')).filter(x => { try { return !window.__fixedBefore.has(x) && document.body.contains(x) && getComputedStyle(x).position === 'fixed' && x.offsetWidth > 120 && x.offsetHeight > 80; } catch (e) { return false; } });
         const before = fresh(); if (!before.length) return null; let ret, threw = '';
