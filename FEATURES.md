@@ -871,6 +871,9 @@ saved anywhere", not "does this always call that".
 | `cloudLogout` | `/api/store` | via `_flushBeforeSignOut` |
 | `confirmSendCourse` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendForm` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `confirmSendForm` | `/api/logout` | via `_doLogout` |
+| `confirmSendForm` | `/api/native-push` | via `_doLogout` |
+| `confirmSendForm` | `/api/provider-push` | via `_doLogout` |
 | `confirmSendProduct` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendResource` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendRoutine` | `/api/clients` | via `_syncSpecificClientsToServer` |

@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19d: sending a form to a client with no link opens the invite
+
+`confirmSendForm` for a client with no `_token` put the form on their record and then only toasted
+"hasn't been invited to the app yet, invite them first", so she had to find Invite herself and come
+back. It now opens `inviteClientToApp` straight away (as the link button in the same row already did),
+with the form waiting. Test: `scratchpad/test-send-form-uninvited.mjs` (fails on the old code; passes
+in Chromium and WebKit).
+
 ## 2026-11-19 — build 2026-11-19c: chat on a computer: Enter sends, paste or drop a photo
 
 Both apps. On a computer (`(hover:hover) and (pointer:fine)`) Enter in the chat box sends and
