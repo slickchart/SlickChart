@@ -613,5 +613,15 @@ export default async function handler(req, res) {
   try { ok = (await monitorKeyOk(req, q, owner)) || (await founderSession(req, q)); } catch (e) { ok = false; }
   if (!ok) { res.status(403).json({ error: 'Owner-only.' }); return; }
   try { await ensureProvidersTable(); } catch (e) {}
+  // ?cancel_contacts=1[&days=N]: the full email of each person who cancelled, so a feedback ask can be
+  // drafted to them (Ashley, 2026-11-19: "can i give you permission to get their emails yourself?").
+  // Owner-only like the rest of this endpoint, read-only, and only the people who cancelled. The sweep
+  // itself stays masked.
+  if (String((req.query || {}).cancel_contacts || '') === '1') {
+    const c = await cancellationReport(q, (req.query || {}).days || 30);
+    res.status(200).json({ days: c.days, error: c.error || '', contacts: c.items.map(r => ({ name: r.name, email: r.email,
+      paying: r.paying, state: r.state, at: r.at, ends: r.ends, plan: r.plan, chosen: r.chosen, feedback: r.feedback, comment: r.comment })) });
+    return;
+  }
   res.status(200).json(await runSweep(q));
 }
