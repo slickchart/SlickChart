@@ -10663,7 +10663,7 @@ photos depending on the options."* She left the design to us.
 - Test: `scratchpad/test-vc-body-areas.mjs` (27 client + 12 provider checks; phone/tablet/desktop
   widths; `SHOTS=<dir>` saves screenshots). Green in Chromium and WebKit, plus all `sweep*-vc-*`.
 
-## 2026-11-18 — Two new providers in a row "couldn't make an account" (build 2026-11-19zm)
+## 2026-11-18 — Two new providers in a row "couldn't make an account" (build 2026-11-19zn)
 
 **What was observed (server records, read 2026-11-19 02:50 UTC, no one was asked):**
 - The provider who signed up the morning of 2026-11-18 paid at 8:45am Pacific as `cm_…@tahoo.com`
