@@ -1,7 +1,8 @@
 // Light mode (2026-11-19 screenshot sweep): three pieces kept their dark-mode colours, so in the light
 // theme they showed dark-brown boxes with amber words at under 3:1: every "Couldn't ..." toast, the
 // "Treatment notes not done yet" bar on Today's appointments, the photo-save failure toast and an
-// automation warning. They now use the theme's amber colours. Checked in light AND dark.
+// automation warning. They now use the theme's amber colours. Checked in light AND dark. Also: Resources and
+// My docs had an empty top bar, and What's new showed every provider a 'Signed in as / Owner mode' check line.
 //   node scratchpad/test-light-amber-bits.mjs     (ENGINE=webkit PLAYWRIGHT_BROWSERS_PATH=... for Safari)
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 import http from 'http'; import fs from 'fs'; import path from 'path';
@@ -36,6 +37,8 @@ for (const scheme of ['light', 'dark']) {
   const has = await p.evaluate(() => { const s = [...document.querySelectorAll('#S span')].find(x => /Treatment notes not done yet/.test(x.textContent)); if (s) s.id = '__tn'; return !!s; });
   ok(has, scheme + ': Today shows the treatment-notes bar');
   if (has) { const nc = await contrast('#__tn'); ok(nc >= 4.5, scheme + ': "Treatment notes not done yet" reads at 4.5:1 or better', String(nc)); }
+  if (scheme === 'light') { for (const [scr, want] of [['forms', 'Resources'], ['vault', 'My docs']]) { await p.evaluate(s => nav(s), scr); await p.waitForTimeout(300); const t = await p.evaluate(() => document.getElementById('tt').textContent.trim()); ok(t === want, scr + ' has a title in the top bar', t); }
+    await p.evaluate(() => nav('whats-new')); await p.waitForTimeout(300); const wn = await p.evaluate(() => document.getElementById('S').innerText); ok(!/Owner mode|email not detected/.test(wn), "What's new shows a provider no sign-in check line", wn.slice(-80)); }
   ok(!errs.length, scheme + ': no page errors', errs.join(' | '));
   await ctx.close();
 }

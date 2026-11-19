@@ -9943,6 +9943,13 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzo: titles on Resources and My docs; no sign-in check line for providers
+
+Contact-sheet review of all 83 phone screens: Resources (forms) and My docs (vault) drew an EMPTY top
+bar because `_sectionTitle` only knew the two tab groups; `_SECTION_TITLE_FALLBACK` names them. What's
+new showed EVERY provider "Signed in as: ... · Owner mode: not set" (an owner diagnostic); it now
+shows only for the founder. `test-light-amber-bits.mjs` covers both.
+
 ## 2026-11-19 — build 2026-11-19zzn: light-mode amber pieces and blank client circles
 
 From the BUSY phone screenshots: (1) every error toast ("Couldn't ..."), the "Treatment notes not done
