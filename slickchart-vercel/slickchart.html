@@ -39223,7 +39223,10 @@ function _newClientId(){
 // on one record and empty shells on the others. Match on email first (a definite same-person signal),
 // then fall back to a unique name match — but never merge two different people who share a name yet have
 // conflicting emails on file. Returns the existing client id to reuse, or null to create fresh.
-function _findExistingClientId(name,email){
+// phone (optional, the new-client screens pass it): a same-name client whose number is DIFFERENT is a
+// different person. Without it, adding a second "Maria Garcia" with no email opened the first one and
+// wrote the new number over hers (2026-11-19 sweep).
+function _findExistingClientId(name,email,phone){
   try{
     var em=String(email||'').trim().toLowerCase();
     if(em){
@@ -39234,6 +39237,8 @@ function _findExistingClientId(name,email){
       var byName=_clientIdByName(name);
       if(byName){
         var exEm=String((CL[byName]&&CL[byName].email)||'').trim().toLowerCase();
+        const _d=v=>String(v||'').replace(/\D/g,'').slice(-10),np=_d(phone),xp=_d(CL[byName]&&CL[byName].phone);
+        if(phone!==undefined&&np.length>=7&&xp.length>=7&&np!==xp)return null;   // same name, different number: a different person
         if(!em||!exEm||em===exEm)return byName;   // same person (or no conflicting email) → reuse
       }
     }
@@ -39248,7 +39253,7 @@ function ncSaveBasic(){
   if(emailV&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailV)){proToast('That email doesn\u2019t look right \u2014 check it or leave it blank');return;}
   const initials=_initials(name)||'NC';
   const _phone=get('nc-phone')||'', _dob=get('nc-dob')||'';
-  const _existing=_findExistingClientId(name,emailV);
+  const _existing=_findExistingClientId(name,emailV,_phone);
   let id;
   if(_existing){
     // Already in the roster — update in place instead of creating a duplicate, and DON'T clobber their
@@ -39441,7 +39446,7 @@ function finishNewClient(){
   const initials=_initials(name)||'NC';
   const fid=_ncIntakeFormId();
   const _email=newClientData['nc-email']||'', _phone=newClientData['nc-phone']||'';
-  const _existing=_findExistingClientId(name,_email);
+  const _existing=_findExistingClientId(name,_email,_phone);
   let id;
   if(_existing){
     // Reuse the existing record rather than creating a duplicate; preserve their forms/history/token
@@ -39450,7 +39455,8 @@ function finishNewClient(){
     c.name=name; c.initials=initials;
     if(_email)c.email=_email;
     if(_phone)c.phone=_phone;
-    if(newClientData['nc-notes'])c.notes=newClientData['nc-notes'];
+    // Her earlier notes on this client stay; what she just typed is added under them.
+    if(newClientData['nc-notes']){const _n=String(newClientData['nc-notes']).trim(),_o=String(c.notes||'').trim();c.notes=(_o&&_o!==_n&&!_o.includes(_n))?(_o+'\n'+_n):(_o.includes(_n)?_o:_n);}
   } else {
     id=_newClientId();
     const palette=[['var(--p-purple-bg)','var(--p-purple)'],['var(--p-surf2)','var(--p-green)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-red-bg)','var(--p-red)'],['var(--p-amber-bg)','var(--accent)']];
