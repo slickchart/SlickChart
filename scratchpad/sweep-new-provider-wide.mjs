@@ -37,9 +37,18 @@ const clients = {}; for (let i = 0; i < 40; i++) { const id = 'sq_CUST' + i; cli
 if (process.env.TOKENS) for (const c of Object.values(clients)) c._token = 'tok_' + c.id;
 // LONG=1: real-world long names (hyphenated surnames, long studio names, long emails) to catch text that pushes a phone screen sideways.
 if (process.env.LONG) for (const c of Object.values(clients)) { c.name = c.name.replace(' ', ' Montgomery-Vanderbilt-') + ' Alexandrina-Rosalind'; c.email = 'alexandrina.montgomery.vanderbilt.' + c.id.toLowerCase() + '@extremelylongdomainname-example.com'; }
+// HISTORY=1: five long-time clients: 40 visit summaries each (three years) and a 150-message conversation,
+// so every chart, recap list and chat is long.
+const _hist = {};
+if (process.env.HISTORY) { const ss = {}, ms = {}, th = [];
+  for (let i = 0; i < 5; i++) { const id = 'sq_CUST' + i; const DAY = 86400000;
+    ss[id] = Array.from({ length: 40 }, (_, k) => { const t = now - (k + 1) * 27 * DAY; const d = new Date(t); return { date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), treatment: 'Signature Hydrating Facial with LED and Dermaplaning', note: 'Skin calm and well hydrated. Focused on the cheeks and jawline, lactic peel at 20 percent for four minutes, LED red light ten minutes.', obs: 'Mild congestion on the chin, fading PIH on the left cheek.', homecare: ['SPF 50 every morning', 'Gentle cleanser twice a day'], products: ['Vitamin C Serum', 'Barrier Repair Cream'], ts: t, _ts: t, _clientSaved: true }; });
+    ms[id] = Array.from({ length: 150 }, (_, k) => ({ id: 'h' + i + '_' + k, from: k % 2 ? 'me' : 'them', text: k % 9 ? 'See you Thursday! ' + k : 'https://averyveryverylongunbrokenlinkexample.com/aftercare/guide/for/your/peel?ref=' + k, time: '9:00 AM', ts: now - (150 - k) * 3600000 }));
+    th.push({ id, preview: 'See you Thursday!', time: '9:00 AM', ts: now - i * 60000, unread: i < 2 }); }
+  _hist.sc_session_summaries = JSON.stringify(ss); _hist.sc_msgstore = JSON.stringify(ms); _hist.sc_threads = JSON.stringify(th); }
 const BIZ = process.env.LONG ? 'The Botanical Aesthetics Skin Wellness and Lash Studio of Southern California' : 'Frances Skin Studio';
 const seed = { sc_clients: JSON.stringify(clients), sc_onboarded: '1', sc_professions: JSON.stringify((process.env.PROF || 'esty').split(',')), sc_wsname: JSON.stringify(BIZ),
-  sc_bizinfo: JSON.stringify({ name: BIZ, phone: '5550100000', email: 'studio@ex.com' }) };
+  sc_bizinfo: JSON.stringify({ name: BIZ, phone: '5550100000', email: 'studio@ex.com' }), ..._hist };
 // DATEHOOK=1: record every place the app parses a bare 'YYYY-MM-DD' with new Date()/Date.parse.
 // That reads it as UTC midnight, which is the PREVIOUS day anywhere west of UTC (every US provider).
 if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const hits = window.__dh = {};

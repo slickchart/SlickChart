@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzr: Home unread names everyone; AI brief Rebook has a word
+
+iPad sweep with three years of client history (`sweep-new-provider-wide.mjs` HISTORY=1, new: 40
+summaries and a 150-message chat for five clients). Home's Unread messages tile counts conversations
+but named only the first ("2 from Ava" when the second was Bea): now "from Ava and Bea" / "from Ava
+and 2 others". The AI brief's icon-only Rebook button now says Rebook. Test:
+`scratchpad/test-home-unread-names.mjs` (320 wide, both engines).
+
 ## 2026-11-19 — build 2026-11-19zzq: client Shop "Buy · 0 ways to get it"
 
 Busy client sweep (phone): a recommended product with no store, brand or Amazon link showed
