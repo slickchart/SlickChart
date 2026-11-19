@@ -655,7 +655,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zzi';
+const APP_BUILD='2026-11-19zzj';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -25092,16 +25092,20 @@ function _withClientToken(id,then){
   if(c._token){ then(); return; }
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok){ _promptReSignIn(); return; }
+  // A second tap while the link is still being prepared (a weak signal takes seconds) would open the
+  // sheet or send twice once the server answers. One preparation per client at a time.
+  if(_tokPrep[id])return; _tokPrep[id]=1;
   const first=(c.name||'your client').split(' ')[0];
   if(typeof proToast==='function')proToast('Preparing '+first+'’s secure link…',0);
   var _slow=setTimeout(function(){ if(document.getElementById('pro-toast')&&typeof proToast==='function')proToast('Still working — this can take a few extra seconds…',0); },4000);
   Promise.resolve(_syncSpecificClientsToServer([id],{})).then(function(j){
-    clearTimeout(_slow);
+    clearTimeout(_slow); delete _tokPrep[id];
     var t=document.getElementById('pro-toast');if(t)t.remove();
     if(c._token){ then(); }
     else if(typeof proToast==='function')proToast((j&&j.error)||'Couldn’t prepare a secure link — check your connection and try again.',0);
-  }).catch(function(){ clearTimeout(_slow); if(typeof proToast==='function')proToast('Couldn’t reach the server to prepare the link — try again.',0); });
+  }).catch(function(){ clearTimeout(_slow); delete _tokPrep[id]; if(typeof proToast==='function')proToast('Couldn’t reach the server to prepare the link — try again.',0); });
 }
+const _tokPrep={};
 // Opens the real client app in demo mode (no token = sample experience) in a new tab,
 // so a provider can see and tap through exactly what their clients get, no need to
 // create a fake client. The ?preview=1 flag lets the client app show a "Preview" banner.
@@ -25479,12 +25483,13 @@ function inviteClientToApp(id){
   if(!c._token){
     var _tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
     if(!_tok){ _promptReSignIn(); return; }
+    if(_tokPrep[id])return; _tokPrep[id]=1;
     proToast('Preparing link\u2026',0);
     var _slowTimer=setTimeout(function(){
       if(document.getElementById('pro-toast'))proToast('Still working \u2014 this can take a few extra seconds if it\u2019s been a while\u2026',0);
     },4000);
-    _syncSpecificClientsToServer([id],{}).then(function(j){
-      clearTimeout(_slowTimer);
+    Promise.resolve(_syncSpecificClientsToServer([id],{})).catch(function(){return null;}).then(function(j){
+      clearTimeout(_slowTimer); delete _tokPrep[id];
       if(c._token){
         const t=document.getElementById('pro-toast');if(t)t.remove();
         inviteClientToApp(id);
@@ -25513,6 +25518,7 @@ function inviteClientToApp(id){
     : ('Hi '+first+'! '+who+' invited you to SlickChart'+(biz?(' \u2014 '+biz):'')+'. See your session summary, aftercare, forms, and rebook anytime:\n\n'+link);
   // The message below seeds an editable textarea; the actual sms/mailto bodies are built from its live
   // value at tap time (see _inviteSendText / _inviteSendEmail), so provider edits go out as typed.
+  document.querySelectorAll('#invite-sheet').forEach(function(x){x.remove();});
   const ov=document.createElement('div');ov.id='invite-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};

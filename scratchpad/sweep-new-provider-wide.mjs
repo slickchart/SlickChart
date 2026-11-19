@@ -47,6 +47,7 @@ if (process.env.DATEHOOK) await page.addInitScript(() => { const D = Date; const
 await page.addInitScript(w => { window.__WORDS = w; }, process.env.WORDS || '');
 if (process.env.SAFE) await page.addInitScript(() => { window.__SAFE = [47, 34]; });
 if (process.env.DIRTY) await page.addInitScript(() => { window.__DIRTY = 1; });
+if (process.env.SLOW) await page.addInitScript(() => { window.__SLOW = 1; });
 if (process.env.TEXTZOOM) await page.addInitScript(z => { window.__TZOOM = z; }, +process.env.TEXTZOOM);
 await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_login_email', 'new@spa.com'); localStorage.setItem('sc_hide_sample', '1'); } catch (e) {}
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
@@ -56,7 +57,11 @@ await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onb
 // NET=500|offline (rotation area 14): after boot, every other /api call fails, so each screen and tap is
 // checked for throws and silent failures with no server.
 const NET = process.env.NET || ''; let netFail = false;
-await page.route('**/api/**', r => { const u = r.request().url(); const m = r.request().method();
+// SLOW=1: after boot every non-GET /api call takes 3 s to answer (a weak phone signal), each is recorded,
+// and every tap is a quick double tap. A Save/Send/Charge that sends twice is reported.
+const SLOW = !!process.env.SLOW; const posts = []; let slowOn = false;
+await page.route('**/api/**', async r => { const u = r.request().url(); const m = r.request().method();
+  if (SLOW && slowOn && m !== 'GET') { posts.push({ t: Date.now(), p: u.replace(/^https?:\/\/[^/]+/, '').split('?')[0], b: (r.request().postData() || '').slice(0, 160) }); await new Promise(z => setTimeout(z, 3000)); }
   if (netFail && !/cloud-status|billing-status/.test(u) && !(u.includes('/api/store') && m === 'GET')) return NET === 'offline' ? r.abort('internetdisconnected') : r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Something went wrong."}' });
   if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
   if (u.includes('/api/store') && m === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: seed }) });
@@ -75,6 +80,7 @@ if (SAFE) await page.route('**/slickchart.html', async r => { const res = await 
 await page.goto('http://localhost:' + PORT + '/slickchart.html', { waitUntil: 'load' }); await page.waitForTimeout(9000);
 const bootErrs = errs.slice();
 if (NET) netFail = true;
+if (SLOW) slowOn = true;
 // ---- crawl ----
 const key = (s, d) => s + '|' + (d == null ? '' : JSON.stringify(d));
 const seen = new Map(); const queue = [['home', null], ['calendar', null], ['payments', null], ['messages', null], ['clients', null], ['more', null], ['client', 'sq_CUST1'], ['booking-link', null], ['forms', null]];
@@ -142,7 +148,7 @@ for (const [k, scr] of seen) {
   const n = await page.evaluate(([s, d]) => { try { d == null ? nav(s) : nav(s, d); } catch (e) { return 0; } const S = document.getElementById('S') || document.body;
     return Array.from(S.querySelectorAll('button,[onclick],a[href],[role=button]')).filter(e => e.offsetParent || e.getClientRects().length).length; }, [scr.s, scr.d]).catch(() => 0);
   for (let i = 0; i < Math.min(n, 70); i++) {
-    errs = []; cerrs = [];
+    errs = []; cerrs = []; const pBefore = posts.length;
     const r = await page.evaluate(([s, d, i, skipSrc]) => {
       document.querySelectorAll('.shell > div[id], body > div[id], .shell > div.ov, body > div.ov').forEach(x => { try { if (getComputedStyle(x).position === 'fixed' && x.id !== 'app') x.remove(); } catch (e) {} });
       try { d == null ? nav(s) : nav(s, d); } catch (e) { return null; }
@@ -162,6 +168,7 @@ for (const [k, scr] of seen) {
       const tt = (document.getElementById('tt') || {}).innerHTML || ''; const sh = S.innerHTML; const kids = document.querySelectorAll('body *').length;
       window.__snap = { tt, sh, kids };
       try { el.click(); } catch (e) { return { label, act: act.slice(0, 80), threw: String(e.message).slice(0, 150) }; }
+      if (window.__SLOW) setTimeout(() => { try { if (el.isConnected && !el.disabled && getComputedStyle(el).pointerEvents !== 'none') el.click(); } catch (e) {} }, 220);
       return { label, act: act.slice(0, 80), offscreen }; }, [scr.s, scr.d, i, SKIP.source]).catch(e => ({ label: '?', act: '', threw: String(e.message).slice(0, 150) }));
     if (!r) continue;
     if (r.skipped || r.link || r.disabled || r.threw) { taps.push({ screen: k, i, ...r, errs: errs.slice() }); continue; }
@@ -183,6 +190,23 @@ for (const [k, scr] of seen) {
       });
       return { nav: window.__navs || 0, opened: (window.__opened || []).length, sheets, overflow: document.documentElement.scrollWidth > innerWidth + 2,
         changed: ((document.getElementById('tt') || {}).innerHTML || '') !== s.tt || S.innerHTML !== s.sh || document.querySelectorAll('body *').length !== s.kids }; }).catch(() => ({ changed: true, gone: true, sheets: [] }));
+    if (SLOW) { const p0 = pBefore; const t0 = Date.now();
+      const lbl = await page.evaluate(() => { const fresh = Array.from(document.querySelectorAll('body *')).filter(x => { try { return !window.__fixedBefore.has(x) && document.body.contains(x) && getComputedStyle(x).position === 'fixed' && x.offsetWidth > 120 && x.offsetHeight > 80; } catch (e) { return false; } });
+        const sh = fresh[fresh.length - 1]; if (!sh) return null;
+        const today = new Date(); const ymd = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate() + 1).padStart(2, '0');
+        sh.querySelectorAll('input,textarea,select').forEach(f => { if (f.disabled || f.readOnly || f.offsetWidth < 1) return; const ty = (f.type || '').toLowerCase();
+          if (f.tagName === 'SELECT') { if (!f.value && f.options.length > 1) { f.selectedIndex = 1; f.dispatchEvent(new Event('change', { bubbles: true })); } return; }
+          if (['checkbox', 'radio', 'file', 'range', 'color', 'hidden', 'button', 'submit'].includes(ty) || f.value) return;
+          f.value = ty === 'email' ? 'slow.sweep@ex.com' : ty === 'tel' ? '5550109999' : ty === 'number' ? '25' : ty === 'date' ? ymd : ty === 'time' ? '10:00' : ty === 'password' ? 'Sweep-pass-2026!' : 'Slow sweep 25';
+          f.dispatchEvent(new Event('input', { bubbles: true })); f.dispatchEvent(new Event('change', { bubbles: true })); });
+        const btns = Array.from(sh.querySelectorAll('button')).filter(b => b.offsetWidth > 0 && !b.disabled && /^(save|send|create|add|book|charge|confirm|done|submit|pay|request|schedule|invite|copy and send|send now|save and send)/i.test((b.textContent || '').trim()) && !/delete|remove|cancel|sign out|refund/i.test(b.textContent || ''));
+        const b = btns[btns.length - 1]; if (!b) return null; const l = (b.textContent || '').trim().slice(0, 40);
+        b.click(); setTimeout(() => { try { if (b.isConnected && !b.disabled && getComputedStyle(b).pointerEvents !== 'none') b.click(); } catch (e) {} }, 220); return l; }).catch(() => null);
+      if (lbl) await page.waitForTimeout(700);
+      const mine = posts.slice(p0); const byP = {}; for (const x of mine) byP[x.p] = (byP[x.p] || 0) + 1;
+      const dup = Object.entries(byP).filter(([k, n]) => n > 1 && !/^\/api\/(store|device-report|app-launch|client-log|log)/.test(k));
+      if (dup.length) a.sheets = (a.sheets || []).concat('DOUBLE SEND (' + (lbl || r.label) + '): ' + dup.map(([k, n]) => n + 'x ' + k.slice(0, 120)).join(' ; '));
+      void t0; }
     // BACK=1: Android's back button (the app's _scBack) must close whatever sheet the tap opened, and throw nothing.
     if (process.env.BACK) { const bk = await page.evaluate(() => { const fresh = () => Array.from(document.querySelectorAll('body *')).filter(x => { try { return !window.__fixedBefore.has(x) && document.body.contains(x) && getComputedStyle(x).position === 'fixed' && x.offsetWidth > 120 && x.offsetHeight > 80; } catch (e) { return false; } });
         const before = fresh(); if (!before.length) return null; let ret, threw = '';

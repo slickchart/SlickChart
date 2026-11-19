@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzj: one tap = one send on a weak signal
+
+SLOW=1 mode in `scratchpad/sweep-new-provider-wide.mjs`: after boot every non-GET /api call takes 3 s,
+every control is double tapped 220 ms apart, and sheet Save/Send buttons are filled and double tapped.
+iPhone Safari crawl (106 screens, 1,028 controls) found: for a client whose link was not made yet,
+`_withClientToken` and `inviteClientToApp` prepared it once PER TAP, so a second tap sent the rebook
+text twice and stacked two invite sheets. Now one preparation per client at a time (`_tokPrep`), and
+the invite sheet replaces any open one. Test: `scratchpad/test-slow-double-tap.mjs` (both engines;
+fails 5/9 on zzi). Founder tools (test push) and the brief's Regenerate were triaged as harmless.
+
 ## 2026-11-19 — build 2026-11-19zzi: a Remove button past the edge on phones; Android large text
 
 - **TEXTZOOM=1.3/1.6 + SIZE=android crawl** (Android's system font size scales text in the app's web
