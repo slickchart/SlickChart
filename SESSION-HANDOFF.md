@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19ze: Suggested forms lists her forms, not all 179
+
+- Client profile → "Suggested for this visit" → edit listed EVERY bundled form (179: all eight
+  collections plus every profession's), so an equine or coaching provider scrolled past "Acne facial
+  consent". It now lists `_profFormIds()` (her professions, her own forms, minus hidden) plus anything
+  already ticked so it can be unticked; names escaped. Test: `scratchpad/test-suggested-forms-prof.mjs`
+  (old code: 179 listed), Chromium + WebKit.
+- Profession word crawl (barber, equine, coach, tattoo) after 19zd: check-in now right for each.
+
 ## 2026-11-19 — build 2026-11-19zd: a non-esthetician's check-in follows her profession
 
 - Found by crawling as a barber with a word check: from the SECOND launch on, every new non-esthetician
