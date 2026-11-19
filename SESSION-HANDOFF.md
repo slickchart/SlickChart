@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzn: light-mode amber pieces and blank client circles
+
+From the BUSY phone screenshots: (1) every error toast ("Couldn't ..."), the "Treatment notes not done
+yet" bar on Today's appointments, the photo-save failure toast and an automation warning kept dark-mode
+backgrounds (#241a08, #2a1206) in the light theme: dark brown boxes, amber words at 3.1:1. Now
+var(--p-amber-bg)/--p-amber-line (4.93 light, 7.47 dark). Two partner/icon tiles with #0a1f0a went to
+--p-green-bg. (2) `av()` drew an EMPTY circle (background:undefined) for a client record with no
+bg/tc/initials (imports, other devices, older builds): it now derives them from the name, stable per
+client. Tests: `test-light-amber-bits.mjs`, `test-first-visit-card.mjs` (avatar check).
+
 ## 2026-11-19 — build 2026-11-19zzm: Home card clear buttons readable and clear of the chevron
 
 Looking at the BUSY screenshots (phone and iPad sideways): the check-in reminder's clear (x) was pale

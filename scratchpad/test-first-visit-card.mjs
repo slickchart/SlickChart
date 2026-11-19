@@ -36,6 +36,10 @@ for (const W of [390, 320]) {
   const ov = await p.evaluate(() => [...document.querySelectorAll('.sc-tile')].filter(t => t.offsetParent).map(t => { const x = t.querySelector(':scope > button'), ch = t.querySelector(':scope > div > i.ti-chevron-right'); if (!x || !ch) return 0; const a = x.getBoundingClientRect(), b = ch.getBoundingClientRect(); return (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) ? 1 : 0; }));
   ok(ov.length > 0 && !ov.some(Boolean), W + ': a card\'s clear (x) never sits on its chevron', JSON.stringify(ov));
   ok(!fs.readFileSync(ROOT + 'slickchart.html', 'utf8').includes('color:#a0c4b5;cursor:pointer'), W + ': the check-in clear (x) is drawn in ink, not pale green on grey');
+  await p.evaluate(() => nav('client', 'sq_CUST1')); await p.waitForTimeout(600);
+  const avt = await p.evaluate(() => { const d = [...document.querySelectorAll('#S div[aria-hidden="true"]')].find(e => e.offsetWidth === 64 && getComputedStyle(e).borderRadius.startsWith('50')); return d ? d.textContent.trim() + '|' + d.getAttribute('style').includes('undefined') : 'none'; });
+  ok(/^[A-Z]{1,2}\|false$/.test(avt), W + ': a client saved without colours still gets initials in a coloured circle', avt);
+  await p.evaluate(() => nav('home')); await p.waitForTimeout(800);
   slow = true;
   const t = await p.evaluate(() => { const el = [...document.querySelectorAll('#S [onclick]')].find(e => /sendFirstVisitPackage\(/.test(e.getAttribute('onclick')) && e.offsetParent); if (!el) return 'none';
     el.click(); const t1 = (document.getElementById('pro-toast') || {}).innerText || ''; setTimeout(() => el.isConnected && el.click(), 250); return t1; });
