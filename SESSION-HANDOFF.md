@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zs (Escape no longer throws away what she typed)
+
+- On a computer, Escape closed any sheet at once, so a half-written feedback note, message or new
+  booking was gone with one key. The global Escape handler now asks "Close without saving?" when a
+  box in that sheet holds words SHE typed (a trusted `input` event marks the box `data-typed`; boxes
+  the app filled itself, search boxes and empty sheets still close at once). Escape on the question
+  is Cancel (the confirm modal now owns Escape outright).
+- Intake form birthdays (`_captureBirthday`) use the same day-first rule as imports.
+- Test: `scratchpad/test-escape-keeps-typing.mjs` (Chromium + WebKit); `test-escape-key` still passes.
+
 ## 2026-11-19 — build 2026-11-19zr (product import columns)
 
 - `_mapProductRows`: a Shopify export (Handle, Title, Vendor, Image Src) imported every product under its

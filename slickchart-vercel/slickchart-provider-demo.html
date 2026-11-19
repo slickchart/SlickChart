@@ -642,7 +642,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zr';
+const APP_BUILD='2026-11-19zs';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -3346,14 +3346,26 @@ try{const _hasFiles=function(e){try{return !!(e.dataTransfer&&Array.prototype.in
 }catch(e){}
 try{document.addEventListener('keydown',function(e){
   if(e.key!=='Escape')return;
+  if(document.getElementById('confirm-modal'))return;   // the question answers its own Escape (Cancel)
   const ov=_topOverlay();
   if(!ov)return;
   e.preventDefault();
   // Prefer the overlay's own backdrop-close (dispatch a click with the overlay as target);
   // fall back to removing it if the click didn't dismiss it.
-  try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){}
-  if(document.body.contains(ov)){try{ov.remove();}catch(_){}}
+  const shut=()=>{try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){}
+    if(document.body.contains(ov)){try{ov.remove();}catch(_){}}};
+  // On a computer Escape closed a sheet she was typing in and the words were gone: a feedback note, a
+  // message, a new booking (2026-11-19 sweep). If anything was typed there, ask first.
+  if(_ovTyped(ov)){confirmModal({title:'Close without saving?',body:'What you typed here will be lost.',action:'Close'},shut);return;}
+  shut();
 },true);}catch(e){}
+function _ovTyped(ov){try{return [...ov.querySelectorAll('textarea,input')].some(el=>{
+  const t=(el.type||'text').toLowerCase();if(!/^(text|email|tel|number|url|textarea)$/.test(el.tagName==='TEXTAREA'?'textarea':t))return false;
+  if(/search|find|filter|-q$|^q$/i.test((el.id||'')+' '+(el.className||''))||/search|find/i.test(el.placeholder||''))return false;
+  return el.offsetParent!==null&&el.dataset.typed==='1'&&String(el.value||'').trim()!=='';});}catch(e){return false;}}
+// Only what SHE typed counts: a sheet that fills its own boxes (an edit sheet, a template) must still
+// close on Escape without a question.
+try{document.addEventListener('input',function(e){const t=e.target;if(e.isTrusted&&t&&t.dataset&&/^(INPUT|TEXTAREA)$/.test(t.tagName))t.dataset.typed='1';},true);}catch(e){}
 // ── Cloud sync (database + login). Falls back to local-only until configured. ──
 function saveProfessions(){try{(function(_v){localStorage.setItem('sc_professions',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_professions',_v);return _v;})(JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
@@ -8134,7 +8146,7 @@ function _upcomingBirthdays(days){days=days||30;const today=new Date();today.set
   out.sort((a,b)=>a.inDays-b.inDays);return out;}
 function _seedBirthdays(){try{const b={maya:'1994-03-15',sophie:'1990-07-10',priya:'1988-07-22'};Object.keys(b).forEach(k=>{if(CL[k]&&!CL[k].birthday)CL[k].birthday=b[k];});}catch(e){}}
 // pull a date-of-birth answer off a signed form onto the client record
-function _captureBirthday(c,formId,answers,qsSnap){try{const qsrc=(Array.isArray(qsSnap)&&qsSnap.length)?qsSnap:((formTmpls[formId]||{}).qs);if(!Array.isArray(qsrc)||!qsrc.length||!answers||!c)return;const q=qsrc.find(q=>/date of birth|\bdob\b|d\.o\.b\.?|birth\s?date|birthday/i.test(q.label||''));if(q&&answers[q.id]&&!c.birthday)c.birthday=_normBirthday(answers[q.id]);}catch(e){}}
+function _captureBirthday(c,formId,answers,qsSnap){try{const qsrc=(Array.isArray(qsSnap)&&qsSnap.length)?qsSnap:((formTmpls[formId]||{}).qs);if(!Array.isArray(qsrc)||!qsrc.length||!answers||!c)return;const q=qsrc.find(q=>/date of birth|\bdob\b|d\.o\.b\.?|birth\s?date|birthday/i.test(q.label||''));if(q&&answers[q.id]&&!c.birthday)c.birthday=_normBirthday(answers[q.id],_impDayFirst([answers[q.id]]));}catch(e){}}
 function _birthdayPanelHTML(){
   const up=_upcomingBirthdays(45);
   const rows=up.length?up.slice(0,8).map(u=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #14241c;"><span style="font-size:16px;color:#dfeee6;">${u.name}</span><span style="font-size:16px;color:var(--p-green);font-weight:600;">${u.label} \u00b7 ${u.inDays===0?'today \ud83c\udf82':u.inDays+'d'}</span></div>`).join(''):'<div style="font-size:16px;color:#7fae95;line-height:1.5;">No birthdays on file yet \u2014 they show up here once clients are imported from Square or complete an intake with their date of birth.</div>';
