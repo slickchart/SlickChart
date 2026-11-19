@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19r: client app photos that would not open now say so
+
+Sweep of the client app's photo paths (chat, form photo answers, check-in photos). `_pickImages`
+dropped any file that would not open (over 25 MB, not really a photo, a format the browser can't read)
+and, when every file failed, did nothing at all on screen. It now says "That photo couldn't be opened"
+(or how many were left out). The native camera in the client app was also silent when the camera was
+refused or the build had no camera plugin; it now matches the provider app: cancel quiet, refused says
+how to turn Camera on, no plugin falls back to the web picker (`_pickImagesWeb`).
+Test: `scratchpad/test-client-photo-pick-fail.mjs` (Chromium + WebKit; old build fails).
+
 ## 2026-11-19 — build 2026-11-19q: vendor name and quick-add time
 
 - `saveVendor`: an emptied name renamed the vendor "New Vendor" (and, since 19n, its inventory

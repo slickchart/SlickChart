@@ -4554,19 +4554,33 @@ async function _ncPhotoDataUrl(fromCamera,maxW){
   try{
     if(!_isNativeApp())return null;
     const Camera=window.Capacitor.Plugins&&window.Capacitor.Plugins.Camera;
-    if(!Camera||!Camera.getPhoto)return null;
+    if(!Camera||!Camera.getPhoto){_ncLastErr='no-plugin';return null;}
+    _ncLastErr='';
     const photo=await Camera.getPhoto({quality:82,width:(maxW||1200),resultType:'dataUrl',correctOrientation:true,source:fromCamera?'CAMERA':'PHOTOS',saveToGallery:false});
     return (photo&&photo.dataUrl)||null;
-  }catch(e){return null;}   // user cancelled or denied permission — no-op, caller handles fallback
+  }catch(e){_ncLastErr=String(e&&(e.message||e)||'error');return null;}
 }
+// Why the last native camera call gave no photo: '' , 'no-plugin', or the plugin's own words.
+let _ncLastErr='';
 function _pickImages(cb,capture){
   // Native app: single-shot capture goes through the OS camera plugin (proper permission prompt + a
   // real camera UI). Multi-select from the library keeps the web file input, which the webview opens
   // as the native photo picker anyway.
   if(capture&&_isNativeApp()){
-    _ncPhotoDataUrl(true,1000).then(function(d){if(d)cb([d]);});
+    // Cancel stays silent. A refused camera says how to turn it on. No plugin or a plugin error falls
+    // back to the web picker, so the camera button never just does nothing (same as the provider app).
+    _ncPhotoDataUrl(true,1000).then(function(d){
+      if(d){cb([d]);return;}
+      const why=String(_ncLastErr||'');
+      if(/cancel/i.test(why))return;
+      if(/denied|permission|not authori[sz]ed|access/i.test(why)){showToast('The app can\u2019t use your camera yet. Open your phone\u2019s Settings, find this app, and turn on Camera.');return;}
+      _pickImagesWeb(cb,true);
+    });
     return;
   }
+  _pickImagesWeb(cb,capture);
+}
+function _pickImagesWeb(cb,capture){
   const inp=document.createElement('input');
   inp.type='file';inp.accept='image/*';
   // capture=true jumps straight to the device camera (single shot); otherwise allow picking
@@ -4575,7 +4589,13 @@ function _pickImages(cb,capture){
   inp.onchange=()=>{
     const files=Array.from(inp.files||[]);if(!files.length)return;
     const out=[];let done=0;
-    files.forEach((f,idx)=>_downscaleImg(f,src=>{out[idx]=src;if(++done===files.length)cb(out.filter(Boolean));}));
+    files.forEach((f,idx)=>_downscaleImg(f,src=>{out[idx]=src;if(++done===files.length){
+      const ok=out.filter(Boolean);const bad=files.length-ok.length;
+      // A file that would not open (too big, not a photo, a format this browser can't read) used to
+      // vanish with nothing on screen. Say so, in words.
+      if(bad)showToast(ok.length?(bad===1?'One photo couldn\u2019t be opened, so it was left out.':bad+' photos couldn\u2019t be opened, so they were left out.'):(files.length===1?'That photo couldn\u2019t be opened. Try a different photo or a screenshot of it.':'Those photos couldn\u2019t be opened. Try different photos or screenshots of them.'));
+      if(ok.length)cb(ok);
+    }}));
   };
   inp.click();
 }
