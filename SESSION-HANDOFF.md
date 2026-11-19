@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zr (product import columns)
+
+- `_mapProductRows`: a Shopify export (Handle, Title, Vendor, Image Src) imported every product under its
+  handle ("glow-drops") with no brand; a Square export with "Available Online" before "Brand" got the
+  brand "Y"; an "Image URL" column became the product link. Name now prefers Name/Title/Product/Item,
+  brand reads Vendor/Manufacturer too, and image columns are never the link.
+- Test: `scratchpad/test-import-products-cols.mjs` (Chromium + WebKit; 4 fail on the old code).
+
 ## 2026-11-19 — build 2026-11-19zq (imported allergies)
 
 - Import never read an Allergies column, so every imported client said "None on file", even from
