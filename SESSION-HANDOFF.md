@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zh: contrast in dark mode and light mode
+
+- `sweep-contrast.mjs` takes `SC_THEME=dark|light` now (it only ever ran the default). Dark mode:
+  Square sync's Pause/Resume button was white on light amber/green (2.2:1); it uses the new
+  `--p-tone-ink` (dark in dark mode, white in light). Light mode: ten `':'#888'` unselected/empty text
+  colours (room note preview, step counts, healing stages, arrows, commission chips) are `var(--p-mut)`.
+- Left: "Off" on the Luxe check-in preview at 4.49:1 (her Luxe accent, not changed); photo-tile labels
+  are false positives (they sit on their own dark chip, which the sweep cannot see).
+
 ## 2026-11-19 — build 2026-11-19zg: deleting a guide or reminder asks first
 
 - A sweep of every delete/remove handler for a confirm or Undo: `deleteResource` (the Delete guide /
