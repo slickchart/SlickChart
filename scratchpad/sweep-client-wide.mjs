@@ -5,7 +5,7 @@
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 import { mockApi, clientRecord, BASE } from './sweep2-client-lib.mjs';
 const SIZE = process.env.SIZE || 'phone', FAIL = process.env.FAIL || 'none';
-const VP = { phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, ipad: { viewport: { width: 1032, height: 1376 }, hasTouch: true }, mac: { viewport: { width: 1440, height: 900 } }, small: { viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true }, land: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true } }[SIZE];
+const VP = { phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, land: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true }, ipad: { viewport: { width: 1032, height: 1376 }, hasTouch: true }, mac: { viewport: { width: 1440, height: 900 } }, small: { viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true }, land: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true } }[SIZE];
 const eng = process.env.PW_ENGINE === 'chromium' ? pw.chromium : pw.webkit;
 const browser = await eng.launch(process.env.PW_ENGINE === 'chromium' ? { executablePath: '/opt/pw-browsers/chromium' } : {});
 const rec = clientRecord('c1', 'Jo Rivera', { providerName: 'Ashley', studio: 'Rose Glow Skin',
@@ -21,6 +21,8 @@ if (process.env.BUSY) { const rec0 = rec; { const rec = rec0.client.data; const 
   rec.products = Array.from({ length: 15 }, (_, i) => ({ id: 'p' + i, name: L + ' ' + i, brand: 'Very Long Professional Skincare Brand Name', why: 'Supports your barrier between visits.' })); } }
 const out = {};
 const ctx = await browser.newContext({ ...VP, serviceWorkers: 'block' }); const page = await ctx.newPage();
+// DARK=1: the client picked Dark in Settings.
+if (process.env.DARK) await page.addInitScript(() => { try { localStorage.setItem('sc_client_theme', 'dark'); } catch (e) {} });
 const errs = []; page.on('pageerror', e => errs.push(String(e.message).slice(0, 160)));
 page.on('dialog', d => { out.dialogs = (out.dialogs || []).concat(d.message().slice(0, 120)); d.dismiss().catch(() => {}); });
 let failNow = false;
@@ -43,7 +45,7 @@ if (FAIL === 'none') {
       const scr = sc && sc !== document.documentElement; const canDown = scr && sc.scrollTop + sc.clientHeight < sc.scrollHeight - 1, canUp = scr && sc.scrollTop > 0;
       const docScroll = document.scrollingElement.scrollHeight > innerHeight + 1;
       return (r.top < 47 && !canUp && !(docScroll && !scr && scrollY > 0)) || (r.bottom > innerHeight - 34 && !canDown && !(docScroll && !scr)); }).map(el => (el.getAttribute('aria-label') || el.textContent || el.placeholder || el.tagName).trim().slice(0, 30) + ' @' + Math.round(el.getBoundingClientRect().top) + '..' + Math.round(el.getBoundingClientRect().bottom)));
-    await page.screenshot({ path: `/tmp/claude-0/cl-${SIZE}-${s}.png` });
+    await page.screenshot({ path: `/tmp/claude-0/cl-${SIZE}${process.env.DARK ? '-dark' : ''}-${s}.png` });
     if (s === 'messages') out.chatShowsNewest = await page.evaluate(() => { const b = document.querySelectorAll('#chat-body .bub-me, #chat-body .bub-them'); const last = b[b.length - 1]; if (!last) return 'no messages'; const r = last.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight ? true : 'newest message is off screen (top ' + Math.round(r.top) + ')'; });
     out[s] = await page.evaluate(() => ({ small: [...document.querySelectorAll('button, a[href], [role=button], [onclick], input[type=checkbox], input[type=radio], select')].filter(el => { const r = el.getBoundingClientRect(); if (!r.width || !r.height) return false; const cs = getComputedStyle(el); if (cs.visibility === 'hidden' || cs.display === 'none' || el.closest('[aria-hidden=true]')) return false; const lab = el.closest('label'); const lr = lab ? lab.getBoundingClientRect() : r; return Math.max(r.width, lr.width) < 24 || Math.max(r.height, lr.height) < 24; }).map(el => { const r = el.getBoundingClientRect(); return Math.round(r.width) + 'x' + Math.round(r.height) + ' ' + el.tagName + ' ' + (el.getAttribute('aria-label') || el.innerText || '').trim().slice(0, 40) + ' :: ' + (el.getAttribute('onclick') || '').slice(0, 60); }), unnamed: [...document.querySelectorAll('button, a[href], [role=button], [onclick]')].filter(el => { if (!el.getClientRects().length) return false; const cs = getComputedStyle(el); if (cs.visibility === 'hidden' || cs.display === 'none' || el.closest('[aria-hidden=true]')) return false; return !((el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText || '').trim() || [...el.querySelectorAll('img[alt]')].map(i => i.alt).join('')); }).map(el => el.tagName + ' ' + (el.getAttribute('onclick') || el.getAttribute('href') || '').slice(0, 60) + ' ' + el.innerHTML.replace(/\s+/g, ' ').slice(0, 50)), headingRing: (() => { const h = document.getElementById('page-heading'); return !!(h && document.activeElement === h && getComputedStyle(h).outlineStyle !== 'none'); })(), overflow: document.documentElement.scrollWidth > innerWidth + 1, w: Math.round((document.querySelector('.app,#app,.shell,main') || document.body).getBoundingClientRect().width) }));
   }

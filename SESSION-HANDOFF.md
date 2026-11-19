@@ -9943,6 +9943,17 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzs: the client app fills a phone's screen
+
+Client app turned sideways on a phone showed a thin strip of content with the menu floating mid-screen.
+Cause: the computer-size phone frame's `max-height:calc(100vh - 72px)` (`.shell`, slickchart-client.html)
+was never lifted by the phone rule, so EVERY phone, portrait too, had 72px of empty screen under the
+menu (an iPhone in Safari partly hid it behind the toolbar; the installed app and Android did not).
+The phone rule now sets `max-height:none`, as the provider app always has. Test:
+`scratchpad/test-client-fills-screen.mjs` (5 phone/tablet sizes + computer, both engines; fails 5/6 on
+the old code). Also new: `scratchpad/sweep-front-door-phones.mjs` (welcome, log in, sign up, reset,
+sent, client sign-in and code at 4 phone sizes, light/dark/big text): clean.
+
 ## 2026-11-19 — build 2026-11-19zzr: Home unread names everyone; AI brief Rebook has a word
 
 iPad sweep with three years of client history (`sweep-new-provider-wide.mjs` HISTORY=1, new: 40
