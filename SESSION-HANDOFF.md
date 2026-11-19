@@ -9943,6 +9943,25 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zza (Square: every location, and a connection with no location heals)
+
+- `api/square/orders.js` searched only the location saved at connect time, and returned
+  `note:'no-location'` (nothing) when none was saved. A client's purchases at her second location never
+  reached the chart or `_autoHomecareFromPurchases`. Now every non-inactive location on her own token
+  (max 10, Square's limit), the saved one first; locations lookup failing falls back to the saved one.
+- `getConnection` (lib/square.js): a connection saved with `location_id` NULL (Square did not answer
+  during connect) stayed NULL for good. It now resolves her location from her own token and stores it
+  (`UPDATE ... WHERE provider_id=$me AND location_id IS NULL`).
+- `depositLinkFor` resolves the location when the connection has none (quick-pay needs one).
+- §0 hardening: `resolveLocationId` no longer returns a deployment-wide `SQUARE_LOCATION_ID` for a
+  provider's token (there is no shared token; that id would be another seller's). Live
+  `/api/health` shows `locationPinned:false`, so nothing live was affected.
+- Test `scratchpad/test-square-orders-locations.mjs` (4 FAILs on old code). Also clean this round:
+  3,000-client speed (`test-big-practice-speed.mjs`), screen-reader names on 15 provider screens
+  (`test-tap-names.mjs`) and 9 client screens (`sweep-client-wide.mjs` now reports `unnamed`),
+  tattoo/barber word crawls. Note: `test-square-refresh.mjs` and `sweep2-cron-sends.mjs` are stale
+  harnesses (missing pglite / old db exports), failing the same on old code.
+
 ## 2026-11-19 — build 2026-11-19zz (money sent to Square is in her location's currency)
 
 Every charge path hard-coded `currency: 'USD'`: saved-card charge (`api/square/charge-card.js`),
