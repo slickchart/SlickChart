@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-18 — build 2026-11-18zd: Escape no longer removes the sign-in or paused screens
+
+The global Escape handler (`_topOverlay`) treats any tall fixed element as a sheet and removes it. On
+a computer, pressing Escape to close the browser's email suggestions took away the SIGN-IN screen and
+left a signed-out app; it also lifted the paused-account screen (`grow-locked`) and dropped setup
+(`onboard-overlay`) halfway. Those three (and anything with `data-no-esc`) are skipped now; sheets
+still close. Test: `scratchpad/test-escape-key.mjs`, both engines; fails on the old build.
+
 ## 2026-11-18 — build 2026-11-18zc: client message Tap to retry resent the wrong message
 
 Client app message ids were `'cm'+counter`, and the counter restarts at 1 on every open. A failed
