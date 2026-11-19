@@ -45,6 +45,7 @@ fs.writeFileSync(lib + '/fcm.js', `export function nativePushConfigured(){return
 fs.writeFileSync(lib + '/square.js', `export async function disconnect(){}`);
 globalThis.__SENT = SENT;
 for (const f of ['cron-events.js', 'delete-account.js', 'totp-setup.js', 'store.js']) fs.copyFileSync(VERCEL + '/api/' + f, api + '/' + f);
+for (const f of fs.readdirSync(VERCEL + '/lib')) if (f.endsWith('.js') && !fs.existsSync(lib + '/' + f)) fs.copyFileSync(VERCEL + '/lib/' + f, lib + '/' + f);
 if (asRoot) sh('chown -R ' + USER + ' ' + root);
 process.env.CRON_SECRET = 'cron'; process.env.SESSION_SECRET = 'sess'; process.env.DATABASE_URL = 'stub';
 process.env.DATABASE_URL='stub';

@@ -20,7 +20,7 @@ fs.mkdirSync(path.join(root, 'lib'));
 fs.writeFileSync(path.join(root, 'lib', 'db.js'), stub.replace("execFile(", "execFile(").replace(/maxBuffer:\s*\d+/, 'maxBuffer: 1<<28'));
 fs.copyFileSync(new URL('../slickchart-vercel/lib/clients.js', import.meta.url), path.join(root, 'lib', 'clients.js'));
 for (const f of fs.readdirSync(new URL('../slickchart-vercel/lib/', import.meta.url))) if (!fs.existsSync(path.join(root, 'lib', f))) fs.copyFileSync(new URL('../slickchart-vercel/lib/' + f, import.meta.url), path.join(root, 'lib', f));
-fs.writeFileSync(path.join(root, 'lib', 'db.js'), stub + '\nexport async function schemaInPlace(){ return false; }\n');
+fs.writeFileSync(path.join(root, 'lib', 'db.js'), stub.includes('function schemaInPlace') ? stub : stub + '\nexport async function schemaInPlace(){ return false; }\n');
 const D = await import(path.join(root, 'lib', 'db.js'));
 const L = await import(path.join(root, 'lib', 'clients.js'));
 const q = D.sql(); await D.ensureTable(); await L.ensureClientTables();
