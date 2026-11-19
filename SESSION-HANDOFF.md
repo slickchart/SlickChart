@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zl: "Square isn't connected" in words that fit every screen
+
+- `sqContext` (lib/square.js) answered every Square endpoint with "Connect your own Square account to
+  sync your customers." when no Square is connected, and screens that show the server's words (gift
+  card check, catalog, inventory, checkout) said that about a refund or a gift card. Now "Square isn't
+  connected. Connect your Square account in Settings, then try again." Message text only; code is
+  still `nosquare`, nothing reads the old text.
+- Gift card "No gift card found" shows as a warning; the Square client sync toast no longer says
+  "If she just booked ... her record".
+
 ## 2026-11-19 — build 2026-11-19zk: appointment reminder push wording
 
 - `api/cron-reminders.js` built "Your appointment . See you then!" (and "Facial . See you then!") when a

@@ -531,6 +531,7 @@ export async function sqContext(req, res) {
   } catch (e) { /* fall through to nosquare */ }
   // This account has no Square connected. Never fall back to any shared token — the provider must connect
   // their OWN Square, so one account can never touch another's Square directory.
-  res.status(401).json({ error: 'Connect your own Square account to sync your customers.', code: 'nosquare' });
+  // Words that fit every screen this reaches (refunds, gift cards, checkout, catalog), not only the client sync.
+  res.status(401).json({ error: 'Square isn\u2019t connected. Connect your Square account in Settings, then try again.', code: 'nosquare' });
   return null;
 }
