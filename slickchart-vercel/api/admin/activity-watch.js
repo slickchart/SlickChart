@@ -47,34 +47,36 @@ export function deviceProblems(row, since) {
   const all = (Array.isArray(row.events) ? row.events : []).filter(e => e && e.e);
   const ev = all.filter(e => Number(e.t) > since);
   const out = [];
+  // `last` is when the TROUBLE last happened (examples = those events), not the device's last event:
+  // a save refused yesterday morning must not read as "just now" because she opened the app since.
   const add = (level, kind, detail, n, examples, keyPart) => out.push({ level, kind, account: acct, device: String(row.device_key || '').slice(-4), where,
-    detail, count: n, examples: examples || [], last: Math.max(...ev.map(e => Number(e.t)), 0), key: kind + '|' + acct + '|' + (keyPart == null ? '' : keyPart) });
+    detail, count: n, last: Math.max(...((examples && examples.length ? examples : ev).map(e => Number(e.t))), 0), key: kind + '|' + acct + (row.email ? '' : '#' + String(row.device_key || '').slice(-4)) + '|' + (keyPart == null ? '' : keyPart) });
   const of = k => ev.filter(e => e.e === k);
 
   // "Did not work" messages she saw, grouped by what they said.
   const groups = {};
   for (const e of of('toast-err')) { const k = shape(e.d); (groups[k] = groups[k] || []).push(e); }
   for (const [k, list] of Object.entries(groups))
-    add(list.length >= 3 ? 'fix' : 'watch', 'didnt-work', 'saw "' + String(list[0].d || '').slice(0, 120) + '"' + (list.length > 1 ? ' ' + list.length + 'x' : ''), list.length, [], k);
+    add(list.length >= 3 ? 'fix' : 'watch', 'didnt-work', 'saw "' + String(list[0].d || '').slice(0, 120) + '"' + (list.length > 1 ? ' ' + list.length + 'x' : ''), list.length, list, k);
   const errs = [...of('error'), ...of('rejection')];
   if (errs.length) {
     const eg = {}; errs.forEach(e => { const k = shape(e.d); (eg[k] = eg[k] || []).push(e); });
-    for (const [k, list] of Object.entries(eg)) add('fix', 'script-error', 'app error: ' + String(list[0].d || '').slice(0, 140) + (list.length > 1 ? ' (' + list.length + 'x)' : ''), list.length, [], k);
+    for (const [k, list] of Object.entries(eg)) add('fix', 'script-error', 'app error: ' + String(list[0].d || '').slice(0, 140) + (list.length > 1 ? ' (' + list.length + 'x)' : ''), list.length, list, k);
   }
   const drop = [...of('token-dropped'), ...of('signed-out-by-server')];
   // A sign-out she asked for is logged as 'signout' first; only one the app did on its own counts.
   const asked = of('signout').length;
-  if (drop.length > asked) add('urgent', 'signed-out', 'the app signed her out ' + (drop.length - asked) + 'x (' + String(drop[0].d || '').slice(0, 80) + ')', drop.length - asked);
+  if (drop.length > asked) add('urgent', 'signed-out', 'the app signed her out ' + (drop.length - asked) + 'x (' + String(drop[0].d || '').slice(0, 80) + ')', drop.length - asked, drop);
   const big = [...of('store-413'), ...of('store-big-failed')];
   if (big.length) {
     const keys = [...new Set(big.map(e => (/^(sc_[a-z0-9_]+)/i.exec(String(e.d || '')) || [])[1] || '?'))];
     const healed = of('store-413-healed').length;
-    add(healed ? 'fix' : 'urgent', 'save-refused', 'saves refused as too large ' + big.length + 'x (' + keys.join(', ') + ', last ' + String(big[big.length - 1].d || '').slice(0, 60) + ')' + (healed ? ', healed ' + healed + 'x' : ''), big.length, [], keys.join(','));
+    add(healed ? 'fix' : 'urgent', 'save-refused', 'saves refused as too large ' + big.length + 'x (' + keys.join(', ') + ', last ' + String(big[big.length - 1].d || '').slice(0, 60) + ')' + (healed ? ', healed ' + healed + 'x' : ''), big.length, big, keys.join(','));
   }
   const cam = of('camera-fail');
-  if (cam.length) add('fix', 'camera', 'camera did not open ' + cam.length + 'x (' + String(cam[0].d || '').slice(0, 80) + ')', cam.length);
+  if (cam.length) add('fix', 'camera', 'camera did not open ' + cam.length + 'x (' + String(cam[0].d || '').slice(0, 80) + ')', cam.length, cam);
   const off = of('offline-page-shown');
-  if (off.length >= 2) add('watch', 'offline', 'offline page shown ' + off.length + 'x', off.length);
+  if (off.length >= 2) add('watch', 'offline', 'offline page shown ' + off.length + 'x', off.length, off);
   const { midLaunch } = cutOffKinds(ev);
   if (!web && midLaunch >= 2) add('fix', 'launch-cut-off', 'the app closed while opening ' + midLaunch + 'x', midLaunch);
 
@@ -86,7 +88,7 @@ export function deviceProblems(row, since) {
     const reset = screens.includes('sent');
     const stuck = refused.length >= 2 || screens.filter(s => s === 'signup').length >= 2;
     add(stuck ? 'urgent' : 'watch', 'stuck-at-door', (refused.length ? 'refused ' + refused.length + 'x' + (reasons.length ? ' ("' + reasons.join('", "') + '")' : '') : 'opened the sign-up screen and never got in')
-      + (screens.includes('signup') ? ', was on Create account' : '') + (reset ? ', asked for a password reset' : '') + ', never signed in', refused.length || 1, [], reasons.map(shape).join(','));
+      + (screens.includes('signup') ? ', was on Create account' : '') + (reset ? ', asked for a password reset' : '') + ', never signed in', refused.length || 1, refused, reasons.map(shape).join(','));
   }
   // Gave up: launched more than twice in the window and never got past the sign-in screen.
   if (!ok && !refused.length && row.email == null && of('launch').length >= 3 && screens.length >= 3)
