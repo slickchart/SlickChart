@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzb (booking link: a booking at her other Square location blocks the time)
+
+`busyRanges` (lib/booking.js) asked Square for bookings at the SAVED location only, so a booking at a
+provider's second location left that time open on her public link and a client could double-book
+her. It now reads every location (no `location_id` filter): she is one person. This also matters
+because zza makes a NULL `location_id` heal itself, which would otherwise have NARROWED this query
+for those providers. Test `scratchpad/test-booking-busy-all-locations.mjs` (FAILs on old code);
+`sweep2-square-slots-tz.mjs` (stub db gained `logSquareCreate`) 6/6 and
+`sweep2-square-instant-doublebook.mjs` still sound.
+
 ## 2026-11-19 — build 2026-11-19zza (Square: every location, and a connection with no location heals)
 
 - `api/square/orders.js` searched only the location saved at connect time, and returned
