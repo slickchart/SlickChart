@@ -400,6 +400,7 @@ saved anywhere", not "does this always call that".
 | `_loadIntegGcalStatus` | `/api/google-cal` | via `_gcalStatus` |
 | `_loadIntegSquareStatus` | `/api/square/connection` | via `_sqConnState` |
 | `_loadPersistenceSweep` | `/api/transcribe` | via `_probeWhisper` |
+| `_loadRemovedPhotos` | `/api/guide-file` | via `_getGuideFile` |
 | `_loadSessions` | `/api/sessions` | direct |
 | `_loadSquareAppts` | `/api/square/appointments` | direct |
 | `_loadSquareHistory` | `/api/consult-slug` | via `_loadConsultLink` |
@@ -493,6 +494,8 @@ saved anywhere", not "does this always call that".
 | `_pfiSave` | `/api/provider-form` | via `_flushInPersonForms` |
 | `_pgvShowFile` | `/api/guide-file` | via `_getGuideFile` |
 | `_pgvStep` | `/api/guide-file` | via `_getGuideFile` |
+| `_photoRmAfter` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_photoRmToast` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_pingChart` | `/api/beta-event` | direct |
 | `_plDocUrl` | `/api/collection-pdf` | direct |
 | `_plRender` | `/api/collection-pdf` | via `_plDocUrl` |
@@ -594,6 +597,8 @@ saved anywhere", not "does this always call that".
 | `_remDone` | `/api/provider-push` | via `_pushDisable` |
 | `_remEdit` | `/api/provider-push` | via `_pushDisable` |
 | `_remSaveFromSheet` | `/api/provider-push` | via `_pushDisable` |
+| `_removeSessionPhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_removeSessionPhoto` | `/api/guide-file` | via `_putFileBody` |
 | `_renderFvpClients` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_renderLessonFile` | `/api/guide-file` | via `_getGuideFile` |
 | `_renderPhotosView` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -631,6 +636,7 @@ saved anywhere", not "does this always call that".
 | `_roomMarkComplete` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_roomMarkComplete` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_roomMarkComplete` | `/api/transcribe` | via `_probeWhisper` |
+| `_roomPhotosHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_runClientCleanup` | `/api/clients` | via `_tidySaveToAccount` |
 | `_runClientCleanup` | `/api/store` | via `_pushFlushNow` |
 | `_runInkOCR` | `/api/ai` | via `_aiComplete` |
@@ -706,6 +712,7 @@ saved anywhere", not "does this always call that".
 | `_shareGuideLink` | `/api/logout` | via `_doLogout` |
 | `_shareGuideLink` | `/api/native-push` | via `_doLogout` |
 | `_shareGuideLink` | `/api/provider-push` | via `_doLogout` |
+| `_showPhotoViewer` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_signedOutBannerHTML` | `/api/client-code` | via `_clientSendCode` |
 | `_sqApptsErrHTML` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_sqApptsErrHTML` | `/api/square/connect` | via `_sqConnect` |
@@ -812,6 +819,7 @@ saved anywhere", not "does this always call that".
 | `_uSendEmail` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_uSendReady` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_uSendText` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_undoRemovePhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_updateNoteFromNotes` | `/api/ai` | via `_aiComplete` |
 | `_updatePassword` | `/api/change-password` | direct |
 | `_uploadGuideFileToServer` | `/api/guide-file` | via `_putFileBody` |
@@ -1351,7 +1359,7 @@ stale device can wipe newer data from another one (CLAUDE.md §0.6).
 `sc_routines`
 
 **grow-only object union (_TOMB_OBJ)**  
-`sc_ci_clear_at`, `sc_ci_dismissed`, `sc_course_purchases`, `sc_deleted_appts`, `sc_deleted_autos`, `sc_deleted_bundles`, `sc_deleted_clients`, `sc_deleted_docs`, `sc_deleted_form_folders`, `sc_deleted_inv`, `sc_deleted_msg_tmpls`, `sc_deleted_needle_presets`, `sc_deleted_note_drafts`, `sc_deleted_note_tmpls`, `sc_deleted_partners`, `sc_deleted_payments`, `sc_deleted_products`, `sc_deleted_protocols`, `sc_deleted_reminders`, `sc_deleted_routines`, `sc_deleted_shop_bundles`, `sc_deleted_starters`, `sc_deleted_svc`, `sc_deleted_vc_types`, `sc_deleted_vendors`, `sc_deposit_handled`, `sc_hidden_courses`, `sc_hidden_forms`, `sc_hidden_guides`, `sc_hidden_square`, `sc_merged_ids`, `sc_merged_into`, `sc_summary_guide_optout`, `sc_undeleted_clients`
+`sc_ci_clear_at`, `sc_ci_dismissed`, `sc_course_purchases`, `sc_deleted_appts`, `sc_deleted_autos`, `sc_deleted_bundles`, `sc_deleted_clients`, `sc_deleted_docs`, `sc_deleted_form_folders`, `sc_deleted_inv`, `sc_deleted_msg_tmpls`, `sc_deleted_needle_presets`, `sc_deleted_note_drafts`, `sc_deleted_note_tmpls`, `sc_deleted_partners`, `sc_deleted_payments`, `sc_deleted_products`, `sc_deleted_protocols`, `sc_deleted_reminders`, `sc_deleted_routines`, `sc_deleted_shop_bundles`, `sc_deleted_starters`, `sc_deleted_svc`, `sc_deleted_vc_types`, `sc_deleted_vendors`, `sc_deposit_handled`, `sc_hidden_courses`, `sc_hidden_forms`, `sc_hidden_guides`, `sc_hidden_square`, `sc_merged_ids`, `sc_merged_into`, `sc_photo_removed`, `sc_summary_guide_optout`, `sc_undeleted_clients`
 
 **grow-only list union (_TOMB_ARR)**  
 `sc_ci_cleared`, `sc_ci_read`, `sc_deleted_sq`, `sc_flag_dismissed`, `sc_form_flag_dismissed`, `sc_home_dismissed`, `sc_imported_products`, `sc_notif_cleared`, `sc_notif_read`, `sc_paper_removed`, `sc_photo_backed`

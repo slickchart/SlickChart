@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19s';
+const APP_BUILD='2026-11-19t';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -3298,7 +3298,7 @@ function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&
 // sc_hidden_guides / sc_hidden_forms are {id:1} maps of what the provider deleted. They were pushed
 // immediately but NOT registered here, so the map itself rode the plain overwrite: a stale device's
 // copy could drop ids and resurrect a deleted guide. Same class of bug as sc_courses.
-const _TOMB_OBJ={sc_ci_clear_at:1,sc_deleted_svc:1,sc_deleted_msg_tmpls:1,sc_deleted_starters:1,sc_deleted_reminders:1,sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
+const _TOMB_OBJ={sc_photo_removed:1,sc_ci_clear_at:1,sc_deleted_svc:1,sc_deleted_msg_tmpls:1,sc_deleted_starters:1,sc_deleted_reminders:1,sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
   sc_deleted_autos:1,sc_deleted_inv:1,sc_deleted_vendors:1,sc_deleted_shop_bundles:1,sc_deleted_bundles:1,sc_deleted_form_folders:1,
   sc_deleted_partners:1,sc_deleted_payments:1,
   sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1,
@@ -5767,6 +5767,7 @@ function _reloadAll(){
   S('vendors',function(){loadVendors();});
   S('persistence sweep',function(){_loadPersistenceSweep();});
   S('captured photos',function(){_initCapturedPhotos();});
+  S('removed photos',function(){_loadRemovedPhotos();});
   S('home dismissed',function(){_loadHomeDismissed();_loadAttnSeen();});
   S('note drafts',function(){loadProviderNoteDrafts();});
   S('session summaries',function(){if(typeof loadSessionSummaries==='function')loadSessionSummaries();});
@@ -7919,6 +7920,7 @@ function persistCapturedPhotos(){
   // After every local write we also (a) refresh the tiny cloud-synced photo INDEX and (b) back up
   // any new photo's bytes to the server — IndexedDB is device-local, so without this a phone swap /
   // cache clear would lose every before/after with no cloud copy to restore from.
+  try{_applyRemovedPhotos();}catch(e){}   // a photo removed on another device never comes back by being saved here
   function _after(){try{_persistPhotoIndex();}catch(e){}try{_backupPhotosToServer();}catch(e){}}
   // Last-resort local copy when IndexedDB is unavailable OR its write fails (iOS Safari can reject
   // IDB writes under storage pressure / private mode). Without this fallback a failed IDB write used
@@ -7966,6 +7968,97 @@ function _photoPid(p){
     }catch(e){}
   }
   return p&&p.pid;
+}
+// ── Removing ONE session photo (Ashley chose this 2026-11-19: "Yes, with Undo, kept on server") ──
+// sc_photo_removed is {pid: time removed}; a negative time means put back (Undo). It is a dated
+// delete record in _TOMB_OBJ, so the newer decision wins on every device. The bytes stay on her
+// account and the photo index KEEPS the entry, so a put-back on any device fetches it again. A removal
+// is only written once the photo's bytes are confirmed on the account, so pruning a removed photo
+// from a device can never lose the only copy.
+function _photoRemovedMap(){try{const raw=(typeof _lsGet==='function')?_lsGet('sc_photo_removed'):localStorage.getItem('sc_photo_removed');const v=JSON.parse(raw||'{}');return (v&&typeof v==='object'&&!Array.isArray(v))?v:{};}catch(e){return {};}}
+function _isPhotoRemoved(pid,m){if(!pid)return false;m=m||_photoRemovedMap();return _tombVal(m[pid])>0;}
+function _savePhotoRemovedMap(m){try{const v=JSON.stringify(m||{});localStorage.setItem('sc_photo_removed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_photo_removed',v);}catch(e){}}
+// Photos the restore, recovery and export paths leave alone: the "not a client photo" list plus removed ones.
+function _photoGoneSet(){const g=(typeof _prDismissed==='function')?_prDismissed():new Set();try{const m=_photoRemovedMap();Object.keys(m).forEach(function(pid){if(_tombVal(m[pid])>0)g.add(pid);});}catch(e){}return g;}
+// Take removed photos off this device's copy. Returns how many came off.
+function _applyRemovedPhotos(){
+  if(typeof capturedPhotos==='undefined'||!capturedPhotos)return 0;
+  const m=_photoRemovedMap();if(!Object.keys(m).length)return 0;
+  let n=0;
+  Object.keys(capturedPhotos).forEach(function(cid){
+    const arr=capturedPhotos[cid];if(!Array.isArray(arr))return;
+    const keep=arr.filter(function(p){return !(p&&p.pid&&_tombVal(m[p.pid])>0);});
+    if(keep.length!==arr.length){n+=arr.length-keep.length;if(keep.length)capturedPhotos[cid]=keep;else delete capturedPhotos[cid];}
+  });
+  return n;
+}
+// After a sync: a removal made on another device comes off this one; a put-back is fetched again.
+function _loadRemovedPhotos(){
+  const n=_applyRemovedPhotos();
+  if(n){try{if(_idb.available())_idb.set('captured_photos',capturedPhotos);}catch(e){}
+    try{const ae=document.activeElement;const typing=ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');if(!typing&&typeof _navCur!=='undefined'&&_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.data);}catch(e){}}
+  try{const m=_photoRemovedMap();if(Object.keys(m).some(function(k){return _tombVal(m[k])<0;}))setTimeout(function(){try{_restorePhotosFromCloud();}catch(e){}},800);}catch(e){}
+}
+let _photoRmUndo=null;
+function _removeSessionPhoto(cid,idx,where){
+  const list=capturedPhotos[cid];const p=list&&list[idx];if(!p)return;
+  const pid=_photoPid(p);if(!pid)return;
+  const c=CL[cid];const first=(c&&c.name)?String(c.name).split(' ')[0]:'this client';
+  const shared=!!(c&&_photosShared(c)&&(p.phase==='before'||p.phase==='after')&&c._token);
+  const go=async function(){
+    // Her account must hold the bytes first, so the removal can be undone from any device.
+    const onAcct=_loadPhotoBackedUp().has(pid)&&!p.reup;
+    if(!onAcct){
+      const isData=/^data:/i.test(String(p.url||''));
+      if(!isData||typeof Cloud==='undefined'||!Cloud||!Cloud.token||(typeof navigator!=='undefined'&&navigator.onLine===false)){
+        proToast('This photo hasn\u2019t saved to your account yet, so it was kept. Try again when you\u2019re online.',0,'error');return;}
+      proToast('Saving a copy to your account first\u2026',0);
+      let type='image/jpeg';try{type=String(p.url).slice(5,String(p.url).indexOf(';'))||type;}catch(e){}
+      let r=null;try{r=await _uploadGuideFileToServer(pid,{name:_photoLabel(cid,p),type:type,data:p.url});}catch(e){}
+      if(!(r&&r.ok)){proToast('Couldn\u2019t reach your account, so the photo was kept. Try again in a moment.',0,'error');return;}
+      _markPhotoBackedUp(pid);if(p.reup)delete p.reup;
+    }
+    const cur=capturedPhotos[cid]||[];const at=cur.indexOf(p);if(at<0)return;
+    cur.splice(at,1);if(!cur.length)delete capturedPhotos[cid];
+    const m=_photoRemovedMap();m[pid]=Date.now();_savePhotoRemovedMap(m);
+    _photoRmUndo={cid:cid,p:p,at:at,pid:pid,where:where||''};
+    _photoRmAfter(cid,where);
+    _photoRmToast('Photo removed');
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Remove this photo?',body:'It comes off '+first+'\u2019s file on all your devices'+(shared?' and out of their app':'')+'. A copy stays on your account, and Undo puts it back.',action:'Remove',danger:true},go);
+  else go();
+}
+function _photoRmAfter(cid,where){
+  try{if(typeof _syncRoomDraftPhotos==='function')_syncRoomDraftPhotos(cid);}catch(e){}
+  try{persistCapturedPhotos();}catch(e){}
+  try{const c=CL[cid];if(c&&c._token&&typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([cid]);}catch(e){}
+  try{_closePhotoViewer();}catch(e){}
+  try{
+    if(where==='room'&&document.getElementById('room-photos'))_rerenderRoomPhotos(cid);
+    else if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='photos')_renderPhotosView(cid,CL[cid],photoSessions[cid]||[]);
+    else if(typeof _navCur!=='undefined'&&_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.data);
+  }catch(e){}
+}
+function _photoRmToast(msg){
+  const old=document.getElementById('photorm-toast');if(old)old.remove();
+  const t=document.createElement('div');t.id='photorm-toast';
+  t.setAttribute('role','status');t.setAttribute('aria-live','polite');
+  t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:12px;padding:9px 12px 9px 14px;font-size:16px;z-index:10001;display:flex;align-items:center;gap:14px;box-shadow:0 6px 24px rgba(0,0,0,.18);';
+  t.innerHTML='<span></span><button onclick="_undoRemovePhoto()" style="background:none;border:none;color:var(--accent-strong);font-weight:700;font-size:16px;cursor:pointer;font-family:inherit;padding:0;min-height:40px;">Undo</button>';
+  t.querySelector('span').textContent=String(msg||'');
+  (document.querySelector('.shell')||document.body).appendChild(t);
+  setTimeout(function(){if(t&&t.parentNode)t.remove();},8000);
+}
+function _undoRemovePhoto(){
+  const u=_photoRmUndo;_photoRmUndo=null;
+  const t=document.getElementById('photorm-toast');if(t)t.remove();
+  if(!u)return;
+  const m=_photoRemovedMap();m[u.pid]=-Date.now();_savePhotoRemovedMap(m);
+  if(!capturedPhotos[u.cid])capturedPhotos[u.cid]=[];
+  const arr=capturedPhotos[u.cid];
+  if(!arr.some(function(x){return x&&x.pid===u.pid;}))arr.splice(Math.min(u.at,arr.length),0,u.p);
+  _photoRmAfter(u.cid,u.where);
+  proToast('Photo put back');
 }
 function _buildPhotoIndex(){
   const idx={};
@@ -8078,7 +8171,7 @@ async function _restorePhotosFromCloud(){
     if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
     let idx={};try{const raw=localStorage.getItem('sc_photo_index');if(raw)idx=JSON.parse(raw)||{};}catch(e){}
     let restored=0;
-    const gone=(typeof _prDismissed==='function')?_prDismissed():new Set();
+    const gone=_photoGoneSet();
     const cids=Object.keys(idx).filter(function(c){return c!=='__recovered__';});
     for(let ci=0;ci<cids.length;ci++){
       const cid=cids[ci];
@@ -8209,7 +8302,8 @@ function _restoreRoomDraftPhotos(id){
     if(!capturedPhotos[id])capturedPhotos[id]=[];
     var have=new Set(capturedPhotos[id].map(function(p){return (p&&(p.pid||p.url))||'';}));
     var added=0;
-    d.photos.forEach(function(p){var k=(p&&(p.pid||p.url))||'';if(k&&!have.has(k)&&p.url){capturedPhotos[id].push({url:p.url,ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',pid:p.pid||undefined});have.add(k);added++;}});
+    var _rm=_photoRemovedMap();
+    d.photos.forEach(function(p){var k=(p&&(p.pid||p.url))||'';if(k&&!have.has(k)&&p.url&&!(p.pid&&_tombVal(_rm[p.pid])>0)){capturedPhotos[id].push({url:p.url,ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',pid:p.pid||undefined});have.add(k);added++;}});
     if(added){try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}}
     return added;
   }catch(e){return 0;}
@@ -8271,7 +8365,7 @@ async function _recoverUnindexedServerPhotos(){
     try{Object.keys(capturedPhotos||{}).forEach(function(cid){(capturedPhotos[cid]||[]).forEach(function(p){if(p&&p.pid)known.add(p.pid);});});}catch(e){}
     var list=[];
     try{var r=await fetch('/api/guide-file?list=photos',{headers:{'Authorization':'Bearer '+Cloud.token}});if(r&&r.ok){var j=await r.json();if(j&&Array.isArray(j.photos))list=j.photos;}}catch(e){return 0;}
-    var _dis=_prDismissed();
+    var _dis=_photoGoneSet();
     var missing=list.filter(function(f){return f&&f.id&&(f.size>0)&&!known.has(f.id)&&!_dis.has(f.id);});
     if(!missing.length)return 0;
     if(!capturedPhotos.__recovered__)capturedPhotos.__recovered__=[];
@@ -8956,6 +9050,7 @@ function _absorbPhotoCopy(raw,quiet){
     const arr=Array.isArray(v[cid])?v[cid]:[];
     arr.forEach(function(p){
       const k=(p&&(p.pid||p.url))||'';if(!k||!p.url||all.has(k))return;
+      if(p.pid&&_isPhotoRemoved(p.pid))return;   // she removed it (the account keeps the bytes)
       if(!capturedPhotos[cid])capturedPhotos[cid]=[];
       capturedPhotos[cid].push(p);all.add(k);added++;
     });
@@ -9013,6 +9108,7 @@ async function _initCapturedPhotos(){
         const have=new Set(capturedPhotos[cid].map(function(p){return (p&&(p.pid||p.url))||'';}));
         cur[cid].forEach(function(p){const k=(p&&(p.pid||p.url))||'';if(k&&!have.has(k)){capturedPhotos[cid].push(p);have.add(k);}});
       });}catch(e){}
+      try{if(_applyRemovedPhotos())_idb.set('captured_photos',capturedPhotos);}catch(e){}
       try{const ae=document.activeElement;const typing=ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');
         if(!typing&&typeof _navCur!=='undefined'&&_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.data);}catch(e){}
     }
@@ -12694,7 +12790,7 @@ function _roomPhotosHTML(id){
     <div style="flex:1;">${capBtn('before',hasB)}</div>
     <div style="flex:1;">${capBtn('after',hasA)}</div>
   </div>
-  ${(before.length||after.length)?`<div style="display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;margin-top:10px;padding-bottom:2px;">${before.concat(after).map(p=>{const i=(capturedPhotos[id]||[]).indexOf(p);return `<div style="flex-shrink:0;width:62px;">${_capturedThumb(p,62)}${(i>=0&&/^data:/i.test(String(p.url||'')))?`<button class="room-rot" onclick="_rotatePhoto('${id}',${i},'room')" title="Turn photo" aria-label="Turn ${p.phase||''} photo" style="width:100%;margin-top:4px;padding:5px 0;border-radius:8px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-mut);cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-rotate-clockwise" aria-hidden="true" style="font-size:18px;"></i></button>`:''}</div>`;}).join('')}</div>
+  ${(before.length||after.length)?`<div style="display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;margin-top:10px;padding-bottom:2px;">${before.concat(after).map(p=>{const i=(capturedPhotos[id]||[]).indexOf(p);return `<div style="flex-shrink:0;width:62px;">${_capturedThumb(p,62)}${(i>=0&&/^data:/i.test(String(p.url||'')))?`<button class="room-rot" onclick="_rotatePhoto('${id}',${i},'room')" title="Turn photo" aria-label="Turn ${p.phase||''} photo" style="width:100%;margin-top:4px;padding:5px 0;border-radius:8px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-mut);cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-rotate-clockwise" aria-hidden="true" style="font-size:18px;"></i></button>`:''}${i>=0?`<button class="room-rm" onclick="_removeSessionPhoto('${id}',${i},'room')" title="Remove photo" aria-label="Remove ${p.phase||''} photo" style="width:100%;margin-top:4px;padding:5px 0;border-radius:8px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-red);cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-trash" aria-hidden="true" style="font-size:18px;"></i></button>`:''}</div>`;}).join('')}</div>
   <div style="display:flex;align-items:center;gap:5px;margin-top:8px;font-size:14px;color:var(--p-green);"><i class="ti ti-lock-check" aria-hidden="true" style="font-size:16px;"></i> Saved automatically — safe to step away and come back.</div>`:''}`;
 }
 function _rerenderRoomPhotos(id){const el=document.getElementById('room-photos');if(el)el.innerHTML=_roomPhotosHTML(id);}
@@ -14840,6 +14936,7 @@ function _renderPhotosView(id,c,_passed){
       <div style="display:flex;gap:3px;margin-top:3px;">
         <button onclick="_rotatePhoto('${id}',${i})" title="Rotate 90°" aria-label="Rotate photo" style="flex:1;padding:3px 2px;border-radius:4px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-mut);cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-rotate-clockwise" style="font-size:16px;"></i></button>
         <button onclick="_flipPhoto('${id}',${i})" title="Flip" aria-label="Flip photo" style="flex:1;padding:3px 2px;border-radius:4px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-mut);cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-flip-horizontal" style="font-size:16px;"></i></button>
+        <button onclick="_removeSessionPhoto('${id}',${i})" title="Remove photo" aria-label="Remove photo" style="flex:1;padding:3px 2px;border-radius:4px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-red,#b42318);cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-trash" aria-hidden="true" style="font-size:16px;"></i></button>
       </div>
     </div>`;
     return `
@@ -17360,7 +17457,7 @@ function _savePhoto(dataUrl,filename){
 }
 function _savePhotoCurrent(){_savePhoto(_pvSrc,_pvName);}
 function _closePhotoViewer(){var o=document.getElementById('photo-viewer');if(o)o.remove();}
-function _showPhotoViewer(dataUrl,name){
+function _showPhotoViewer(dataUrl,name,rm){
   if(!dataUrl)return;
   _closePhotoViewer();_pvSrc=dataUrl;_pvName=name||'photo';
   var ov=document.createElement('div');ov.id='photo-viewer';
@@ -17369,11 +17466,12 @@ function _showPhotoViewer(dataUrl,name){
   ov.innerHTML='<img src="'+_imgSrc(dataUrl)+'" alt="Before and after photo" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:12px;">'
     +'<div style="display:flex;gap:10px;margin-top:16px;">'
     +'<button onclick="_savePhotoCurrent()" style="background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:12px;padding:13px 22px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px;"><i class="ti ti-download" aria-hidden="true"></i> Save photo</button>'
+    +(rm?'<button onclick="_removeSessionPhoto(\''+_jsAttr(rm.cid)+'\','+(Number(rm.idx)||0)+')" style="background:rgba(255,255,255,.16);color:#fff;border:none;border-radius:12px;padding:13px 18px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px;"><i class="ti ti-trash" aria-hidden="true"></i> Remove</button>':'')
     +'<button onclick="_closePhotoViewer()" style="background:rgba(255,255,255,.16);color:#fff;border:none;border-radius:12px;padding:13px 20px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Close</button>'
     +'</div>';
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
-function _viewClientPhoto(clientId,idx){var l=capturedPhotos[clientId];var p=l&&l[idx];if(!p||!p.url)return;var nm=((CL[clientId]&&CL[clientId].name)?CL[clientId].name.split(' ')[0]:'client')+'-'+(p.phase||'photo');_showPhotoViewer(p.url,nm);}
+function _viewClientPhoto(clientId,idx){var l=capturedPhotos[clientId];var p=l&&l[idx];if(!p||!p.url)return;var nm=((CL[clientId]&&CL[clientId].name)?CL[clientId].name.split(' ')[0]:'client')+'-'+(p.phase||'photo');_showPhotoViewer(p.url,nm,p.phase==='paperform'?null:{cid:clientId,idx:idx});}
 // ── Stencil overlay (tattoo) ── lay a stencil / reference image over the client's Before photo at
 // adjustable opacity to check placement and sizing before committing. Drag to position, sliders for
 // opacity (starts at 50%) and size, then Save composites the two into a new Before photo for the
@@ -32504,7 +32602,7 @@ async function _exportAllPhotos(){
   _photoExportRunning=true;
   try{
     // Every photo, once, by client: this device's copies first, then the account's index for the rest.
-    const gone=(typeof _prDismissed==='function')?_prDismissed():new Set();
+    const gone=_photoGoneSet();
     const removed=(typeof _deletedClientIds!=='undefined'&&_deletedClientIds)||{};
     const seen=new Set();const jobs=[];
     Object.keys(capturedPhotos||{}).forEach(function(cid){

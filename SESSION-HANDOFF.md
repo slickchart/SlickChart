@@ -9943,6 +9943,25 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19t: remove ONE session photo, with Undo, kept on the server
+
+Ashley chose this on the decision card ("Yes, with Undo, kept on server"). Until now photos were never
+removed one at a time. Now a trash button sits on each photo on the Photos screen, on the visit room's
+before/after thumbnails, and as "Remove" in the full-size viewer (not paper forms, which have their own).
+- New synced delete record `sc_photo_removed` `{pid: time}` in `_TOMB_OBJ` (dated: a negative time is
+  Undo, the newer decision wins on every device via `_tombPick`).
+- The photo's bytes must be on her account before the removal is written (`sc_photo_backed`, not
+  `reup`); if not, it uploads first, and if that fails the photo is KEPT and she is told.
+- The photo index keeps the entry (it is a `_CLIENT_MAP_LIST` union anyway), so Undo on any device
+  fetches it back (`_loadRemovedPhotos` runs `_restorePhotosFromCloud` when a put-back exists).
+- Removed photos are skipped by `_absorbPhotoCopy`, `_restoreRoomDraftPhotos`, `_restorePhotosFromCloud`,
+  `_recoverUnindexedServerPhotos` and `_exportAllPhotos` (`_photoGoneSet`), and pruned by
+  `persistCapturedPhotos`, the IndexedDB load, and the `removed photos` step of `_reloadAll`.
+- The client's app loses it at the next sync of that client (`_syncSpecificClientsToServer`).
+Test: `scratchpad/test-remove-one-photo.mjs` (17 checks, Chromium phone + WebKit computer). Photo
+sweeps (recover-reupload, xaccount, xdevice-checkin-dup, session-photos, export, upright) and
+sweep-sync-growth (no growth/echo/dups) pass.
+
 ## 2026-11-19 — build 2026-11-19s: client form with too many photos says "remove a few"
 
 `api/client-submit.js` refuses a submission over 4 MB (413). Photos are what make one that big. The
