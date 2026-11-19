@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zx (Tab stays inside an open sheet)
+
+Keyboard sweep on a computer: in 5 of 6 sheets (beta feedback, quick add, new message, suggest, setup
+walkthrough, protocol search) Tab walked out of the sheet onto the hidden screen behind it. A global
+capture-phase Tab/Shift+Tab handler now keeps focus inside the top sheet (`#confirm-modal` first, else
+`_topOverlay()`), wrapping first<->last and pulling focus back in if it was outside. No sheet open =
+no change. Test: `scratchpad/test-sheet-tab-trap.mjs` (3 FAILs on old code), ALL PASS Chromium + WebKit;
+test-escape-key and test-escape-keeps-typing still pass.
+
 ## 2026-11-19 — build 2026-11-19zw (client app sweep: focus ring on screen titles)
 
 - Client app sweep (phone/iPad/computer, WebKit + Chromium, server failing with 500 and offline):
