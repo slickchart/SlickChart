@@ -9950,6 +9950,8 @@ waits for the print box to close, but Firefox (and some Safari versions) return 
 vanished under an open print preview and a blank page printed. `_dropPrintFrame` removes it on
 `afterprint` (or after 10 min). Test: `scratchpad/test-print-frame.mjs` (simulates a print() that
 returns at once), both engines; the old build fails it.
+Build `2026-11-18zb` does the same for the client app's "print my records" (`_printMyRecords`);
+test `scratchpad/test-client-print-frame.mjs` (needs :8899), both engines.
 
 ## 2026-11-18 — build 2026-11-18z: a client's new phone/email that could not send is sent again
 
