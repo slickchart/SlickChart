@@ -9943,6 +9943,11 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19u: photo viewer buttons fit a phone
+
+With Remove added, "Save photo" wrapped onto two lines at 390px. The row now wraps whole buttons
+(Close drops below) and no label breaks. Screenshot-checked at phone width.
+
 ## 2026-11-19 — build 2026-11-19t: remove ONE session photo, with Undo, kept on the server
 
 Ashley chose this on the decision card ("Yes, with Undo, kept on server"). Until now photos were never
