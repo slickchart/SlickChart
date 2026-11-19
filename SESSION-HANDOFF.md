@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19q: vendor name and quick-add time
+
+- `saveVendor`: an emptied name renamed the vendor "New Vendor" (and, since 19n, its inventory
+  items too). It now keeps the old name; a new vendor with no name asks for one.
+- Quick add appointment (`saveQuickAdd`): a cleared date or time box booked today / 10:00 AM without
+  saying so. Now asks "Pick the date/time first". The box still starts at 10:00, which she can change.
+- Test: added to `scratchpad/test-affiliate-name-keep.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19p: no made-up names, prices or products on Save
 
 - Shop product (`saveAffiliate`) and inventory item (`saveInventoryItem`): emptying an existing
