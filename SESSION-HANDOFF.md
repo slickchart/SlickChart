@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19c: chat on a computer: Enter sends, paste or drop a photo
+
+Both apps. On a computer (`(hover:hover) and (pointer:fine)`) Enter in the chat box sends and
+Shift+Enter is a new line; on a phone Enter stays a new line. IME composition is left alone. A photo
+pasted into the chat box (a Cmd/Ctrl+V screenshot) or dropped onto the chat is downscaled and sent
+(up to 6), where before a paste did nothing and a drop showed the 11-18ze "use the photo button"
+toast. Listeners are on `document`, ahead of the window-level drop guard, keyed on `#cinput`; the
+provider side reads the client id from the Send button. Tests: `scratchpad/test-chat-desktop-keys.mjs`
+(provider) and `scratchpad/test-client-chat-desktop-keys.mjs` (client), both engines.
+
 ## 2026-11-19 — build 2026-11-19b: Edit partner can clear a field
 
 `saveEditPartner` wrote `value||old` for every field, so emptying a partner's phone, email, website,

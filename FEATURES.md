@@ -644,6 +644,7 @@ saved anywhere", not "does this always call that".
 | `_saveWriteNote` | `/api/beta-event` | via `_pingChart` |
 | `_saveWriteNote` | `/api/feedback` | via `_sendPulse` |
 | `_saveWriteNote` | `/api/referral` | via `_refLoad` |
+| `_scBack` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_scanInkLabel` | `/api/ai` | via `_aiComplete` |
 | `_scheduleSpecificClientSync` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendAdHocBundle` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -789,6 +790,7 @@ saved anywhere", not "does this always call that".
 | `_toggleSquareImport` | `/api/square/connect` | via `_sqConnect` |
 | `_toggleSquareImport` | `/api/square/connection` | via `_sqCheckStatus` |
 | `_toggleSquareImport` | `/api/square/customers` | via `_autoSyncCustomers` |
+| `_topOverlay` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_transcribeAndPreview` | `/api/ai` | via `_aiComplete` |
 | `_transcribeAndPreview` | `/api/transcribe` | direct |
 | `_ttpEnable` | `/api/square/mobile-auth` | via `_ttpWarm` |

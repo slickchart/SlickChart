@@ -1827,6 +1827,21 @@ function _topOverlay(){
   }
   return top;
 }
+// The chat box on a computer (2026-11-19 sweep): Enter sends and Shift+Enter starts a new line, as in
+// every desktop messaging app (on a phone Enter stays a new line); and a photo pasted (Cmd/Ctrl+V a
+// screenshot) or dropped onto the chat is attached and sent, instead of nothing happening.
+try{const _chatImgs=function(files,send){files=Array.prototype.filter.call(files||[],function(f){return f&&/^image\//i.test(f.type||'');}).slice(0,6);if(!files.length)return false;
+    const out=[];let done=0;files.forEach(function(f,i){_downscaleImg(f,function(src){out[i]=src;if(++done===files.length){const ok=out.filter(Boolean);if(ok.length)send(ok);}});});return true;};
+  const _chatSend=function(){return typeof sendClientMsg==='function'?function(imgs){sendClientMsg(imgs);}:null;};
+  const _deskKb=function(){try{return window.matchMedia('(hover:hover) and (pointer:fine)').matches;}catch(_){return false;}};
+  document.addEventListener('keydown',function(e){const t=e.target;if(!t||t.id!=='cinput'||e.key!=='Enter'||e.shiftKey||e.altKey||e.isComposing||e.keyCode===229||!_deskKb())return;const s=_chatSend();if(!s)return;e.preventDefault();s();});
+  document.addEventListener('paste',function(e){const t=e.target;if(!t||t.id!=='cinput')return;const s=_chatSend();if(!s)return;const cd=e.clipboardData;if(!cd)return;
+    const files=Array.prototype.map.call(cd.items||[],function(it){return it&&it.kind==='file'?it.getAsFile():null;}).filter(Boolean);
+    if(_chatImgs(files,function(imgs){s(imgs);}))e.preventDefault();});
+  const _inChat=function(e){const t=e.target;return !!(t&&t.closest&&t.closest('#chat-body,#chat-compose'))&&!!document.getElementById('cinput');};
+  document.addEventListener('dragover',function(e){if(_inChat(e)&&e.dataTransfer&&Array.prototype.indexOf.call(e.dataTransfer.types||[],'Files')>=0){e.preventDefault();try{e.dataTransfer.dropEffect='copy';}catch(_){}}});
+  document.addEventListener('drop',function(e){if(!_inChat(e))return;const s=_chatSend();if(!s||!e.dataTransfer)return;if(_chatImgs(e.dataTransfer.files,function(imgs){s(imgs);}))e.preventDefault();});
+}catch(e){}
 // On a computer, a photo dragged from a folder and dropped anywhere outside a drop area OPENED the
 // file in place of the app: the browser tab, or the installed app's window, left SlickChart (2026-11-18
 // sweep). Drop areas handle their own drops first; anything else is stopped here and explained.
