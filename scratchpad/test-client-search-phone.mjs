@@ -60,6 +60,12 @@ const ph = await page.evaluate(() => { const i = document.querySelector('input[p
 ok(ph, 'placeholder fits the box');
 const mc = await page.evaluate(() => [_matchClients('555-010-7777'), _matchClients('dana.reed@gm'), _matchClients('Cora').length]);
 ok(mc[0].length === 1 && mc[0][0] === 'sq_CUST7' && mc[1][0] === 'sq_CUST7' && mc[2] >= 8, 'send-to pickers match phone and email too ' + JSON.stringify(mc));
+await page.evaluate(() => { CL.sq_CUST3.name = "Dana O'Brien"; });
+const nm = await page.evaluate(() => { _newMessageSheet(); const i = document.querySelector('#newmsg-sheet input'); i.value = '555 010 7777'; i.dispatchEvent(new Event('input')); const a = document.getElementById('newmsg-list').innerText;
+  i.value = 'obrien'; i.dispatchEvent(new Event('input')); const b = document.getElementById('newmsg-list').innerText; document.getElementById('newmsg-sheet').remove(); return [a, b]; });
+ok(/Cora Stone 7/.test(nm[0]) && !/Ava/.test(nm[0]) && /O.Brien/.test(nm[1]), 'new message picker: phone and apostrophe ' + JSON.stringify(nm).slice(0, 200));
+const bi = await page.evaluate(() => { const d = document.createElement('div'); d.id = 'bi-client-list'; document.body.appendChild(d); _biClientFilter('dana.reed@'); const a = d.innerText; _biClientFilter('obrien'); const b = d.innerText; d.remove(); return [a, b]; });
+ok(/Cora Stone 7/.test(bi[0]) && /O.Brien/.test(bi[1]), 'invoice client picker: email and apostrophe ' + JSON.stringify(bi).slice(0, 200));
 ok(!errs.length, 'no errors ' + errs.join('|'));
 await browser.close(); srv.close();
 console.log(fails ? 'FAILED ' + fails : 'ALL PASS'); process.exit(fails ? 1 : 0);
