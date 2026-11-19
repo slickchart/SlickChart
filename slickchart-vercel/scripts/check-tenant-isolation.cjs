@@ -64,6 +64,11 @@ const ALLOW={
   // the one place that can see a shared Square merchant or a provider stuck at sign-in — and returns
   // only counts and masked emails, never a client's name, contact, note or message. Re-read it if it
   // changes.
+  // The hourly provider-activity watch (2026-11-19): same gate as health-sweep (verified founder token
+  // or the owner's revocable Monitor key), read-only, cross-account BY DESIGN because it watches every
+  // provider for trouble. It reads logs, device reports, sign-in/sign-up failures and whether
+  // sc_onboarded EXISTS, never a kv value; masked emails, counts and the app's own scrubbed messages only.
+  'admin/activity-watch.js':'founder/Monitor-key gated cross-account activity watch; masked emails and counts only, no kv values',
   'admin/health-sweep.js':'founder/Monitor-key gated cross-account sweep; counts and masked emails only',
   'admin/capacity.js':'founder/Monitor-key gated, read-only capacity report (2026-11-18): sizes and counts per table and per account, masked emails only, never a stored value',
   'admin/dedupe-kv.js':'Monitor-key gated founder clean-up (2026-11-18): removes only byte-identical repeat rows from top-level lists, each earlier copy kept in kv_history; reads providers for masked emails only',
