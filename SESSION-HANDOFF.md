@@ -9943,6 +9943,17 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19g: Booking link no longer says Live when no hours are set
+
+The public `/book/<name>` page answers "not active" until at least one day is open
+(`lib/booking.js getHours`), but the Booking link screen said "Live — anyone with this link can book
+you." for a provider who had not set hours: exactly what a brand-new trial account sees. Now, with the
+link on and no open day (and no Square booking page, which needs no hours), it says "Not taking
+bookings yet — set the hours you work first." with a **Set my hours** button (`nav('biz-info')`). The
+toggle still shows her choice. Also: tapping the toggle with no link name opened the name box and then
+left the link off; once a name is saved from there it turns on. Test:
+`scratchpad/test-booking-no-hours.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19f: a taken booking-link name re-opens the box
 
 `_setConsultSlug`: a 409 from `/api/consult-slug` (taken, reserved, too short) closed the name box and

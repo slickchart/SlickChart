@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19f';
+const APP_BUILD='2026-11-19g';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -18796,8 +18796,12 @@ function _calBookLinkRowHTML(){
     +'<div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Your booking link</div>'
     +'<div style="font-size:16px;color:var(--p-mut);margin-top:1px;">'+sub+'</div></div>'+chev);
 }
+function _bookHasOpenHours(){
+  try{const a=(typeof SlickBridge!=='undefined'&&SlickBridge.getAvailability)?SlickBridge.getAvailability():null;
+    if(!a||typeof a!=='object')return false;return Object.keys(a).some(function(k){return a[k]&&typeof a[k]==='object'&&!!a[k].open;});}catch(e){return true;}
+}
 function _bookToggle(){
-  if(!bookCfg.on&&!_consultSlug){ _setConsultSlug(); return; }   // no handle yet — claim one first
+  if(!bookCfg.on&&!_consultSlug){ window._bookOnAfterSlug=true; _setConsultSlug(); return; }   // no handle yet — claim one first, then it turns on (she tapped On)
   bookCfg.on=!bookCfg.on;saveBookCfg();
   if(typeof proToast==='function')proToast(bookCfg.on?'Your booking link is live':'Booking link turned off');
   renderBookingLink();
@@ -19148,7 +19152,10 @@ function renderBookingLink(){
   document.getElementById('tt').textContent='Booking link';
   if(_consultSlug===null){try{_loadBookingSlug();}catch(e){}}
   if(_bookSquare===null){try{_bookCheckSquare();}catch(e){}}
-  const live=bookCfg.on&&!!_consultSlug;
+  // The public page answers "not active" until at least one day is open (lib/booking.js getHours), so
+  // "Live" with no hours set told a new provider clients could book when nobody could (2026-11-19).
+  const _noHours=!bookCfg.squareUrl&&!_bookHasOpenHours();   // a Square booking page needs no hours here
+  const live=bookCfg.on&&!!_consultSlug&&!_noHours;
   const disp=_consultSlug?_fileEsc(_consultHost()+'/book/'+_consultSlug):'';
   const full=_jsAttr(_bookFull());
   const modeCard=function(id,title,desc,warn){
@@ -19177,7 +19184,8 @@ function renderBookingLink(){
     <div style="background:var(--surf2);border:1px solid ${live?'var(--accent)':'var(--p-line)'};border-radius:12px;padding:14px;margin-bottom:14px;">
       <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Your booking link</div>
       <div style="font-size:16px;color:${live?'var(--accent-strong)':'var(--p-mut)'};font-weight:500;margin-bottom:4px;word-break:break-all;">${disp}</div>
-      <div style="font-size:14px;color:${live?'var(--p-green)':'var(--p-mut)'};margin-bottom:10px;">${live?'Live — anyone with this link can book you.':'Turned off — the link shows a "not active" page.'}</div>
+      <div style="font-size:14px;color:${live?'var(--p-green)':'var(--p-mut)'};margin-bottom:10px;">${live?'Live — anyone with this link can book you.':(bookCfg.on&&_noHours)?'Not taking bookings yet — set the hours you work first.':'Turned off — the link shows a "not active" page.'}</div>
+      ${(bookCfg.on&&_noHours)?`<button class="btnp" style="width:100%;border-radius:8px;justify-content:center;margin-bottom:10px;" onclick="nav('biz-info')"><i class="ti ti-clock"></i> Set my hours</button>`:''}
       <div style="display:flex;gap:8px;">
         <button class="btng" style="flex:1;" onclick="_copyToClipboard('${full}','Booking link copied')"><i class="ti ti-copy"></i> Copy</button>
         <button class="btng" style="flex:1;" onclick="_shareOrCopy('${full}','Book an appointment')"><i class="ti ti-share"></i> Share</button>
@@ -19188,7 +19196,7 @@ function renderBookingLink(){
       <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;">
         <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Take bookings from this link</div>
         <div style="font-size:14px;color:var(--p-mut);line-height:1.4;margin-top:2px;">Turn off any time — the link stops working, nothing is deleted.</div></div>
-        ${togBtn(live,'_bookToggle()','Take bookings from this link')}
+        ${togBtn(bookCfg.on&&!!_consultSlug,'_bookToggle()','Take bookings from this link')}
       </div>
     </div>
     ${_bookSquareCardHTML()}
@@ -19329,7 +19337,7 @@ async function _setConsultSlug(){
   _inputSheet({title:'Choose your link name',body:(why?why+' ':'')+'Letters, numbers, and hyphens. The same name is used for your booking link and your consult link.',placeholder:'your-name',value:val,action:'Save'},async function(raw){
     if(!raw)return;
     try{const r=await fetch('/api/consult-slug',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({slug:raw})});const j=await r.json();
-      if(r.ok&&j&&j.ok){_consultSlug=j.slug;if(typeof proToast==='function')proToast('Your link name is ready ✓');
+      if(r.ok&&j&&j.ok){_consultSlug=j.slug;if(window._bookOnAfterSlug){window._bookOnAfterSlug=false;try{bookCfg.on=true;saveBookCfg();}catch(e){}}if(typeof proToast==='function')proToast('Your link name is ready ✓');
         if(activeVirtualTab==='upload')switchVTab('upload');
         // Whichever screen sent her here needs redrawing, or she saves a name and watches the screen
         // carry on asking her to pick one.
