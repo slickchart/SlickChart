@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19e';
+const APP_BUILD='2026-11-19f';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -19581,7 +19581,10 @@ async function _setConsultSlug(){
   // ONE name serves both public pages — /book/<name> and /consult/<name> — so this sheet is reached
   // from the Booking link screen just as often as from Photo consults. Calling it "your
   // consult link name" there was simply wrong, so the wording names both.
-  _inputSheet({title:'Choose your link name',body:'Letters, numbers, and hyphens. The same name is used for your booking link and your consult link.',placeholder:'your-name',value:_consultSlug||_consultSuggestion||'',action:'Save'},async function(raw){
+  // A name that is taken or not allowed re-opens the box with what she typed and the reason, instead of
+  // closing it behind a toast so she has to start again (2026-11-19 sweep).
+  const _open=function(val,why){
+  _inputSheet({title:'Choose your link name',body:(why?why+' ':'')+'Letters, numbers, and hyphens. The same name is used for your booking link and your consult link.',placeholder:'your-name',value:val,action:'Save'},async function(raw){
     if(!raw)return;
     try{const r=await fetch('/api/consult-slug',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({slug:raw})});const j=await r.json();
       if(r.ok&&j&&j.ok){_consultSlug=j.slug;if(typeof proToast==='function')proToast('Your link name is ready ✓');
@@ -19589,9 +19592,12 @@ async function _setConsultSlug(){
         // Whichever screen sent her here needs redrawing, or she saves a name and watches the screen
         // carry on asking her to pick one.
         try{ if(_navCur&&_navCur.screen==='booking-link'&&typeof renderBookingLink==='function')renderBookingLink(); }catch(e){}}
-      else{if(typeof proToast==='function')proToast((j&&j.error)||'Could not set that link');}
-    }catch(e){if(typeof proToast==='function')proToast('Could not set that link');}
+      else if(r.status>=400&&r.status<500&&j&&j.error){_open(raw,j.error);}
+      else{if(typeof proToast==='function')proToast((j&&j.error)||'Could not set that link. Nothing changed, try again in a moment.');}
+    }catch(e){if(typeof proToast==='function')proToast('Could not reach SlickChart to save your link name. Check your connection and try again.');}
   });
+  };
+  _open(_consultSlug||_consultSuggestion||'','');
 }
 function _consultWhen(ts){try{const d=new Date(ts);if(isNaN(d.getTime()))return '';return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return '';}}
 function _consultRequestsHTML(){

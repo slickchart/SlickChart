@@ -9943,6 +9943,13 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19f: a taken booking-link name re-opens the box
+
+`_setConsultSlug`: a 409 from `/api/consult-slug` (taken, reserved, too short) closed the name box and
+toasted the reason, so she retyped from nothing. It now re-opens the box with what she typed and the
+reason above it. Server errors and no-connection keep a toast, now in plain words.
+Test: `scratchpad/test-slug-taken.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19e: courses and "send to their app" to an uninvited client open the invite too
 
 Same dead end as 19d in `confirmSendCourse` and `_confirmSentToApp`: both now open
