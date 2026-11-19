@@ -640,7 +640,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zc';
+const APP_BUILD='2026-11-19zd';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -1593,6 +1593,33 @@ let checkinCfg={
   extraNotes:true,
   autoSend:{on:true,when:'1 day'},
 };
+// The untouched starting check-in, kept as text so a profession preset assigned over checkinCfg can't change it.
+const _CI_DEFAULT_JSON=JSON.stringify(checkinCfg);
+// Is this saved check-in the automatic starting copy rather than one she saved? seedCheckinCfgOnce() marks
+// its copy _auto; copies an older build seeded carry no mark but match the starting copy key for key.
+// The mark is a fingerprint of the content, not just "true": an older build that loads this copy keeps the
+// mark in memory and would save it back with her edits, so a copy whose content no longer matches its own
+// mark is hers.
+function _ciSig(o){try{const c=Object.assign({},o);delete c._auto;const t=JSON.stringify(c);let h=0;for(let i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))|0;return 'a'+(h>>>0).toString(36)+'.'+t.length;}catch(e){return '';}}
+function _ciAutoCopy(o){const c=Object.assign({},o);delete c._auto;c._auto=_ciSig(c);return c;}
+function _ciIsAutoSeed(o){
+  if(!o||typeof o!=='object')return false;
+  if(typeof o._auto==='string')return o._auto===_ciSig(o);
+  try{const d=JSON.parse(_CI_DEFAULT_JSON);return Object.keys(d).every(k=>JSON.stringify(o[k])===JSON.stringify(d[k]));}catch(e){return false;}
+}
+// A new barber, nail artist, tattoo artist... got the ESTHETICIAN's check-in ("Any changes to your skincare
+// routine?") from her second launch on (2026-11-19): the boot seed saved the starting copy before onboarding
+// picked her profession, and that saved copy won on every later launch. While the saved copy is still the
+// automatic one, it follows her profession; once she saves her own, nothing here touches it.
+function _ciSavedAutoSeed(){try{const raw=localStorage.getItem('sc_checkin_cfg');if(!raw)return null;const o=JSON.parse(raw);return _ciIsAutoSeed(o)?raw:null;}catch(e){return null;}}
+function _ciRefreshAutoSeed(raw){
+  try{
+    const next=JSON.stringify(_ciAutoCopy(checkinCfg));
+    if(next===raw)return;
+    localStorage.setItem('sc_checkin_cfg',next);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_checkin_cfg',next);
+    try{SlickBridge.post('checkin-config',checkinCfg);}catch(e){}
+  }catch(e){}
+}
 
 let formQs=[
   {id:1,label:'Full name',type:'Short text',required:true},
@@ -7366,6 +7393,8 @@ function applyProfessionConfig(){
       else if(!noteTemplates[activeNoteTemplate]&&noteTemplates.freeform)activeNoteTemplate='freeform';
     }
   }catch(e){}
+  const _ciAuto=_ciSavedAutoSeed();
+  if(_ciAuto){try{Object.keys(checkinCfg).forEach(k=>delete checkinCfg[k]);Object.assign(checkinCfg,JSON.parse(_CI_DEFAULT_JSON));}catch(e){}}
   if(only('makeup'))Object.assign(checkinCfg,makeupCheckinCfg);
   else if(only('massage'))Object.assign(checkinCfg,massageCheckinCfg);
   else if(only('lash'))Object.assign(checkinCfg,lashCheckinCfg);
@@ -7384,6 +7413,7 @@ function applyProfessionConfig(){
   if(hairBarberOnly&&hasHair) Object.assign(checkinCfg,hairCheckinCfg);
   else if(hairBarberOnly&&hasBarber) Object.assign(checkinCfg,barberCheckinCfg);
   else if(browOnly) Object.assign(checkinCfg,browCheckinCfg);
+  if(_ciAuto)_ciRefreshAutoSeed(_ciAuto);
 
   // Reference-photo prompt on the pre-visit check-in for image-forward professions
   // (hair, barber, brow, pmu, makeup, lash). Default ON for those professions. A saved
@@ -21948,13 +21978,14 @@ function saveCheckinCfg(){
     const has=x=>String((x&&typeof x==='object')?(x.label||''):(x||'')).trim();
     ['skinQ','drinks','music','snacks'].forEach(k=>{if(Array.isArray(checkinCfg[k]))checkinCfg[k]=checkinCfg[k].filter(has);});
   }catch(e){}
+  delete checkinCfg._auto;   // her own now: a profession change no longer replaces it
   try{(function(_v){localStorage.setItem('sc_checkin_cfg',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_checkin_cfg',_v);return _v;})(JSON.stringify(checkinCfg));}catch(e){}
   SlickBridge.post('checkin-config',checkinCfg);
   proToast('Check-in saved, your clients see these options now');
 }
 function seedCheckinCfgOnce(){
   // publish the default config so the client app reflects it before the first manual save
-  try{if(!localStorage.getItem('sc_checkin_cfg')){(function(_v){localStorage.setItem('sc_checkin_cfg',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_checkin_cfg',_v);return _v;})(JSON.stringify(checkinCfg));SlickBridge.post('checkin-config',checkinCfg);}}catch(e){}
+  try{if(!localStorage.getItem('sc_checkin_cfg')){(function(_v){localStorage.setItem('sc_checkin_cfg',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_checkin_cfg',_v);return _v;})(JSON.stringify(_ciAutoCopy(checkinCfg)));SlickBridge.post('checkin-config',checkinCfg);}}catch(e){}
 }
 // Put the cursor in the row just added. "+ Add question" used to append a fixed "New question" line
 // that could not be typed into at all (Jessica, Sep 22: "it just says new question and will not allow
@@ -32653,7 +32684,7 @@ function renderTeamAccess(){
   ${!cloudOn?`<div style="margin:0 16px 14px;background:var(--p-amber-bg);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px 13px;display:flex;gap:10px;align-items:flex-start;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:16px;color:var(--p-amber);flex-shrink:0;margin-top:1px;"></i><div style="font-size:16px;color:var(--p-amber);line-height:1.55;">Sharing works only once you're signed in with cloud sync on. Right now this device isn't backing up to an account, so a teammate signing in elsewhere wouldn't see your data. Sign in first (Account \u2192 Security &amp; billing).</div></div>`:''}
   <div class="sh"><h2>How to set it up</h2></div>
   <div style="margin:0 16px 14px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:8px 14px;">
-    ${step(1,'On your teammate\u2019s phone, open SlickChart and go to sign in.')}
+    ${step(1,'On your teammate\u2019s phone or computer, open SlickChart and go to sign in.')}
     ${step(2,'Have them sign in with <b>this same account</b>'+(email?` \u2014 <span style="color:var(--accent-strong);">${_fileEsc(email)}</span>`:'')+' and your password.')}
     ${step(3,'That\u2019s it. Their app loads your clients, catalog, and Square automatically \u2014 no separate setup.')}
   </div>

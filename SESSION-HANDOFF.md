@@ -9943,6 +9943,25 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zd: a non-esthetician's check-in follows her profession
+
+- Found by crawling as a barber with a word check: from the SECOND launch on, every new non-esthetician
+  (barber, nails, tattoo, massage...) got the esthetician's pre-visit check-in ("Any changes to your
+  skincare routine?"), and clients were sent it. `seedCheckinCfgOnce()` runs at boot, before onboarding
+  picks the profession, and saved the starting copy to `sc_checkin_cfg`; `loadCheckinCfg()` then
+  assigned that saved copy over the profession preset on every later launch.
+- Now the seeded copy carries `_auto` = a fingerprint of its content (`_ciSig`). While the saved copy is
+  automatic (`_ciIsAutoSeed`: mark matches content, or an unmarked copy equal to `_CI_DEFAULT_JSON` key
+  for key, i.e. the old seed), `applyProfessionConfig()` rebuilds it from the starting copy + her
+  profession preset and saves/pushes/posts that (`_ciRefreshAutoSeed`). `saveCheckinCfg()` drops the mark,
+  so her own copy is never replaced. A fingerprint, not `true`, because an older build keeps the mark in
+  memory and would save it back with her edits; a mark that no longer matches its content means hers.
+- Team access step 1 says "phone or computer".
+- Test: `scratchpad/test-checkin-profession-seed.mjs` (old code fails 3), Chromium + WebKit. Existing
+  check-in tests pass (`test-checkin-light` already fails on the old code, unrelated).
+- Also: the escape sweep (`scratchpad/sweep-untrusted-html.mjs`), long-text sweep, and the wide crawl now
+  take `LOCALE=`, `TZ_ID=`, `PROF=` and `WORDS=` (a regex flagged on every screen).
+
 ## 2026-11-19 — build 2026-11-19zc: find a client by phone or email
 
 - The Clients search only matched name and treatment, so a provider with a text from a number could

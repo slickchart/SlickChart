@@ -23,7 +23,7 @@ const srv = http.createServer((q, s) => { const p = decodeURIComponent(q.url.spl
 const SKIP = /logout|_doLogout|signOut|sign out|deleteAccount|delete-account|_doDelete|wipe|purge|_resetApp|resetAll|clearAll|_doDeleteClientData|location\.reload|_reloadApp|window\.location|location\.href=|_hardRefresh|_forceUpdate|removeDemoClients|_setShotMode\(true|cancelSub|_sqDisconnect|disconnect/i;
 const engine = process.env.PW_ENGINE === 'chromium' ? pw.chromium : pw.webkit;
 const browser = await engine.launch(process.env.PW_ENGINE === 'chromium' ? { executablePath: '/opt/pw-browsers/chromium' } : {});
-const ctx = await browser.newContext({ viewport: VP, hasTouch: TOUCH, isMobile: false, serviceWorkers: 'block' });
+const ctx = await browser.newContext({ viewport: VP, hasTouch: TOUCH, isMobile: false, serviceWorkers: 'block', ...(process.env.LOCALE ? { locale: process.env.LOCALE } : {}), ...(process.env.TZ_ID ? { timezoneId: process.env.TZ_ID } : {}) });
 const page = await ctx.newPage();
 let errs = [], cerrs = [];
 page.on('pageerror', e => errs.push(String(e && e.message || e).slice(0, 200)));
@@ -33,8 +33,9 @@ page.on('popup', p => p.close().catch(() => {}));
 // A brand-new esthetician, Square connected, clients imported from Square, setup finished.
 const now = Date.now();
 const clients = {}; for (let i = 0; i < 40; i++) { const id = 'sq_CUST' + i; clients[id] = { id, name: ['Ava', 'Bea', 'Cora', 'Dana', 'Eve'][i % 5] + ' ' + ['Lane', 'Moss', 'Reed', 'Stone'][i % 4] + ' ' + i, email: 'c' + i + '@ex.com', phone: '555010' + String(i).padStart(4, '0'), sqId: 'CUST' + i, source: 'square', created: now - 86400000 * 3, _ts: now - 86400000 * 3, visits: [], notes: [] }; }
-const seed = { sc_clients: JSON.stringify(clients), sc_onboarded: '1', sc_professions: JSON.stringify(['esthetician']), sc_wsname: JSON.stringify('Frances Skin Studio'),
+const seed = { sc_clients: JSON.stringify(clients), sc_onboarded: '1', sc_professions: JSON.stringify((process.env.PROF || 'esty').split(',')), sc_wsname: JSON.stringify('Frances Skin Studio'),
   sc_bizinfo: JSON.stringify({ name: 'Frances Skin Studio', phone: '5550100000', email: 'studio@ex.com' }) };
+await page.addInitScript(w => { window.__WORDS = w; }, process.env.WORDS || '');
 await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_login_email', 'new@spa.com'); localStorage.setItem('sc_hide_sample', '1'); } catch (e) {}
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
   window.__opened = []; window.open = function (u) { window.__opened.push(String(u)); return null; };
@@ -62,6 +63,8 @@ const geom = () => { // sideways overflow and content wider than the window
   const vw = innerWidth; const out = [];
   if (document.documentElement.scrollWidth > vw + 2) out.push('page scrolls sideways ' + document.documentElement.scrollWidth + '>' + vw);
   const S = document.getElementById('S'); if (S && S.scrollWidth > S.clientWidth + 4) out.push('screen content wider than its box ' + S.scrollWidth + '>' + S.clientWidth);
+  const tx = (S || document.body).innerText; const bw = tx.match(/.{0,30}(Invalid Date|\bNaN\b|\bundefined\b|\[object Object\]|\bnull\b).{0,30}/g); if (bw) out.push('bad text: ' + bw.slice(0, 3).join(' | '));
+  if (window.__WORDS) { const ww = tx.match(new RegExp('.{0,40}(' + window.__WORDS + ').{0,40}', 'gi')); if (ww) out.push('words: ' + ww.slice(0, 4).join(' | ')); }
   return out; };
 while (queue.length && seen.size < 300) {
   const [s, d] = queue.shift(); const k = key(s, d); if (seen.has(k)) continue;
