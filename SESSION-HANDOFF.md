@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19i: an expired reset link is no longer a dead end
+
+The `newpw` sign-in screen (opened from a reset email, `?reset=`) had only "Set password". An old or
+used link answers "This reset link is invalid or has expired." and there was no way to ask for another
+or go back to log in short of reloading. It now has **Send reset link** (opens the email box) and
+**Back to log in**, both clearing `_resetToken`. Test: `scratchpad/test-reset-expired.mjs` (Chromium +
+WebKit); `test-front-door-net` still passes.
+
 ## 2026-11-19 — build 2026-11-19h: unsaved suggested hours are labelled; Getting started agrees
 
 `normalizeAvail(null)` draws Mon-Sat 9-5 in Business info for a new account, so the hours LOOKED set
