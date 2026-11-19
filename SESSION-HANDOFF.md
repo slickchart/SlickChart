@@ -9943,6 +9943,19 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zz (money sent to Square is in her location's currency)
+
+Every charge path hard-coded `currency: 'USD'`: saved-card charge (`api/square/charge-card.js`),
+payment link (`payment-link.js`), invoice lines (`invoice.js`) and the booking deposit link
+(`lib/booking.js depositLinkFor`). Square refuses money in any currency but the location's, so a
+seller in Canada, the UK, Australia, Ireland, France or Spain could not take a single payment. New
+`resolveLocationCurrency(token, locationId)` in `lib/square.js` reads the location's currency; a
+zero-decimal currency (JPY etc.) or none falls back to USD, because every amount here is sent in
+hundredths and JPY would otherwise charge 100x (Square refuses it instead, as before). The app's
+screens still print "$"; that is display only. Test `scratchpad/test-square-currency.mjs`
+(CAD/GBP/AUD/USD, JPY guard; 13 FAILs on old code). Also: NZ time zone + en-GB crawl (106 screens,
+1,046 taps) and NET=500 phone crawl (106 screens) clean.
+
 ## 2026-11-19 — build 2026-11-19zy (time zones: reminders keep her clock time; invoices due on her today)
 
 Time-zone sweep.
