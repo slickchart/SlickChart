@@ -9943,6 +9943,18 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzc (phone round: three small tap targets)
+
+Ashley: "most people are using phones so make sure we are sweeping those too". Phone round on zzb:
+iPhone Safari whole-app crawl (normal 106 screens/1,023 taps, offline 106/1,007), Android-size Chrome
+106/587, client app on iPhone (normal/500/offline), forms on iPhone (178 forms, mirror, ticks,
+branding), 56 area tests on iPhone, sync suite on iPhone, onboarding/sign-up/new-provider tests on
+iPhone: all clean. New `scratchpad/test-tap-size.mjs` (provider, 15 screens) and a `small` field in
+`sweep-client-wide.mjs` list tap targets under 24px. Three on the provider side were 17-22px tall
+and are now 32px+: client card **Edit** pill, Home's **Get set up ->** link, and New client's
+**Send a bundle instead** (now also `role=button`). Client app: none. Stale harnesses noted in
+plan.md (checkin-light, gcal-multi-db, orphan-settings, booking-qr, photo-label-contrast).
+
 ## 2026-11-19 — build 2026-11-19zzb (booking link: a booking at her other Square location blocks the time)
 
 `busyRanges` (lib/booking.js) asked Square for bookings at the SAVED location only, so a booking at a
