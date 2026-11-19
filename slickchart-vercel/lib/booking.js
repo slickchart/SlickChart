@@ -618,13 +618,16 @@ export async function depositLinkFor(providerId, { amount, serviceName, email, c
   try { conn = await getConnection(providerId); } catch (e) { return ''; }
   if (!conn || !conn.token) return '';
   try {
-    let currency = 'USD'; try { currency = await resolveLocationCurrency(conn.token, conn.locationId); } catch (e) {}
+    // Square needs a location for a quick-pay link; a connection saved without one used to make every
+    // deposit link fail quietly.
+    let locId = conn.locationId || null; if (!locId) { try { locId = await resolveLocationId(conn.token, null); } catch (e) {} }
+    let currency = 'USD'; try { currency = await resolveLocationCurrency(conn.token, locId); } catch (e) {}
     const body = {
       idempotency_key: 'sc-dep-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10),
       quick_pay: {
         name: ('Deposit — ' + (serviceName || 'Appointment')).slice(0, 255),
         price_money: { amount: cents, currency },
-        location_id: conn.locationId || undefined
+        location_id: locId || undefined
       },
       payment_note: ('SCDEP:' + String(clientId || '').slice(0, 40)).slice(0, 500)
     };

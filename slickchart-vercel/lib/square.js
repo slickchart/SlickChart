@@ -86,8 +86,8 @@ export async function squareFetch(path, { method = 'GET', body } = {}, token) {
 
 export async function resolveLocationId(token, stored) {
   if (stored) return stored;
-  const cfg = squareConfig();
-  if (cfg.locationId) return cfg.locationId;
+  // Never a deployment-wide SQUARE_LOCATION_ID: there is no shared token any more, so a pinned id is
+  // another seller's location for everyone but its owner (§0). Always the token's OWN locations.
   const data = await squareFetch('/v2/locations', {}, token);
   const all = data.locations || [];
   const pick = all.filter(l => l.status === 'ACTIVE')[0] || all[0];
@@ -370,7 +370,16 @@ export async function getConnection(providerId) {
     console.error('[square] connection for provider ' + providerId + ' EXPIRED at ' + row.expires_at + ' and could not be refreshed — they must reconnect Square');
     return null;
   }
-  return { token: access, locationId: row.location_id || null, merchantId: row.merchant_id || null };
+  // A connection saved while Square did not answer has no location, and stayed that way: purchases,
+  // deposit links and anything else that needs it quietly did nothing. Find hers and keep it.
+  let locationId = row.location_id || null;
+  if (!locationId) {
+    try {
+      locationId = await resolveLocationId(access, null);
+      if (locationId) { try { await q`UPDATE square_connections SET location_id=${locationId} WHERE provider_id=${providerId} AND location_id IS NULL`; } catch (e) {} }
+    } catch (e) { locationId = null; }
+  }
+  return { token: access, locationId, merchantId: row.merchant_id || null };
 }
 
 // Keep every Square connection alive (2026-10-29). getConnection only refreshes when something asks

@@ -16,7 +16,14 @@ export default async function handler(req, res) {
   const customerId = String((req.query && req.query.customerId) || '').trim();
   const recentPaid = String((req.query && req.query.recentPaid) || '') === '1';
 
-  if (!ctx.locationId) { res.status(200).json({ ok: true, orders: [], note: 'no-location' }); return; }
+  // Every location on her account (Square searches up to 10 at once), not just the one saved when she
+  // connected: a client's purchases at her second location were missing from the chart, and a
+  // connection saved with no location (Square did not answer at that moment) showed none at all.
+  let locIds = [];
+  try { const loc = await sf('/v2/locations'); locIds = (loc.locations || []).filter(l => l && l.id && l.status !== 'INACTIVE').map(l => l.id); } catch (e) {}
+  if (ctx.locationId && !locIds.includes(ctx.locationId)) locIds.unshift(ctx.locationId);
+  locIds = locIds.slice(0, 10);
+  if (!locIds.length) { res.status(200).json({ ok: true, orders: [], note: 'no-location' }); return; }
 
   try {
     const filter = {};
@@ -24,7 +31,7 @@ export default async function handler(req, res) {
     // Completed (paid) orders are what count as a purchase/for reconciliation.
     filter.state_filter = { states: ['COMPLETED'] };
     const body = {
-      location_ids: [ctx.locationId],
+      location_ids: locIds,
       query: { filter, sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' } },
       limit: recentPaid ? 50 : 25
     };
