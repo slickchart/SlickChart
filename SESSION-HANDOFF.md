@@ -9943,6 +9943,25 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zy (time zones: reminders keep her clock time; invoices due on her today)
+
+Time-zone sweep.
+- **Repeating reminders drifted an hour at daylight saving.** The app's Done and the cron
+  (`api/cron-provider-reminders.js dueOccurrence`) both stepped 24 h of milliseconds, so "every day
+  at 9am" set in October pushed at 8am from Nov 1 all winter. Each reminder now carries `tz` (device
+  zone, stamped by `_remSave` and on Done; additive field, old builds ignore it). With a valid `tz` the
+  cron repeats by calendar day/month at the same wall-clock time (`_zonedOccurrence`, `_wallToUtc`);
+  with none it behaves exactly as before. Monthly with `tz` uses the local `dom`. Done steps by
+  calendar day too. Test `scratchpad/test-reminder-dst.mjs` (LA and Auckland; Chromium + WebKit);
+  `test-reminder-monthly-31.mjs` now extracts the helpers too. On deploy day a reminder that already
+  fired at the old (shifted) hour can fire once more at the right hour: one-time.
+- **Square invoices were due "yesterday" east of UTC.** `api/square/invoice.js` defaulted `due_date`
+  to the UTC date (Australia/NZ mornings = yesterday; US evenings = tomorrow). Now her Square
+  location's zone (`resolveLocationTz` + `zonedDateKey`); a bad `dueDate` is ignored. Test
+  `scratchpad/test-invoice-due-date-tz.mjs` (3 FAILs on old code).
+- Photo zip and full export file names used the UTC date; now the local date.
+- `sweep-new-provider-wide.mjs` gained `DATEHOOK=1` (logs every bare 'YYYY-MM-DD' parsed by `new Date`).
+
 ## 2026-11-19 — build 2026-11-19zx (Tab stays inside an open sheet)
 
 Keyboard sweep on a computer: in 5 of 6 sheets (beta feedback, quick add, new message, suggest, setup

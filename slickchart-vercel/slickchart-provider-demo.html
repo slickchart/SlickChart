@@ -644,7 +644,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zx';
+const APP_BUILD='2026-11-19zy';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -18604,8 +18604,12 @@ function _syncReminderNotifs(){
   if(added){try{_applyNotifState();}catch(e){}try{updateBadge();}catch(e){}}
   return added;
 }
+// Her time zone, carried on each reminder so the server repeats it at her WALL-CLOCK time across a
+// daylight-saving change (a fixed 24 h step moved "every day at 9am" to 8am all winter).
+function _remTz(){try{const z=Intl.DateTimeFormat().resolvedOptions().timeZone;return (typeof z==='string'&&z.includes('/'))?z:'';}catch(e){return '';}}
 function _remSave(rec){
   if(!rec||!rec.title||!rec.at)return false;
+  if(!rec.tz){const z=_remTz();if(z)rec={...rec,tz:z};}
   const i=reminders.findIndex(function(x){return x&&x.id===rec.id;});
   if(i>=0)reminders[i]={...reminders[i],...rec,_ts:Date.now()};
   else reminders.push({...rec,_ts:Date.now()});
@@ -18621,7 +18625,9 @@ function _remDone(id){
   // its start past now instead, so the next occurrence is the next one due.
   if(r.repeat){
     const step=r.repeat==='daily'?86400000:r.repeat==='weekly'?604800000:0;
-    if(step){let at=+r.at;const now=Date.now();while(at<=now)at+=step;reminders[i]={...r,at,_ts:Date.now()};}
+    // By calendar day at the same clock time, not by 24 h of milliseconds, so a 9am reminder stays
+    // 9am across the clocks changing.
+    if(step){const d=new Date(+r.at),days=step===86400000?1:7,now=Date.now();let g=0;while(d.getTime()<=now&&g++<5000)d.setDate(d.getDate()+days);const z=r.tz||_remTz();reminders[i]={...r,at:d.getTime(),...(z?{tz:z}:{}),_ts:Date.now()};}
     else{
       // From the ORIGINAL day of the month, clamped to each month's length. Stepping setMonth() rolled
       // Jan 31 to Mar 3, and from then on it was "the 3rd" for good (2026-11-18 sweep). dom/domUtc keep
@@ -18630,7 +18636,7 @@ function _remDone(id){
       const hh=d0.getHours(),mi=d0.getMinutes();let y=d0.getFullYear(),mo=d0.getMonth(),at=+r.at,g=0;
       const mk=function(y,mo){const dim=new Date(y,mo+1,0).getDate();return new Date(y,mo,Math.min(dom,dim),hh,mi,0,0).getTime();};
       while(at<=Date.now()&&g++<1200){mo++;if(mo>11){mo=0;y++;}at=mk(y,mo);}
-      reminders[i]={...r,at,dom,domUtc,_ts:Date.now()};
+      const z=r.tz||_remTz();reminders[i]={...r,at,dom,domUtc,...(z?{tz:z}:{}),_ts:Date.now()};
     }
   }else{
     reminders[i]={...r,done:Date.now(),_ts:Date.now()};
@@ -33093,7 +33099,7 @@ async function _exportAllPhotos(){
     for(let i=0;i<jobs.length;i+=4){await Promise.all(jobs.slice(i,i+4).map(one));}
     if(!files.length){if(typeof proToast==='function')proToast('Could not reach your photos. Check your connection and try again.',0,'error');return;}
     files.sort(function(a,b){return a.name<b.name?-1:a.name>b.name?1:0;});
-    const stamp=new Date().toISOString().slice(0,10);
+    const stamp=(function(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})(new Date());
     const fname='slickchart-photos-'+stamp+'.zip';
     if(_nativeFiles()){
       // Inside the app a file goes to the share sheet as text (base64), so a whole library at once can
@@ -33148,7 +33154,7 @@ function _exportAllData(){
     _keys:count,
     data
   };
-  const stamp=new Date().toISOString().slice(0,10);
+  const stamp=(function(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})(new Date());
   const ok=_downloadFile('slickchart-full-export-'+stamp+'.json',JSON.stringify(payload,null,2),'application/json');
   if(ok==='native')return;
   if(typeof proToast==='function')proToast(ok?('Exported everything \u2014 '+count+' data set'+(count===1?'':'s')+' \u2713'):'Could not build the export \u2014 try again');
