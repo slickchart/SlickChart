@@ -64,5 +64,12 @@ x = await L.sendCancelConfirmation(q, subs[0], 'tria@x.com', {});
 check('a trial cancel says the trial ends and she will not be charged', x && /free trial ends on .* and you will not be charged/.test(sent[2].text), sent[2] && sent[2].text);
 x = await L.sendCancelConfirmation(q, subs[4], 'live@x.com', {});
 check('a live plan sends nothing', !x && sent.length === 3);
+// Ashley 2026-11-19: every cancellation email says their reasons get fixed and that they are always welcome back.
+for (const st of ['scheduled', 'ended']) {
+  const m = L.confirmationEmail({ name: 'Jo Smith', state: st, endsSec: now + 5 * D, trial: false });
+  check('the ' + st + ' email says they are always welcome back', /always welcome back/.test(m.text) && /always welcome back/.test(m.html), m.text);
+  check('the ' + st + ' email says reasons are worked on right away', /I work on fixing it right away/.test(m.text), m.text);
+  check('the ' + st + ' email has no em dash', !/\u2014/.test(m.text));
+}
 res.forEach(r => console.log((r[1] ? 'PASS ' : 'FAIL ') + r[0] + (r[1] ? '' : '  ' + String(r[2] || '').slice(0, 400))));
 const bad = res.filter(r => !r[1]); console.log(`\n${res.length - bad.length}/${res.length} passed`); process.exit(bad.length ? 1 : 0);
