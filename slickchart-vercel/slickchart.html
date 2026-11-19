@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19j';
+const APP_BUILD='2026-11-19k';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -14620,6 +14620,8 @@ function _commitWriteNote(id){
   const sections={};
   t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);sections[s.id]=el?el.value:'';});
   const _fc=_faceChartOf(id);
+  // Nothing written and nothing marked on the face chart: do not add an empty visit to her history.
+  if(!Object.values(sections).some(v=>String(v||'').trim())&&!(_fc&&_fc.marks&&_fc.marks.length)&&!(sessionSummaries[id]||[]).some(h=>h._draftDate===dateVal))return {ok:false,empty:true};
   const _wasPast=(window._wnPastVisit===id);if(_wasPast)window._wnPastVisit=null;
   providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate,ts:Date.now(),committed:true,committedAt:Date.now()};
   // A past visit she added is finished once saved: the next note starts blank, not 12 hours later.
@@ -14684,6 +14686,7 @@ function _pingChart(isNew){
 }
 function _saveWriteNote(id){
   const r=_commitWriteNote(id);
+  if(r.empty){proToast('Write your note first');return;}
   if(!r.ok)return;
   proToast('Note saved \u2713');
   nav('notes',id);
@@ -14692,6 +14695,7 @@ function _saveWriteNote(id){
 }
 function _saveAndSendNote(id){
   const r=_commitWriteNote(id);
+  if(r.empty){try{_summaryFrom='write-note';}catch(e){}nav('session-summary',id);return;}   // nothing to save; go straight to the summary
   if(!r.ok)return;
   proToast('Note saved \u2713');
   // Do NOT ship the raw clinical note to the client. Open the Session summary composer instead,
@@ -14715,10 +14719,10 @@ function renderNewNoteTemplate(clientId){
   <div id="nt-secs" style="padding:0 16px;">${noteEditSecs.map((s,i)=>ntSecHTML(s,i)).join('')}</div>
   <button onclick="addNtSec()" style="width:calc(100% - 32px);margin:0 16px 16px;border:1.5px dashed var(--p-line-ctl);border-radius:12px;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px;color:var(--p-mut);background:none;cursor:pointer;"><i class="ti ti-plus"></i> Add a section</button>`;
 }
-function ntSecHTML(s,i){return`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin-bottom:8px;overflow:hidden;" id="ns-${s.id}"><div style="padding:10px 12px;display:flex;align-items:center;gap:8px;"><div style="width:10px;height:10px;border-radius:50%;background:${_fileEsc(s.color)};"></div><input aria-label="Section label" value="${_jsAttr(s.label)}" style="flex:1;border:none;background:none;font-size:16px;font-weight:500;color:var(--p-ink);outline:none;font-family:inherit;" oninput="noteEditSecs[${i}].label=this.value"><button onclick="rmNtSec('${s.id}')" class="icon-btn" aria-label="Delete"><i class="ti ti-trash" aria-hidden="true" style="color:var(--p-red);font-size:16px;"></i></button></div></div>`;}
+function ntSecHTML(s,i){return`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin-bottom:8px;overflow:hidden;" id="ns-${s.id}"><div style="padding:10px 12px;display:flex;align-items:center;gap:8px;"><div style="width:10px;height:10px;border-radius:50%;background:${_fileEsc(s.color)};"></div><input aria-label="Section label" value="${_jsAttr(s.label)}" style="flex:1;border:none;background:none;font-size:16px;font-weight:500;color:var(--p-ink);outline:none;font-family:inherit;" oninput="const _s=noteEditSecs.find(x=>x.id==='${s.id}');if(_s)_s.label=this.value"><button onclick="rmNtSec('${s.id}')" class="icon-btn" aria-label="Delete"><i class="ti ti-trash" aria-hidden="true" style="color:var(--p-red);font-size:16px;"></i></button></div></div>`;}
 function addNtSec(){const colors=['var(--p-red)','var(--p-blue)','var(--p-green)','var(--accent)','var(--p-purple)'];const s={id:'ne'+Date.now(),label:'New section',color:colors[noteEditSecs.length%colors.length]};noteEditSecs.push(s);const list=document.getElementById('nt-secs');if(!list)return;const d=document.createElement('div');d.innerHTML=ntSecHTML(s,noteEditSecs.length-1);list.appendChild(d.firstChild);}
 function rmNtSec(id){noteEditSecs=noteEditSecs.filter(s=>s.id!==id);const el=document.getElementById('ns-'+id);if(el)el.remove();}
-function saveNoteTemplate(clientId){const name=document.getElementById('nt-name')?.value||'My custom format';customNoteTemplates.push({id:'ct'+Date.now(),name,bdg:'ba',col:'var(--accent-tint)',ic:'var(--accent-strong)',desc:`Custom · ${noteEditSecs.length} sections`,sections:noteEditSecs.map(s=>({...s,ph:''}))});try{persistCustomNoteTemplates();}catch(e){}if(typeof proToast==='function')proToast('Note format saved');nav('notes',clientId);}
+function saveNoteTemplate(clientId){if(!noteEditSecs.length){proToast('Add at least one section first');return;}const name=(document.getElementById('nt-name')?.value||'').trim()||'My custom format';noteEditSecs.forEach(s=>{if(!String(s.label||'').trim())s.label='Section';});customNoteTemplates.push({id:'ct'+Date.now(),name,bdg:'ba',col:'var(--accent-tint)',ic:'var(--accent-strong)',desc:`Custom · ${noteEditSecs.length} sections`,sections:noteEditSecs.map(s=>({...s,ph:''}))});try{persistCustomNoteTemplates();}catch(e){}if(typeof proToast==='function')proToast('Note format saved');nav('notes',clientId);}
 // Photo comparison data per client
 const photoSessions={
   maya:[
@@ -16436,7 +16440,12 @@ async function sendSummary(id){
   // checkmark that fires whether or not delivery worked. Same pattern as send-form / first-visit.
   let res={ok:true};
   try{if(typeof _pushClientNow==='function')res=await _pushClientNow(id);}catch(e){res={ok:false,msg:'Couldn’t reach the server — tap Send again.'};}
-  if(res&&res.ok){
+  if(res&&res.ok&&!(mc&&mc._token)){
+    // No app link yet: it is saved to their profile, but nothing reached them. Say so and open the
+    // invite (the notice waits and goes out when they join), never "Summary sent".
+    if(typeof proToast==='function')proToast('Saved to '+(_first?_first+'\u2019s':'their')+' profile. Invite them so they can see it.');
+    try{if(typeof inviteClientToApp==='function')inviteClientToApp(mid);}catch(e){}
+  }else if(res&&res.ok){
     setTimeout(()=>{
       S.insertAdjacentHTML('afterbegin',`<div id="sent-toast" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--p-surf2);border:1px solid #4ec49a;border-radius:12px;padding:10px 16px;font-size:16px;color:var(--p-green);display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;"><i class="ti ti-check" aria-hidden="true"></i> Summary sent to ${_fileEsc(c.name.split(' ')[0])}!</div>`);
       setTimeout(()=>document.getElementById('sent-toast')?.remove(),2800);

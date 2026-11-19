@@ -9943,6 +9943,20 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19k: visit notes and session summary (sweep area 10)
+
+- **New note format:** each section's label box wrote to `noteEditSecs[i]`, so after deleting a
+  section the next one's box pointed past the end and threw on every keystroke (rename lost). Now
+  looked up by section id. Saving with no sections is refused; a blank name gets the default.
+- **Write note, Save with nothing written** (no text, no face chart marks, no visit already on that
+  date) added an empty visit to the client's history. Now says "Write your note first". Save & send
+  with nothing written goes straight to the summary composer. Clearing an existing visit still saves.
+- **Send & save a session summary to a client with no app link** showed "Summary sent to X!" while
+  nothing reached them. It is still saved to their profile and the notice waits (pending, sent when
+  they join); the toast now says so and the invite opens (same as forms in 19d).
+- Test: `scratchpad/test-note-format-sections.mjs` (9 checks, Chromium + WebKit; old build fails 4).
+  Face chart, next treatment, past visit and summary-follows-notes tests all pass.
+
 ## 2026-11-19 — build 2026-11-19j: client sign-in by code/link says when nothing was sent
 
 Front door "I'm a client": `_clientSendCode` moved to the "enter your code" screen whatever the server
