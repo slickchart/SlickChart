@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19j: client sign-in by code/link says when nothing was sent
+
+Front door "I'm a client": `_clientSendCode` moved to the "enter your code" screen whatever the server
+said, so a 429 ("Too many tries", per IP) or a server failure left a client waiting for an email that
+was never sent. It now shows the error and stays. `/api/client-link` always answers 200 with the
+generic message when it runs (non-enumerable, unchanged), so `_requestClientLink`, the client app's
+`_askForMyLink` and `mylink.html` now treat any non-200 as "couldn't send" instead of "on its way".
+The unknown-email answer is still the generic yes (§0.4). Test:
+`scratchpad/test-client-code-send-fail.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19i: an expired reset link is no longer a dead end
 
 The `newpw` sign-in screen (opened from a reset email, `?reset=`) had only "Set password". An old or

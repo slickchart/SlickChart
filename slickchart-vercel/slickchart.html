@@ -382,7 +382,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19i';
+const APP_BUILD='2026-11-19j';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -6717,8 +6717,11 @@ function _clientSendCode(resend){
   if(!email||!/.+@.+\..+/.test(email)){if(msg){msg.style.color='var(--p-red)';msg.textContent='Enter your email address.';}return;}
   if(msg){msg.style.color='var(--p-mut)';msg.textContent='Sending…';}
   fetch('/api/client-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})})
-    .then(function(r){return r.json().catch(function(){return {};});})
-    .then(function(){
+    .then(function(r){return r.json().catch(function(){return {};}).then(function(j){if(!r.ok&&!(j&&j.error))j={ok:false,error:'Couldn\u2019t send a code just now. Try again in a moment.'};return j;});})
+    .then(function(j){
+      // Too many tries, or the server failed: say so and stay here. Moving on to "enter your code" sent
+      // them to wait for an email that was never sent. (An unknown email still gets the generic yes.)
+      if(j&&j.ok===false&&j.error){if(msg){msg.style.color='var(--p-red)';msg.textContent=j.error;}return;}
       _clientCodeEmail=email;
       if(!resend){_setLoginMode('clientcode');setTimeout(function(){try{document.getElementById('client-code').focus();}catch(e){}},60);}
       else if(msg){msg.style.color='var(--p-green)';msg.textContent='New code sent — check your inbox.';}
@@ -6751,7 +6754,7 @@ function _requestClientLink(){
   if(!email||!/.+@.+\..+/.test(email)){if(msg){msg.style.color='var(--p-red)';msg.textContent='Enter your email address.';}return;}
   if(msg){msg.style.color='var(--p-mut)';msg.textContent='Sending…';}
   fetch('/api/client-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,origin:_clientLinkBase()})})
-    .then(function(r){return r.json().catch(function(){return {};});})
+    .then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.json().catch(function(){return {};});})   // the server always answers 200 (generic); anything else means nothing was sent
     .then(function(j){if(msg){msg.style.color='var(--p-green)';msg.textContent=(j&&j.message)||'If that email is on file, your secure link is on its way. Check your inbox.';}})
     .catch(function(){if(msg){msg.style.color='var(--p-red)';msg.textContent='Couldn’t reach the server. Try again in a moment.';}});
 }
