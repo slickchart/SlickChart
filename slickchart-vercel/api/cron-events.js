@@ -11,7 +11,7 @@
 // Data comes from the provider's own KV blobs (the same store the date cron reads): `sc_autos` for the
 // automations and `sc_clients` for the client charts (which carry birthday + last-visit). Each send is
 // claimed atomically (reminder_log) so overlapping/hourly runs can't double-send.
-import { dbEnabled, sql, ensureTable, readKeyAllOwners } from '../lib/db.js';
+import { dbEnabled, sql, ensureTable, readKeyAllOwners, getKVValue } from '../lib/db.js';
 import { ensureClientTables, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, wantsPush } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
@@ -130,6 +130,7 @@ async function handler(req, res) {
       if (!clientIds.length) continue;
 
       let providerCounted = false;
+      let ownerBiz = null;
       const seenAuto = new Set();
       for (const a of autos) {
         if (!a || a.on === false) continue;
@@ -181,7 +182,9 @@ async function handler(req, res) {
 
           if (!providerCounted) { summary.providers++; providerCounted = true; }
           const first = (String(c.name || '').trim().split(/\s+/)[0]) || 'there';
-          const biz = String(c.studio || c.businessName || '').trim();
+          if (ownerBiz == null) { ownerBiz = ''; try { const raw = await getKVValue(owner, 'sc_bizinfo'); const b = raw ? JSON.parse(raw) : {}; ownerBiz = String((b && (b.name || b.studio)) || '').trim(); } catch (e) { ownerBiz = ''; } }
+          // A client's chart has no studio field, so this was always 'us'. Her own business name, as the preview shows.
+          const biz = String(c.studio || c.businessName || ownerBiz || '').trim();
           const txName = (ev.kind === 'after' && c.lastServiceTreatment) ? c.lastServiceTreatment : (c.treatment || 'your treatment');
           const text = msg
             .replace(/\{client_name\}/gi, first)

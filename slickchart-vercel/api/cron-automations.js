@@ -17,7 +17,7 @@
 // automations (birthday / "X hours after service" / "hasn't visited in 90 days") are NOT handled here —
 // they need per-client event evaluation and are left for a future job; they carry no `sendAt`, so they
 // are skipped safely.
-import { dbEnabled, sql, ensureTable, readKeyAllOwners } from '../lib/db.js';
+import { dbEnabled, sql, ensureTable, readKeyAllOwners, getKVValue } from '../lib/db.js';
 import { ensureClientTables, listClients, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, getClientToken, wantsPush } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
@@ -107,6 +107,7 @@ async function handler(req, res) {
       try { clients = await listClients(owner); } catch (e) { clients = []; }
       if (!clients || !clients.length) continue;
       summary.providers++;
+      let biz = null;   // her business name, read once for this provider when a message needs it
 
       for (const d of due) {
         summary.automations++;
@@ -121,7 +122,13 @@ async function handler(req, res) {
           try { fresh = await claimReminder(cid, rkey); } catch (e) { fresh = false; }
           if (!fresh) continue;
           const first = (String(c.name || '').trim().split(/\s+/)[0]) || 'there';
-          const text = d.msg.replace(/\{client_name\}/gi, first);
+          // Every token the editor offers, filled the same way as its preview (_fillAutoVars). Only
+          // {client_name} was, so "{business_name}" reached clients word for word (2026-11-19).
+          if (biz == null) { biz = ''; try { const raw = await getKVValue(owner, 'sc_bizinfo'); const b = raw ? JSON.parse(raw) : {}; biz = String((b && (b.name || b.studio)) || '').trim(); } catch (e) { biz = ''; } }
+          const text = d.msg.replace(/\{client_name\}/gi, first)
+            .replace(/\{business_name\}/gi, biz || 'your studio')
+            .replace(/\{treatment_name\}/gi, 'your treatment')
+            .replace(/\{appointment_date\}/gi, 'your next visit');
           try { await logEvent(owner, cid, 'provider_message', { text, photos: [], auto: true }); summary.messages++; } catch (e) {}
           // Best-effort push on either channel, always pointed at this client's OWN space: a tokenless
           // link left the app guessing, and when storage couldn't supply a token it showed the SAMPLE.

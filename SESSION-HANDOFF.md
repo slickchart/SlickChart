@@ -9943,6 +9943,21 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zj: automation messages fill every token
+
+- The automation editor offers {client_name}, {appointment_date}, {treatment_name} and {business_name}
+  buttons and its preview fills all four (`_fillAutoVars`), but two of the three send paths filled only
+  {client_name}: "Send now" (`_sendAutomationMsg`) and the date-scheduled cron (`api/cron-automations.js`).
+  So "{business_name} is open late" reached clients word for word. Both now fill all four, the same
+  way as the preview. The cron reads her `sc_bizinfo` once per provider (`getKVValue(owner, ...)`,
+  scoped to that owner) for the name, falling back to "your studio".
+- `api/cron-events.js` (birthday / after-visit / no-visit) filled {business_name} from the client's
+  chart, which has no studio field, so it always said "us". It now uses her business name, same read.
+- Tests: `scratchpad/test-cron-automations-tokens.mjs` (new, stubbed db; old code fails 4),
+  `test-cron-events-scale.mjs` (stub gained `getKVValue`, birthday text now checks the business name),
+  `test-auto-send-now-tokens.mjs`. `sweep2-cron-sends.mjs` and `sweep2-cron-autoclaim.mjs` are stale
+  (their stubs miss `schemaInPlace` / `withCronRun`) and fail on the old code too.
+
 ## 2026-11-19 — build 2026-11-19zi: CSV exports open right in Excel
 
 - `_downloadCSV` wrote UTF-8 with no byte-order mark, so Excel showed a client named Zoë or José as
