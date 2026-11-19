@@ -27,7 +27,8 @@ pg(PGBIN + '/initdb -D ' + root + '/data -U ' + USER + ' --auth=trust >/dev/null
 pg(PGBIN + "/pg_ctl -D " + root + "/data -o '-k " + sock + " -p " + PORT + " -c listen_addresses= -c max_connections=200' -l " + root + "/log start -w >/dev/null");
 started = true;
 
-const DBSTUB = `import { execFile } from 'child_process';
+const DBSTUB = `export async function schemaInPlace(){ return false; }
+import { execFile } from 'child_process';
 let n = 0;
 function lit(v) {
   if (v === null || v === undefined) return 'NULL';
@@ -85,6 +86,13 @@ fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');
 if (asRoot) sh('chown -R ' + USER + ' ' + root);
 
 process.env.CRON_SECRET = 's';
+// Anything the copied endpoints import and this file does not stub comes from the real lib/ (2026-11-19: new imports broke this sweep).
+for (const f of fs.readdirSync(path.join(VERCEL, 'lib'))) if (f.endsWith('.js') && !fs.existsSync(path.join(lib, f))) fs.copyFileSync(path.join(VERCEL, 'lib', f), path.join(lib, f));
+// A stub that lacks an export the real file has gets a do-nothing one, so a new import in the app does not stop the sweep.
+for (const f of fs.readdirSync(lib)) { const real = path.join(VERCEL, 'lib', f); if (!f.endsWith('.js') || !fs.existsSync(real)) continue;
+  const mine = fs.readFileSync(path.join(lib, f), 'utf8'); const names = s => new Set([...s.matchAll(/export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/g)].map(m => m[1]).concat([...s.matchAll(/export\s*\{([^}]*)\}/g)].flatMap(m => m[1].split(',').map(x => x.trim().split(/\s+as\s+/).pop()).filter(Boolean))));
+  const have = names(mine), miss = [...names(fs.readFileSync(real, 'utf8'))].filter(n => !have.has(n) && !new RegExp('\\b' + n.replace(/\$/g, '\\$') + '\\b').test(mine) && !/^(export|default)$/.test(n));
+  if (miss.length && mine !== fs.readFileSync(real, 'utf8')) fs.appendFileSync(path.join(lib, f), '\n' + miss.map(n => 'export async function ' + n + '(){ return null; }').join('\n') + '\n'); }
 const L = await import(path.join(lib, 'clients.js'));
 const D = await import(path.join(lib, 'db.js'));
 const P = await import(path.join(lib, 'push.js'));

@@ -10,7 +10,7 @@ await page.goto('http://localhost:8899/slickchart.html', { waitUntil: 'load' });
 await page.waitForTimeout(2500);
 await page.evaluate(() => { for (let k = 0; k < 30; k++) CL['c' + k] = { name: 'Client ' + k }; CL.aw = { name: 'Ashley Watson' }; nav('clients'); });
 await page.waitForTimeout(300);
-const inp = page.locator('input[placeholder^="Search clients"]');
+const inp = page.locator('input[placeholder^="Search clients"], input[placeholder^="Search name, phone"]').first();
 await inp.fill('ashley wat');
 await page.waitForTimeout(200);
 const r = await page.evaluate(() => { const t = document.getElementById('clients-tools'); const card = Array.from(document.querySelectorAll('.client-card')).find(c => !c.classList.contains('srch-hide')); const b = card && card.getBoundingClientRect(); return { hidden: t && getComputedStyle(t).display === 'none', top: b ? b.top : -1, name: card && card.innerText.slice(0, 40) }; });

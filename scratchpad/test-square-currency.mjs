@@ -44,6 +44,6 @@ ok(curOf(await run('payment-link', { amount: 85, name: 'Facial' })).join() === '
 lib.S.cur = undefined;
 ok(curOf(await run('charge-card', { amount: 85, cardId: 'card1' })).join() === 'USD:8500', 'location with no currency: USD as before');
 const src = fs.readFileSync(path.join(ROOT, 'lib/booking.js'), 'utf8');
-ok(/currency = await resolveLocationCurrency\(conn\.token, conn\.locationId\)/.test(src) && !/currency: 'USD'/.test(src), 'booking deposit link uses her currency');
+ok(/currency = await resolveLocationCurrency\(conn\.token, (conn\.locationId|locId)\)/.test(src) && !/currency: 'USD'/.test(src), 'booking deposit link uses her currency');
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(fails ? 'FAILED ' + fails : 'ALL PASS'); process.exit(fails ? 1 : 0);

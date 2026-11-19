@@ -9,7 +9,7 @@ const SRC = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../sl
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghosts-'));
 fs.mkdirSync(path.join(dir, 'lib')); fs.mkdirSync(path.join(dir, 'api/admin'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
-fs.writeFileSync(path.join(dir, 'lib/db.js'), 'export const dbEnabled=()=>false, sql=()=>null, ensureTable=async()=>{}, ensureProvidersTable=async()=>{}, ensureFilesTable=async()=>{};');
+fs.writeFileSync(path.join(dir, 'lib/db.js'), 'export const dbEnabled=()=>false, sql=()=>null, ensureTable=async()=>{}, ensureProvidersTable=async()=>{}, ensureFilesTable=async()=>{}, schemaInPlace=async()=>false;');
 for (const f of fs.readdirSync(path.join(SRC, 'lib'))) if (f.endsWith('.js') && f !== 'db.js') fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
 fs.copyFileSync(path.join(SRC, 'api/admin/client-recover.js'), path.join(dir, 'api/admin/client-recover.js'));
 const { splitGhosts } = await import(pathToFileURL(path.join(dir, 'api/admin/client-recover.js')));

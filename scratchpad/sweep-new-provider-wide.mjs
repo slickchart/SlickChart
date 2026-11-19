@@ -14,8 +14,8 @@ const ROOT = new URL('../slickchart-vercel/', import.meta.url).pathname;
 const SIZE = process.env.SIZE || 'mac';
 const OUT = process.argv[2] || `/tmp/claude-0/sweep-wide-${SIZE}.json`;
 const SHOTS = process.env.SHOTS || '';
-const VP = { mac: { width: 1440, height: 900 }, ipad: { width: 1032, height: 1376 }, imac: { width: 2048, height: 1152 }, phone: { width: 390, height: 844 } }[SIZE];
-const TOUCH = SIZE === 'ipad' || SIZE === 'phone';
+const VP = { mac: { width: 1440, height: 900 }, ipad: { width: 1032, height: 1376 }, imac: { width: 2048, height: 1152 }, phone: { width: 390, height: 844 }, se: { width: 375, height: 667 }, small: { width: 320, height: 568 }, land: { width: 844, height: 390 } }[SIZE];
+const TOUCH = ['ipad', 'phone', 'se', 'small', 'land'].includes(SIZE);
 const PORT = 8000 + Math.floor(Math.random() * 900);
 const srv = http.createServer((q, s) => { const p = decodeURIComponent(q.url.split('?')[0]); const f = p === '/slickchart' ? path.join(ROOT, 'slickchart.html') : path.join(ROOT, p);
   if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.statusCode = 404; return s.end(); }
@@ -46,7 +46,7 @@ await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onb
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
   window.__opened = []; window.open = function (u) { window.__opened.push(String(u)); return null; };
   try { Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }); } catch (e) {}
-  try { navigator.clipboard.writeText = () => Promise.resolve(); } catch (e) {} }, ['provider', SIZE === 'ipad' || SIZE === 'phone']);
+  try { navigator.clipboard.writeText = () => Promise.resolve(); } catch (e) {} }, ['provider', TOUCH]);
 // NET=500|offline (rotation area 14): after boot, every other /api call fails, so each screen and tap is
 // checked for throws and silent failures with no server.
 const NET = process.env.NET || ''; let netFail = false;

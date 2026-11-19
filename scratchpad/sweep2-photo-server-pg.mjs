@@ -29,7 +29,8 @@ pg(PGBIN + '/initdb -D ' + root + '/data -U ' + USER + ' --auth=trust >/dev/null
 pg(PGBIN + "/pg_ctl -D " + root + "/data -o '-k " + sock + " -p " + PORT + " -c listen_addresses= -c max_connections=200' -l " + root + "/log start -w >/dev/null");
 started = true;
 
-const DBSTUB = `import { execFile } from 'child_process';
+const DBSTUB = `export async function schemaInPlace(){ return false; }
+import { execFile } from 'child_process';
 let n = 0;
 function lit(v) {
   if (v === null || v === undefined) return 'NULL';

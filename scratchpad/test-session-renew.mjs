@@ -17,7 +17,9 @@ export function dbEnabled() { return true; }
 export async function ensureProvidersTable() {} export async function ensureTable() {}
 export function sql() { return async (strs, ...v) => { const t = strs.join('?').replace(/\\s+/g, ' ');
   if (/SELECT revoked FROM sessions/.test(t)) return S.sessions[v[0]] ? [S.sessions[v[0]]] : [];
+  if (/UPDATE sessions SET last_seen_at.*RETURNING revoked/.test(t)) return S.sessions[v[0]] ? [S.sessions[v[0]]] : [];
   if (/UPDATE sessions SET last_seen_at/.test(t)) return [];
+  if (/SELECT k, md5\\(v\\) AS h/.test(t)) return S.kv.filter(r => r.owner === v[v.length - 1]).map(r => ({ k: r.k, v: r.v, h: 'h', fresh: true, now_ms: Date.now() }));
   if (/SELECT k, v FROM kv WHERE owner = \\? AND k = \\?/.test(t)) return S.kv.filter(r => r.owner === v[0] && r.k === v[1]);
   if (/SELECT k, v FROM kv WHERE owner = \\?/.test(t)) return S.kv.filter(r => r.owner === v[0]);
   throw new Error('unhandled SQL: ' + t); }; }`);

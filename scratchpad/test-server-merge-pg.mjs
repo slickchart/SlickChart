@@ -20,7 +20,7 @@ pg(PGBIN + "/pg_ctl -D " + root + "/data -o '-k " + sock + " -p " + PORT + " -c 
 const DBSTUB = eval('`' + DBSTUB_RAW + '`');
 const lib = path.join(root, 'lib'), api = path.join(root, 'api'); fs.mkdirSync(lib); fs.mkdirSync(api);
 fs.writeFileSync(path.join(lib, 'db.js'), DBSTUB);
-fs.writeFileSync(path.join(lib, 'auth.js'), "export function verifyToken(t){try{return JSON.parse(Buffer.from(String(t),'base64').toString('utf8'));}catch(e){return null;}}\nexport async function isSessionValid(){return true;}\n");
+fs.writeFileSync(path.join(lib, 'auth.js'), "export function signToken(){ return 'x'; }\nexport function verifyToken(t){try{return JSON.parse(Buffer.from(String(t),'base64').toString('utf8'));}catch(e){return null;}}\nexport async function isSessionValid(){return true;}\n");
 fs.writeFileSync(path.join(lib, 'kv-history.js'), "export async function snapshotBeforeWrite(){}\nexport async function rescueDeviceCopy(){}\n");
 fs.copyFileSync(path.join(VERCEL, 'lib/clients.js'), path.join(lib, 'clients.js'));
 fs.copyFileSync(path.join(VERCEL, 'api/store.js'), path.join(api, 'store.js'));

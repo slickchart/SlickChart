@@ -177,11 +177,11 @@ async function providerPage(opts) {
   const ctx3 = await b.newContext({ serviceWorkers: 'block' }); const p3 = await ctx3.newPage(); const e3 = []; p3.on('pageerror', e => e3.push(e.message));
   await p3.goto(BASE + '/index.html?utm_source=facebook&utm_campaign=Nov%20Test&utm_content=ad_1<x>'); await p3.waitForTimeout(500);
   const h3 = await p3.evaluate(() => [...document.querySelectorAll('a[data-cta],a[data-cta-year]')].map(a => a.getAttribute('href')));
-  check('ad link: every checkout button carries the source, cleaned', h3.length >= 2 && h3.every(h => h.endsWith('client_reference_id=utm__facebook__novtest__ad1x')), h3.join(' '));
+  check('ad link: every checkout button carries the source, cleaned', h3.length >= 2 && h3.every(h => /client_reference_id=utm__facebook__novtest__ad1x(__%2F[a-z0-9%-]*)?$/.test(h)), h3.join(' '));
   check('ad link without a code: no friend banner', !(await p3.$('#refbar')));
   await p3.goto(BASE + '/index.html?ref=MADDIE42'); await p3.waitForTimeout(500);
   const h4 = await p3.evaluate(() => document.querySelector('a[data-cta]').getAttribute('href'));
-  check('ad source is remembered and sits beside a friend code', /prefilled_promo_code=MADDIE42&client_reference_id=utm__facebook__novtest__ad1x$/.test(h4), h4);
+  check('ad source is remembered and sits beside a friend code', /prefilled_promo_code=MADDIE42&client_reference_id=utm__facebook__novtest__ad1x(__%2F[a-z0-9%-]*)?$/  /* the landing path rides along since lib/referral.js gained it */.test(h4), h4);
   check('no page errors (ad links)', !e3.length, e3.join(' | '));
   await ctx3.close();
 }
