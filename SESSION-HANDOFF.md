@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19h: unsaved suggested hours are labelled; Getting started agrees
+
+`normalizeAvail(null)` draws Mon-Sat 9-5 in Business info for a new account, so the hours LOOKED set
+while nothing was saved and the booking page said "not active". Business info now shows an amber
+"These are suggested hours, not saved yet ... tap Save changes" note until at least one open day is
+saved (removed on save). Getting started's "Set your working hours" step now uses the same test
+(`_bookHasOpenHours`), so hours saved with every day closed no longer tick it.
+Test: `scratchpad/test-booking-no-hours.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19g: Booking link no longer says Live when no hours are set
 
 The public `/book/<name>` page answers "not active" until at least one day is open

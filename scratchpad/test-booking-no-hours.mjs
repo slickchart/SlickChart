@@ -64,7 +64,14 @@ const r2 = await page.evaluate(async () => {
   const i = document.getElementById('_is-input'); i.value = 'frances-skin'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   await new Promise(r => setTimeout(r, 1200)); return { on: bookCfg.on, slug: _consultSlug };
 });
+const r3 = await page.evaluate(() => { localStorage.setItem('sc_availability', JSON.stringify({ mon: { open: false }, tue: { open: false } })); const a = _gsState().hours;
+  localStorage.setItem('sc_availability', JSON.stringify({ mon: { open: true, start: '09:00', end: '17:00' } })); const b = _gsState().hours; return { allClosed: a, oneOpen: b }; });
+const r4 = await page.evaluate(async () => { localStorage.removeItem('sc_availability'); nav('biz-info'); await new Promise(r => setTimeout(r, 300));
+  const before = !!document.getElementById('biz-hours-unsaved'); saveBizInfo(true); await new Promise(r => setTimeout(r, 200));
+  return { before, after: !!document.getElementById('biz-hours-unsaved'), saved: _bookHasOpenHours() }; });
 const fail = [];
+if (!r4.before || r4.after || !r4.saved) fail.push('suggested-hours note: ' + JSON.stringify(r4));
+if (r3.allClosed || !r3.oneOpen) fail.push('getting started hours step: ' + JSON.stringify(r3));
 if (!r2.on || r2.slug !== 'frances-skin') fail.push('turning on with no name: after choosing a name it should be on: ' + JSON.stringify(r2));
 if (r.noHours.live || !r.noHours.warn || !r.noHours.btn) fail.push('no hours: ' + JSON.stringify(r.noHours));
 if (!r.hours.live || r.hours.btn) fail.push('with hours: ' + JSON.stringify(r.hours));
