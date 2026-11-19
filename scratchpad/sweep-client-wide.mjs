@@ -12,6 +12,13 @@ const rec = clientRecord('c1', 'Jo Rivera', { providerName: 'Ashley', studio: 'R
   summaries: [{ id: 's1', date: 'Oct 1', note: 'Calm and hydrated today.', products: ['Vitamin C Serum'] }], aftercare: ['SPF every morning'],
   pendingForms: [{ formId: 'intake', title: 'New Client Intake', assignedAt: 1, qs: [{ id: 'q1', label: 'Any allergies?', type: 'Short answer', required: true }] }],
   services: ['Facial'] });
+// BUSY=1: a long-time client: 30 visit summaries, 8 forms waiting, 12 aftercare steps, 15 products with
+// long names, and 150 messages, so every list is long and every card is full.
+if (process.env.BUSY) { const L = 'Hydrating Peptide Barrier Repair Overnight Recovery Cream with Ceramides';
+  rec.summaries = Array.from({ length: 30 }, (_, i) => ({ id: 's' + i, date: 'Oct ' + (i % 28 + 1), treatment: 'Signature Hydrating Oxygen Facial with LED', note: 'Skin was calm and well hydrated today. We focused on the cheeks and jawline, added a lactic peel and finished with LED. '.repeat(2), products: [L, 'SPF 50'] }));
+  rec.aftercare = Array.from({ length: 12 }, (_, i) => 'Step ' + (i + 1) + ': apply a thin layer of the barrier cream morning and night, and avoid retinol for five days after your peel.');
+  rec.pendingForms = Array.from({ length: 8 }, (_, i) => ({ formId: 'f' + i, title: ['New Client Intake and Health History Questionnaire', 'Chemical Peel Consent', 'Photo Release', 'Lash Lift Consent'][i % 4] + ' ' + (i + 1), assignedAt: i + 1, qs: [{ id: 'q1', label: 'Any allergies?', type: 'Short answer', required: true }] }));
+  rec.products = Array.from({ length: 15 }, (_, i) => ({ id: 'p' + i, name: L + ' ' + i, brand: 'Very Long Professional Skincare Brand Name', why: 'Supports your barrier between visits.' })); }
 const out = {};
 const ctx = await browser.newContext({ ...VP, serviceWorkers: 'block' }); const page = await ctx.newPage();
 const errs = []; page.on('pageerror', e => errs.push(String(e.message).slice(0, 160)));
@@ -19,7 +26,7 @@ page.on('dialog', d => { out.dialogs = (out.dialogs || []).concat(d.message().sl
 let failNow = false;
 const failer = (req, p, t, J) => { if (!failNow) return null; if (!/client-(messages|submit|data)/.test(p) || (p === '/api/client-messages' && req.method() === 'GET')) return null;
   return FAIL === 'offline' ? req && Promise.reject('x') : J({ error: 'Something went wrong.' }, 500); };
-await mockApi(page, { records: { TOK: rec }, messages: { TOK: [{ id: 'm1', from: 'provider', text: 'Hi Jo!', ts: Date.now() - 60000 }] }, handler: FAIL === '500' ? failer : null });
+await mockApi(page, { records: { TOK: rec }, messages: { TOK: process.env.BUSY ? Array.from({ length: 150 }, (_, i) => ({ id: 'm' + i, from: i % 2 ? 'client' : 'provider', text: i % 7 ? 'See you Thursday! ' + i : 'https://averyveryverylongunbrokenlinkexample.com/aftercare/guide/for/your/peel/please/read/before/your/next/visit?ref=' + i, ts: Date.now() - (150 - i) * 3600000 })) : [{ id: 'm1', from: 'provider', text: 'Hi Jo!', ts: Date.now() - 60000 }] }, handler: FAIL === '500' ? failer : null });
 // Registered AFTER mockApi: Playwright tries the newest route first, so the offline cut has to come last.
 await page.route('**/api/**', async (r, req) => { if (failNow && FAIL === 'offline' && /client-(messages|submit)/.test(req.url()) && req.method() !== 'GET') return r.abort('internetdisconnected'); return r.fallback(); });
 // SAFE=1: a home-screen app on an iPhone (47px notch, 34px home bar), as in sweep-new-provider-wide.
