@@ -14,8 +14,8 @@ const ROOT = new URL('../slickchart-vercel/', import.meta.url).pathname;
 const SIZE = process.env.SIZE || 'mac';
 const OUT = process.argv[2] || `/tmp/claude-0/sweep-wide-${SIZE}.json`;
 const SHOTS = process.env.SHOTS || '';
-const VP = { mac: { width: 1440, height: 900 }, ipad: { width: 1032, height: 1376 }, imac: { width: 2048, height: 1152 }, phone: { width: 390, height: 844 }, android: { width: 412, height: 915 }, se: { width: 375, height: 667 }, small: { width: 320, height: 568 }, land: { width: 844, height: 390 } }[SIZE];
-const TOUCH = ['ipad', 'phone', 'se', 'small', 'land', 'android'].includes(SIZE);
+const VP = { mac: { width: 1440, height: 900 }, ipad: { width: 1032, height: 1376 }, imac: { width: 2048, height: 1152 }, phone: { width: 390, height: 844 }, android: { width: 412, height: 915 }, se: { width: 375, height: 667 }, small: { width: 320, height: 568 }, land: { width: 844, height: 390 }, ipadland: { width: 1376, height: 1032 } }[SIZE];
+const TOUCH = ['ipad', 'ipadland', 'phone', 'se', 'small', 'land', 'android'].includes(SIZE);
 const PORT = 8000 + Math.floor(Math.random() * 900);
 const srv = http.createServer((q, s) => { const p = decodeURIComponent(q.url.split('?')[0]); const f = p === '/slickchart' ? path.join(ROOT, 'slickchart.html') : path.join(ROOT, p);
   if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.statusCode = 404; return s.end(); }

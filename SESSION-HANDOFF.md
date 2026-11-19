@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzm: Home card clear buttons readable and clear of the chevron
+
+Looking at the BUSY screenshots (phone and iPad sideways): the check-in reminder's clear (x) was pale
+green (#a0c4b5) on grey, so it read as a blank grey dot; it is now drawn like every other card's clear
+(ink on the same grey). And on swipe-tile cards the clear (x) at the top-right sat on the card's chevron;
+the chevron now steps down to the bottom corner (`.sc-tile` class + one CSS line).
+`test-first-visit-card.mjs` covers both. iPad sideways (1376x1032) BUSY crawl: clean.
+
 ## 2026-11-19 — build 2026-11-19zzl: a full book on a phone
 
 BUSY=1 crawl mode (Square answers 10 back-to-back today + 4 a day for two weeks) at 320/390/412/iPad:
