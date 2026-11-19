@@ -9943,6 +9943,18 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zu (no raw error codes in toasts)
+
+- About 30 toasts show `(j&&j.error)||'Could not ...'` or `e.message`, so a server or browser error
+  reached her as-is: "database not configured", "failed", "TypeError: Load failed", "HTTP 500",
+  "Unexpected token < in JSON". `_toastPlain` (first line of `proToast`) swaps only those
+  code-like strings for plain words ("Couldn't reach SlickChart. Check your connection..." for
+  network ones, "That didn't work just now..." otherwise). Real sentences pass unchanged. The
+  ECONN check is case-sensitive on purpose: "Reconnect Square" contains "econn" and was eaten by
+  the first draft (test-refund-errors caught it).
+- Test: `scratchpad/test-toast-plain-words.mjs` (Chromium + WebKit); test-refund-errors,
+  test-booking-toast-boot, test-square-connect-fail-msg still pass.
+
 ## 2026-11-19 — build 2026-11-19zt (Square connect failure in plain words)
 
 - When Square sent her back without connecting, the toast read "Square connection failed: access_denied"
