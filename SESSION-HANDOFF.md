@@ -9943,6 +9943,13 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19y: "Collected this month" on Payments counts money received this month
+
+It sliced `p.date` as text, so an invoice made last month and paid this month never counted, and a
+payment whose date is stored as "Nov 5, 2026" (older records) never counted at all: the tile could
+read $0.00 while Reports showed the real total. It now uses the paid date (`_payEffDate`) read as a
+date, the same cash basis as Reports. Test: `scratchpad/test-collected-this-month.mjs` (old build: $0.00).
+
 ## 2026-11-19 — build 2026-11-19x: print pages keep their grey text and total lines
 
 The income statement (Reports, PDF/print), the client file print and the session summary print, plus
