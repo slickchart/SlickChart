@@ -5506,11 +5506,10 @@ function _suggestedTimeBannerHTML(){
 }
 function _acceptSuggestedTime(){
   const s=client&&client._suggestedBooking;if(!s||!s.date||!s.time){showToast('That suggestion is no longer available',false);return;}
-  // Mark handled so the banner doesn't reappear after the data sync round-trips, then submit a request
-  // for exactly the suggested slot by reusing the normal rebook path.
-  try{localStorage.setItem('sc_suggestion_handled',(s.date+'|'+s.time));}catch(e){}
-  rebookState={treatment:s.treatment||client.treatment||'Appointment',date:s.date,time:s.time,note:''};
-  client._suggestedBooking=null;
+  // Submit a request for exactly the suggested slot by reusing the normal rebook path. It is marked
+  // handled only once that request has gone through: marking it first meant a failed send (no signal)
+  // took the banner away for good with nothing sent. No made-up "Appointment" service either.
+  rebookState={treatment:s.treatment||client.treatment||'',date:s.date,time:s.time,note:'',_sugg:(s.date+'|'+s.time)};
   submitRebook();
 }
 function _dismissSuggestedTime(){
@@ -5542,13 +5541,14 @@ function submitRebook(){
   };
   lastBookingId=booking.id;
   const _showRebookSent=()=>{
+    if(rebookState._sugg){try{localStorage.setItem('sc_suggestion_handled',rebookState._sugg);}catch(e){}client._suggestedBooking=null;delete rebookState._sugg;}
     S.innerHTML=`
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;padding:24px;text-align:center;">
       <div style="width:80px;height:80px;background:var(--accent-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
         <i class="ti ti-calendar-check" aria-hidden="true" style="font-size:40px;color:var(--accent-ink-lt);"></i>
       </div>
       <div style="font-size:20px;font-weight:600;color:var(--c-ink);margin-bottom:8px;">Request sent!</div>
-      <div style="font-size:14px;color:var(--c-mut);line-height:1.7;margin-bottom:8px;">You've requested a <strong style="color:var(--c-ink);">${_txt(rebookState.treatment)}</strong> on<br><strong style="color:var(--c-ink);">${_dt(dateLabel)} at ${_txt(rebookState.time)}</strong>.</div>
+      <div style="font-size:14px;color:var(--c-mut);line-height:1.7;margin-bottom:8px;">You've requested ${rebookState.treatment?`a <strong style="color:var(--c-ink);">${_txt(_svcShort(rebookState.treatment))}</strong>`:'a visit'} on<br><strong style="color:var(--c-ink);">${_dt(dateLabel)} at ${_txt(rebookState.time)}</strong>.</div>
       <div id="rebook-status" style="background:var(--c-surf3);border:1.5px solid #f0e2c8;border-radius:10px;padding:10px 14px;margin:12px 0;font-size:13px;color:var(--c-mut);line-height:1.5;display:flex;align-items:center;gap:8px;">
         <i class="ti ti-clock" style="font-size:15px;"></i> Waiting for ${_txt(client.providerFirst)} to confirm… you'll get a notification when it's booked.
       </div>

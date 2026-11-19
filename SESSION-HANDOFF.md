@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19w: client accepts a suggested time with no signal
+
+Tapping Accept on "Marco suggested a time" marked the suggestion handled BEFORE sending, so a failed
+send (no signal) took the banner away for good and nothing reached the provider. It is now marked
+only once the request goes through (`rebookState._sugg`, set in `_showRebookSent`). It also no longer
+fills in a made-up "Appointment" service. A request with no service now says "You've requested a visit
+on ..." instead of "requested a  on". Test: `scratchpad/test-client-rebook-wording.mjs` (old build fails 2).
+
 ## 2026-11-19 — build 2026-11-19v: client booking screen uses the provider's name, not "she"
 
 The client's booking screen said "She'll confirm the exact time" and "hasn't listed her services",
