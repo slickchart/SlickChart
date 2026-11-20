@@ -11152,6 +11152,15 @@ punches and the reward (20-50% off or a free service). Her Gmail draft promises 
 - Punches: `_pkScanPayments` runs on every `_savePayments` and after a pull: PAID payments for a client, dated on or
   after the card's "count payments from" date, with optional minimum spend, service words and one-a-day. Membership
   payments carry `perkSkip` and never punch.
+- **Automatic billing (build 2026-11-20b, Ashley: "make sure there is a obvious note for providers that auto-billing
+  requires setting up square" / "and let them control that set up"):** OFF unless she ticks "Charge saved cards
+  automatically when a payment is due" on a membership AND ticks per client that they agreed (join sheet, or Manage →
+  "They agreed: charge automatically"; `autopay` events). `_pkAutoCharge` runs on her devices while the app is open
+  (4 s after the account is read, then hourly), checks `/api/square/connection` first and, if Square is off or expired,
+  charges nothing and says so on the Memberships tab. Payment id `pay_mb_<membership>_<period>` + the Square key make
+  two devices produce one charge. A decline is an `autofail` event (`af_<m>_<per>_<day>`), retried next day, shown on
+  the profile, due list and Manage. `_pkSquareNote` (Memberships tab, editor, payment and charge-all sheets) explains
+  Square is required and turns into Connect/Reconnect Square. No server cron: nothing charges while every device is closed.
 - Money: membership payments go through the existing paths. Charge card on file uses `/api/square/charge-card` with
   idempotency key `sc-mb-<membership>-<period>`, and refuses a period that is not due, already paid, or has an unpaid
   link/QR/invoice out for it (`_pkPendingPay`). "Charge all with a card on file" is an explicit tap with a list and

@@ -665,7 +665,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-20a';
+const APP_BUILD='2026-11-20b';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -33353,6 +33353,7 @@ function _loadPerkPlans(){
   try{const raw=(typeof _lsGet==='function')?_lsGet('sc_perk_plans'):localStorage.getItem('sc_perk_plans');
     const a=JSON.parse(raw||'null');if(Array.isArray(a))perkPlans=a.filter(function(p){return p&&typeof p==='object'&&p.id&&p.kind;});}catch(e){}
   try{_pkScanPayments();}catch(e){}
+  try{setTimeout(function(){try{_pkAutoCharge();}catch(e){}},4000);}catch(e){}
 }
 function _savePerkPlans(){
   try{_stampRows('sc_perk_plans',perkPlans);}catch(e){}
@@ -33424,7 +33425,7 @@ function _pkMemState(c,join){
   let s=join.snap||{};evs.forEach(function(e){if(e.t==='terms'&&e.snap)s=e.snap;});
   const cap=s.rollover==='all'?Infinity:(s.rollover==='cap'?Math.max(0,_pkInt(s.rolloverCap,0)):0);
   const credits=Math.max(0,_pkInt(s.credits,0));
-  let per=-1,bal=0,paused=null,anchor=String(join.start||join.d||_todayISO()).slice(0,10),fromPer=0,cancel=null;
+  let per=-1,bal=0,paused=null,anchor=String(join.start||join.d||_todayISO()).slice(0,10),fromPer=0,cancel=null,autopay=!!join.auto;
   evs.forEach(function(e){
     if(e.t==='renew'){if(_pkInt(e.per,0)>per)per=_pkInt(e.per,0);bal=Math.min(Math.max(bal,0),cap)+credits;}
     else if(e.t==='use')bal-=Math.max(1,_pkInt(e.n,1));
@@ -33433,6 +33434,7 @@ function _pkMemState(c,join){
     else if(e.t==='resume'){paused=null;anchor=String(e.anchor||e.d||_todayISO()).slice(0,10);fromPer=per+1;}
     else if(e.t==='cancel')cancel=e;
     else if(e.t==='uncancel')cancel=null;
+    else if(e.t==='autopay')autopay=!!e.on;
   });
   const periodStart=function(k){return _pkAddPeriods(anchor,s.interval||'month',_pkInt(s.every,1),k-fromPer);};
   const today=_todayISO();
@@ -33444,7 +33446,7 @@ function _pkMemState(c,join){
   const minTerm=Math.max(0,_pkInt(s.minTerm,0));
   return {s:s,status:status,credits:status==='ended'?0:Math.max(0,bal),per:per,nextPer:nextPer,nextDue:nextDue,
     paidThrough:per>=0?periodStart(per+1):'',due:due,end:end,price:_money(_pkNum(s.price,0)),
-    commitUntil:minTerm?_pkAddPeriods(String(join.start||join.d).slice(0,10),'month',1,minTerm):'',paused:!!paused};
+    commitUntil:minTerm?_pkAddPeriods(String(join.start||join.d).slice(0,10),'month',1,minTerm):'',paused:!!paused,autopay:autopay};
 }
 // ── package state ──
 function _pkPkgState(c,buy){
@@ -33559,7 +33561,8 @@ function _pkClientCard(cid){
   joins.forEach(function(j){
     const ms=_pkMemState(c,j);if(ms.status==='ended'&&ms.end<_pkAddDays(_todayISO(),-45))return;
     const jq=_pkA(j.id);const s=ms.s;
-    const stTxt={active:ms.due?'<span style="color:var(--p-amber);">Payment due '+_pkFmtDate(ms.nextDue)+'</span>':('Next payment '+_pkFmtDate(ms.nextDue)),paused:'Paused',cancelling:'Ends '+_pkFmtDate(ms.end),ended:'Ended '+_pkFmtDate(ms.end)}[ms.status];
+    const _af=ms.due?_pkAutoFail(c,j,ms):null;
+    const stTxt={active:ms.due?('<span style="color:var(--p-amber);">Payment due '+_pkFmtDate(ms.nextDue)+'</span>'+(_af?' <span style="color:var(--p-red);">\u00b7 automatic charge failed</span>':'')):('Next payment '+_pkFmtDate(ms.nextDue)+(ms.autopay&&(_pkPlan(j.p)||{}).autoCharge?' (automatic)':'')),paused:'Paused',cancelling:'Ends '+_pkFmtDate(ms.end),ended:'Ended '+_pkFmtDate(ms.end)}[ms.status];
     h+='<div style="'+box+'"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'+lbl(_fileEsc(s.name||'Membership'))+'<span style="font-size:14px;color:var(--p-mut);">$'+_fmtMoney(ms.price)+' / '+_pkEveryText(s)+'</span></div>'
       +'<div style="margin-top:8px;font-size:16px;color:var(--p-ink);">'+(_pkInt(s.credits,0)>0?('<b style="color:var(--accent-strong);">'+ms.credits+'</b> '+_fileEsc(s.creditLabel||'visit')+(ms.credits===1?'':'s')+' left'):'Member')+' · '+stTxt+'</div>'
       +((_pkNum(s.svcPct,0)||_pkNum(s.prodPct,0))?'<div style="font-size:14px;color:var(--p-mut);margin-top:3px;">'+_pkMemDiscText(s)+'</div>':'')
@@ -33594,7 +33597,8 @@ function _pkJoinSheet(cid){
   const list=_pkPlansOf('membership');if(!list.length){nav('perks');return;}
   _pkSheet('<div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:10px;">Start a membership for '+_fileEsc(String(CL[cid].name||'').split(' ')[0])+'</div>'
     +'<span class="fl-lbl">Membership</span><select class="fi" id="pk-join-plan" style="margin-bottom:12px;">'+list.map(function(p){return '<option value="'+_fileEsc(p.id)+'">'+_fileEsc(p.name)+' · $'+_fmtMoney(_pkNum(p.price,0))+' / '+_pkEveryText(p)+'</option>';}).join('')+'</select>'
-    +'<span class="fl-lbl">First payment date</span><input class="fi" type="date" id="pk-join-start" value="'+_todayISO()+'" style="margin-bottom:14px;">'
+    +'<span class="fl-lbl">First payment date</span><input class="fi" type="date" id="pk-join-start" value="'+_todayISO()+'" style="margin-bottom:12px;">'
+    +(list.some(function(p){return p.autoCharge;})?'<label style="display:flex;align-items:flex-start;gap:9px;margin:0 0 14px;cursor:pointer;"><input type="checkbox" id="pk-join-auto" style="width:18px;height:18px;margin-top:3px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-ink);line-height:1.5;">They agreed to be charged automatically on their saved card each time it is due <span style="color:var(--p-mut);">(only for memberships with automatic billing on, and needs Square)</span></span></label>':'')
     +_pkBtn('Start membership',"_pkJoinDo('"+_pkA(cid)+"')",'ti-heart-plus',true)+_pkBtn('Cancel','_pkClose()'));
 }
 function _pkSnapOf(pl){
@@ -33604,7 +33608,8 @@ function _pkSnapOf(pl){
 function _pkJoinDo(cid){
   const pid=(document.getElementById('pk-join-plan')||{}).value;const pl=_pkPlan(pid);if(!pl)return;
   const start=(document.getElementById('pk-join-start')||{}).value||_todayISO();
-  const ev=_pkAdd(cid,{t:'join',p:pid,snap:_pkSnapOf(pl),start:start});
+  const auto=!!(pl.autoCharge&&(document.getElementById('pk-join-auto')||{}).checked);
+  const ev=_pkAdd(cid,Object.assign({t:'join',p:pid,snap:_pkSnapOf(pl),start:start},auto?{auto:1}:{}));
   _pkClose();_pkRerender(cid);
   if(ev){proToast(pl.name+' started');if(start<=_todayISO())_pkMemPaySheet(cid,ev.id,true);}
 }
@@ -33612,7 +33617,7 @@ function _pkFindEv(c,id){return _pkLive(c).find(function(e){return e.id===id;})|
 function _pkMemPaySheet(cid,jid,isFirst){
   const c=CL[cid];const j=c&&_pkFindEv(c,jid);if(!j)return;const ms=_pkMemState(c,j);const q=_pkA(cid),jq=_pkA(jid);
   _pkSheet('<div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">'+(isFirst?'First payment':'Membership payment')+' · $'+_fmtMoney(ms.price)+'</div><div style="font-size:16px;color:var(--p-mut);margin-bottom:14px;line-height:1.5;">'+_fileEsc(ms.s.name||'Membership')+' for '+_fileEsc(c.name)+', the '+_pkEveryText(ms.s)+' starting '+_pkFmtDate(ms.nextDue)+'.'+(_pkInt(ms.s.credits,0)>0?' Paying adds '+_pkInt(ms.s.credits,0)+' '+_fileEsc(ms.s.creditLabel||'visit')+(_pkInt(ms.s.credits,0)===1?'':'s')+'.':'')+'</div>'
-    +(c.squareId?_pkBtn('Charge card on file',"_pkMemCharge('"+q+"','"+jq+"')",'ti-credit-card',true):'')
+    +_pkSquareNote('pay',cid)+(c.squareId?_pkBtn('Charge card on file',"_pkMemCharge('"+q+"','"+jq+"')",'ti-credit-card',true):'')
     +_pkBtn('Take payment (link, QR, invoice, Tap to Pay)',"_pkMemCheckout('"+q+"','"+jq+"')",'ti-receipt',!c.squareId)
     +_pkBtn('Mark paid, cash or other',"_pkMemMarkPaid('"+q+"','"+jq+"')",'ti-cash')
     +_pkBtn(isFirst?'Later':'Cancel','_pkClose()')+'<div id="pk-pay-res"></div>');
@@ -33652,7 +33657,8 @@ async function _pkChargeOne(cid,jid,early){
   const card=(d.cards||[])[0];if(!card)throw new Error('No saved card');
   const key=('sc-mb-'+String(jid).replace(/[^a-zA-Z0-9_-]/g,'')+'-'+ms.nextPer).slice(0,45);
   const r=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId:card.id,amount:ms.price,note:_pkMemNote(ms),idempotencyKey:key}});
-  const pay=_addPayment({clientId:cid,clientName:c.name,amount:ms.price,method:'Square',status:'paid',date:_todayISO(),note:_pkMemNote(ms)+' (card on file)',source:'square',squarePaymentId:(r&&r.paymentId)||'',perkSkip:1,_ts:Date.now()});
+  const pid='pay_mb_'+String(jid).replace(/[^A-Za-z0-9_-]/g,'')+'_'+ms.nextPer;
+  const pay=_payments.find(function(x){return x&&x.id===pid;})||_addPayment({id:pid,clientId:cid,clientName:c.name,amount:ms.price,method:'Square',status:'paid',date:_todayISO(),note:_pkMemNote(ms)+' (card on file)',source:'square',squarePaymentId:(r&&r.paymentId)||'',perkSkip:1,_ts:Date.now()});
   _pkAdd(cid,{id:rid,t:'renew',m:jid,per:ms.nextPer,amt:ms.price,pay:pay&&pay.id});
   return {ok:true,card:card,amount:ms.price};
 }
@@ -33680,10 +33686,13 @@ function _pkMemManage(cid,jid){
   const lines=['Joined '+_pkFmtDate(j.start||j.d),'$'+_fmtMoney(ms.price)+' every '+_pkEveryText(s)];
   if(ms.paidThrough)lines.push('Paid through '+_pkFmtDate(ms.paidThrough));
   if(ms.commitUntil)lines.push('Commitment until '+_pkFmtDate(ms.commitUntil));
+  if((_pkPlan(j.p)||{}).autoCharge)lines.push(ms.autopay?(c.squareId?'Charged automatically when due':'Automatic charging is on, but they are not linked to Square'):'Automatic charging is off for them');
+  {const af=_pkAutoFail(c,j,ms);if(af)lines.push('<span style="color:var(--p-red);">Automatic charge failed '+_pkFmtDate(af.d)+': '+_fileEsc(af.why||'')+'</span>');}
   if(s.perksText)lines.push(_fileEsc(s.perksText));
   _pkSheet('<div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">'+_fileEsc(s.name||'Membership')+'</div><div style="font-size:16px;color:var(--p-mut);margin-bottom:14px;line-height:1.6;">'+lines.join('<br>')+'</div>'
     +(ms.status==='active'?_pkBtn('Take a payment now',"_pkMemPaySheet('"+q+"','"+jq+"')",'ti-credit-card',ms.due):'')
     +(_pkInt(s.credits,0)>0||ms.credits>0?'<div style="display:flex;gap:8px;">'+'<button class="btng" onclick="_pkAdjust(\''+q+'\',\''+jq+'\',1)" style="flex:1;justify-content:center;border-radius:12px;margin-bottom:8px;"><i class="ti ti-plus"></i> Add a '+_fileEsc(s.creditLabel||'visit')+'</button><button class="btng" onclick="_pkAdjust(\''+q+'\',\''+jq+'\',-1)" style="flex:1;justify-content:center;border-radius:12px;margin-bottom:8px;">Take one off</button></div>':'')
+    +((_pkPlan(j.p)||{}).autoCharge&&(ms.status==='active'||ms.status==='paused')?(ms.autopay?_pkBtn('Turn automatic charging off',"_pkSetAutopay('"+q+"','"+jq+"',0)",'ti-toggle-left'):_pkBtn('They agreed: charge automatically',"_pkSetAutopay('"+q+"','"+jq+"',1)",'ti-credit-card')):'')
     +(ms.status==='active'?_pkBtn('Pause billing',"_pkMemEv('"+q+"','"+jq+"','pause')",'ti-player-pause'):'')
     +(ms.status==='paused'?_pkBtn('Resume from today',"_pkMemEv('"+q+"','"+jq+"','resume')",'ti-player-play',true):'')
     +((ms.status==='active'||ms.status==='paused')?_pkBtn('Cancel membership',"_pkCancelSheet('"+q+"','"+jq+"')",'ti-x'):'')
@@ -33810,6 +33819,66 @@ function _pkCoMemberPrice(cid,jid){
   if(!u1&&!u2){proToast('Add the services or an amount first');return;}
   _pkCoRefresh(cid);proToast('Member price applied');
 }
+// Charging a membership to a card runs through HER Square: she must have Square connected, and the
+// client must be linked to Square with a card saved there. Ashley 2026-11-20: "make sure there is a
+// obvious note for providers that auto-billing requires setting up square" ... "and let them control
+// that set up". Shown on the Memberships tab, the membership editor and every payment sheet; it turns
+// into a Connect button when Square is not connected (or its sign-in expired) on this account.
+function _pkSquareNote(slot,cid){
+  const id='pk-sqnote-'+(slot||'x');
+  const c=cid?CL[cid]:null;
+  const clientLine=(c&&!c.squareId)?' <b>'+_fileEsc(String(c.name||'This client').split(' ')[0])+' is not linked to Square yet</b>, so use a payment link, QR, invoice or cash for now.':'';
+  setTimeout(function(){_pkSquareNoteFill(id);},0);
+  return '<div id="'+id+'" role="note" style="margin:0 0 12px;background:var(--p-blue-bg);border:1px solid var(--p-line-ctl);border-radius:12px;padding:12px 14px;font-size:16px;color:var(--p-ink);line-height:1.5;"><div style="font-weight:600;margin-bottom:4px;"><i class="ti ti-credit-card" aria-hidden="true"></i> Charging cards and automatic billing need Square</div>To charge a membership to a client’s card, connect your Square account (More → Settings → Apps &amp; connections) and save a card for the client in Square. Automatic billing stays off until you turn it on for a membership and tick that the client agreed. Without Square you can still send a payment link or invoice, or mark it paid.'+clientLine+'<div class="pk-sqnote-act"></div></div>';
+}
+async function _pkSquareNoteFill(id){
+  try{
+    // Asked fresh each time: a stale "connected" here would hide the Connect button she needs.
+    let st=null;try{st=await _sqConnState();}catch(e){st=null;}
+    try{if(st&&typeof st.connected==='boolean'&&typeof _sqPayState!=='undefined'){_sqPayState=st;_sqPayStateAt=Date.now();}}catch(e){}
+    const el=document.getElementById(id);if(!el||!st||typeof st.connected!=='boolean')return;
+    const act=el.querySelector('.pk-sqnote-act');if(!act)return;
+    if(st.connected&&!st.expired){act.innerHTML='<div style="margin-top:6px;font-size:14px;color:var(--p-green);"><i class="ti ti-check" aria-hidden="true"></i> Your Square is connected.</div>';return;}
+    act.innerHTML='<div style="margin-top:6px;font-size:14px;color:var(--p-amber);font-weight:600;">'+(st.expired?'Your Square sign-in expired.':'Square is not connected yet.')+'</div><button class="btnp" onclick="_sqConnect()" style="width:100%;border-radius:12px;margin-top:8px;justify-content:center;"><i class="ti ti-plug" aria-hidden="true"></i> '+(st.expired?'Reconnect Square':'Connect Square')+'</button>';
+  }catch(e){}
+}
+// ── automatic billing: hers to switch on, per membership plan, and only for a client who agreed ──
+// Runs on her own devices while SlickChart is open (after the account is read, then hourly). Each
+// period has ONE idempotency key at Square and ONE derived payment id here, so two devices running at
+// once still make one charge and one payment record. A declined card is tried at most once a day.
+let _pkAutoBusy=false,_pkAutoLast={};
+function _pkAutoEligible(c,j,ms){const pl=_pkPlan(j.p);return !!(pl&&pl.autoCharge&&ms.autopay&&c.squareId&&ms.due&&ms.price>0&&!_pkPendingPay(j.id,ms.nextPer));}
+async function _pkAutoCharge(force){
+  if(_pkAutoBusy||_pkBootQuiet())return null;
+  try{if(!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token))return null;}catch(e){return null;}
+  if(!perkPlans.some(function(p){return p&&p.kind==='membership'&&p.autoCharge;}))return null;
+  let last=0;try{last=+localStorage.getItem('pk_auto_at')||0;}catch(e){}
+  if(!force&&Date.now()-last<3600000)return null;
+  const today=_todayISO();
+  const todo=[];Object.keys(CL).forEach(function(id){const c=CL[id];if(!c||!Array.isArray(c.perks)||!c.perks.length)return;
+    _pkJoins(c).forEach(function(j){const ms=_pkMemState(c,j);if(!_pkAutoEligible(c,j,ms))return;
+      if(_pkHas(c,'af_'+j.id+'_'+ms.nextPer+'_'+today))return;   // already tried (and failed) today
+      todo.push({cid:id,c:c,j:j,ms:ms});});});
+  try{localStorage.setItem('pk_auto_at',String(Date.now()));}catch(e){}
+  if(!todo.length)return {charged:0,failed:0};
+  let st=null;try{st=await _sqConnState();}catch(e){st=null;}
+  if(!st||!st.connected||st.expired){_pkAutoLast={blocked:(st&&st.expired)?'expired':'off',at:Date.now(),n:todo.length};try{_pkRerender();}catch(e){}return {blocked:true};}
+  _pkAutoBusy=true;let ok=0,bad=0;
+  try{
+    for(const x of todo){
+      try{const r=await _pkChargeOne(x.cid,x.j.id);if(r&&r.ok)ok++;}
+      catch(e){bad++;_pkAdd(x.cid,{id:'af_'+x.j.id+'_'+x.ms.nextPer+'_'+today,t:'autofail',m:x.j.id,per:x.ms.nextPer,why:String((e&&e.message)||'did not go through').slice(0,120)},{noSave:true});}
+    }
+    if(bad)saveClients();
+  }finally{_pkAutoBusy=false;}
+  _pkAutoLast={ok:ok,bad:bad,at:Date.now()};
+  if(ok||bad){try{proToast((ok?('Charged '+ok+' membership'+(ok===1?'':'s')+' automatically'):'')+(ok&&bad?' · ':'')+(bad?(bad+' could not be charged, see Loyalty & memberships'):''),6000);}catch(e){}}
+  try{_pkRerender();}catch(e){}
+  return {charged:ok,failed:bad};
+}
+try{setInterval(function(){try{_pkAutoCharge();}catch(e){}},3600000+17000);}catch(e){}
+function _pkAutoFail(c,j,ms){const evs=_pkLive(c).filter(function(e){return e.t==='autofail'&&e.m===j.id&&_pkInt(e.per,-1)===ms.nextPer;});return evs.length?evs[evs.length-1]:null;}
+function _pkSetAutopay(cid,jid,on){_pkAdd(cid,{t:'autopay',m:jid,on:on?1:0});_pkClose();proToast(on?'Automatic charging on for this client':'Automatic charging off for this client');_pkRerender(cid);}
 // ── her plans: the Rewards screen ──
 let _pkTab='loyalty';
 function _pkClientsOn(pl){
@@ -33826,7 +33895,7 @@ function _pkDueList(){
 }
 function _pkSummary(pl){
   if(pl.kind==='loyalty')return _pkInt(pl.punches,10)+' punches · '+_pkRewardText(pl)+((pl.earn||'payment')==='payment'?' · punches added for each payment':' · you add punches');
-  if(pl.kind==='membership')return '$'+_fmtMoney(_pkNum(pl.price,0))+' / '+_pkEveryText(pl)+(_pkInt(pl.credits,0)?' · '+_pkInt(pl.credits,0)+' '+(pl.creditLabel||'visit')+(_pkInt(pl.credits,0)===1?'':'s')+' each time':'')+((_pkNum(pl.svcPct,0)||_pkNum(pl.prodPct,0))?' · '+_pkMemDiscText(pl).replace('Member price: ',''):'');
+  if(pl.kind==='membership')return '$'+_fmtMoney(_pkNum(pl.price,0))+' / '+_pkEveryText(pl)+(_pkInt(pl.credits,0)?' · '+_pkInt(pl.credits,0)+' '+(pl.creditLabel||'visit')+(_pkInt(pl.credits,0)===1?'':'s')+' each time':'')+((_pkNum(pl.svcPct,0)||_pkNum(pl.prodPct,0))?' · '+_pkMemDiscText(pl).replace('Member price: ',''):'')+(pl.autoCharge?' \u00b7 automatic billing on':'');
   return _pkInt(pl.sessions,0)+' '+(pl.service||'session')+(_pkInt(pl.sessions,0)===1?'':'s')+' for $'+_fmtMoney(_pkNum(pl.price,0))+(_pkInt(pl.expiresDays,0)?' · use within '+_pkInt(pl.expiresDays,0)+' days':' · no expiry');
 }
 // Starting points she can edit before saving. Nothing here is stored until she taps Save.
@@ -33845,9 +33914,10 @@ function renderPerks(){
     package:'A set of sessions paid up front, like 6 facials. You choose the price, how many, and how long they last.'}[_pkTab];
   S.innerHTML=`
   <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:22px;font-weight:500;color:var(--p-ink);">Loyalty, memberships &amp; packages</div></div>
-  ${due.length?`<div style="margin:8px 16px 12px;background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:12px 14px;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;"><i class="ti ti-calendar-heart" aria-hidden="true"></i> ${due.length} membership payment${due.length===1?'':'s'} due</div>${due.slice(0,12).map(function(x){return '<button onclick="_pkMemPaySheet(\''+_pkA(x.cid)+'\',\''+_pkA(x.j.id)+'\')" style="width:100%;display:flex;justify-content:space-between;gap:8px;background:none;border:none;border-top:1px solid var(--p-line3);padding:8px 0;font-size:16px;color:var(--p-ink);cursor:pointer;font-family:inherit;text-align:left;"><span>'+_fileEsc(x.c.name)+' · '+_fileEsc(x.ms.s.name||'')+'</span><span style="color:var(--p-mut);white-space:nowrap;">$'+_fmtMoney(x.ms.price)+' · '+_pkFmtDate(x.ms.nextDue)+'</span></button>';}).join('')}${due.some(function(x){return x.c.squareId;})?`<button class="btnp" onclick="_pkChargeAllSheet()" style="width:100%;border-radius:12px;margin-top:8px;justify-content:center;"><i class="ti ti-credit-card" aria-hidden="true"></i> Charge all with a card on file</button>`:''}</div>`:''}
+  ${due.length?`<div style="margin:8px 16px 12px;background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:12px 14px;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;"><i class="ti ti-calendar-heart" aria-hidden="true"></i> ${due.length} membership payment${due.length===1?'':'s'} due</div>${due.slice(0,12).map(function(x){return '<button onclick="_pkMemPaySheet(\''+_pkA(x.cid)+'\',\''+_pkA(x.j.id)+'\')" style="width:100%;display:flex;justify-content:space-between;gap:8px;background:none;border:none;border-top:1px solid var(--p-line3);padding:8px 0;font-size:16px;color:var(--p-ink);cursor:pointer;font-family:inherit;text-align:left;"><span>'+_fileEsc(x.c.name)+' \u00b7 '+_fileEsc(x.ms.s.name||'')+(_pkAutoFail(x.c,x.j,x.ms)?' <span style="color:var(--p-red);">(automatic charge failed)</span>':'')+'</span><span style="color:var(--p-mut);white-space:nowrap;">$'+_fmtMoney(x.ms.price)+' · '+_pkFmtDate(x.ms.nextDue)+'</span></button>';}).join('')}${due.some(function(x){return x.c.squareId;})?`<button class="btnp" onclick="_pkChargeAllSheet()" style="width:100%;border-radius:12px;margin-top:8px;justify-content:center;"><i class="ti ti-credit-card" aria-hidden="true"></i> Charge all with a card on file</button>`:''}</div>`:''}
   <div role="tablist" style="display:flex;gap:4px;margin:6px 16px 12px;background:var(--p-surf2);border-radius:12px;padding:4px;">${tabs.map(function(t){return '<button role="tab" aria-selected="'+(_pkTab===t[0])+'" onclick="_pkTab=\''+t[0]+'\';renderPerks()" style="flex:1;border:none;border-radius:8px;padding:9px 4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(_pkTab===t[0]?'var(--surf1)':'transparent')+';color:'+(_pkTab===t[0]?'var(--p-ink)':'var(--p-mut)')+';">'+t[1]+'</button>';}).join('')}</div>
   <div style="padding:0 16px 10px;font-size:16px;color:var(--p-mut);line-height:1.5;">${intro}</div>
+  ${_pkTab==='membership'?'<div style="padding:0 16px;">'+_pkSquareNote('tab')+((_pkAutoLast&&_pkAutoLast.blocked)?'<div role="alert" style="margin:0 0 12px;background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-ink);">'+_pkAutoLast.n+' automatic charge'+(_pkAutoLast.n===1?' is':'s are')+' waiting because Square '+(_pkAutoLast.blocked==='expired'?'needs you to sign in again':'is not connected')+'.</div>':'')+'</div>':''}
   ${list.map(function(pl){const n=_pkClientsOn(pl);return '<button onclick="nav(\'perk-edit\',\''+_pkA(pl.id)+'\')" style="width:calc(100% - 32px);margin:0 16px 8px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;font-family:inherit;text-align:left;'+(pl.active===false?'opacity:.6;':'')+'"><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">'+_fileEsc(pl.name||_PK_KIND[pl.kind])+(pl.active===false?' <span style="font-size:14px;color:var(--p-mut);font-weight:500;">(not offered)</span>':'')+'</div><div style="font-size:14px;color:var(--p-mut);line-height:1.5;">'+_fileEsc(_pkSummary(pl))+'</div>'+(n?'<div style="font-size:14px;color:var(--accent-strong);margin-top:2px;">'+n+' client'+(n===1?'':'s')+'</div>':'')+'</div><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i></button>';}).join('')}
   ${list.length?'':`<div style="margin:0 16px 10px;">${(_PK_IDEAS[_pkTab]||[]).map(function(idea,i){return '<button onclick="nav(\'perk-edit\',{kind:\''+_pkTab+'\',idea:'+i+'})" style="width:100%;margin-bottom:8px;background:var(--accent-tint);border:1px dashed var(--accent-strong);border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:14px;color:var(--accent-strong);font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Start from an idea</div><div style="font-size:16px;color:var(--p-ink);margin-top:2px;">'+_fileEsc(idea.about)+'</div><div style="font-size:14px;color:var(--p-mut);margin-top:2px;">You can change every part before you save.</div></button>';}).join('')}</div>`}
   <div style="padding:2px 16px 24px;"><button onclick="nav('perk-edit',{kind:'${_pkTab}'})" style="width:100%;background:var(--surf1);border:1px dashed var(--p-line-ctl);color:var(--p-ink);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus" aria-hidden="true"></i> New ${{loyalty:'loyalty card',membership:'membership',package:'package'}[_pkTab]}</button></div>`;
@@ -33855,7 +33925,7 @@ function renderPerks(){
 function _pkChargeAllSheet(){
   const due=_pkDueList().filter(function(x){return x.c.squareId&&x.ms.price>0;});if(!due.length)return;
   const total=due.reduce(function(a,x){return a+x.ms.price;},0);
-  _pkSheet('<div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Charge '+due.length+' membership'+(due.length===1?'':'s')+' · $'+_fmtMoney(total)+'</div><div style="font-size:16px;color:var(--p-mut);margin-bottom:10px;line-height:1.5;">Each client’s saved card in Square is charged for the payment that is due. A month can never be charged twice.</div>'
+  _pkSheet('<div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Charge '+due.length+' membership'+(due.length===1?'':'s')+' · $'+_fmtMoney(total)+'</div><div style="font-size:16px;color:var(--p-mut);margin-bottom:10px;line-height:1.5;">Each client’s saved card in Square is charged for the payment that is due. A month can never be charged twice.</div>'+_pkSquareNote('all')
     +'<div style="margin-bottom:12px;">'+due.map(function(x){return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:16px;color:var(--p-ink);padding:5px 0;border-top:1px solid var(--p-line3);"><span>'+_fileEsc(x.c.name)+'</span><span>$'+_fmtMoney(x.ms.price)+'</span></div>';}).join('')+'</div>'
     +_pkBtn('Charge them now','_pkChargeAll()','ti-credit-card',true)+_pkBtn('Cancel','_pkClose()')+'<div id="pk-pay-res"></div>');
 }
@@ -33904,7 +33974,7 @@ function renderPerkEdit(data){
       +'</div>'
       +f('Reward expires after this many days (optional)',inp('pke-rdays',p.rewardDays,'Never','numeric'));
   }else if(p.kind==='membership'){
-    body+=f('Price',inp('pke-price',p.price,'$0.00','decimal'))
+    body+=_pkSquareNote('edit')+f('Price',inp('pke-price',p.price,'$0.00','decimal'))
       +'<span class="fl-lbl">Billed every</span><div style="display:flex;gap:8px;margin-bottom:12px;"><input class="fi" id="pke-every" value="'+v(p.every||1)+'" inputmode="numeric" style="margin:0;width:70px;">'+sel('pke-interval',p.interval||'month',[['week','week(s)'],['month','month(s)'],['year','year(s)']]).replace('margin-bottom:12px;','margin:0;flex:1;')+'</div>'
       +f('Included each time it is paid',inp('pke-credits',p.credits,'0','numeric'),'How many visits it covers each period. Use 0 for a discount-only membership.')
       +f('What one included visit is called',inp('pke-clabel',p.creditLabel,'e.g. facial'))
@@ -33913,7 +33983,9 @@ function renderPerkEdit(data){
       +f('Member price on services (% off)',inp('pke-svc',p.svcPct,'0','decimal'))
       +f('Member price on products (% off)',inp('pke-prod',p.prodPct,'0','decimal'))
       +f('Minimum months before they can cancel (optional)',inp('pke-term',p.minTerm,'None','numeric'))
-      +f('Other perks (optional)',inp('pke-perks',p.perksText,'e.g. Priority booking, a birthday gift'));
+      +f('Other perks (optional)',inp('pke-perks',p.perksText,'e.g. Priority booking, a birthday gift'))
+      +'<label style="display:flex;align-items:flex-start;gap:9px;margin:0 0 6px;cursor:pointer;"><input type="checkbox" id="pke-auto" '+(p.autoCharge?'checked':'')+' style="width:18px;height:18px;margin-top:3px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-ink);line-height:1.5;">Charge saved cards automatically when a payment is due</span></label>'
+      +'<div style="font-size:14px;color:var(--p-mut);margin:0 0 14px;line-height:1.5;">Needs your Square connected and a card saved for the client in Square. Only clients you tick as having agreed are charged. It runs while SlickChart is open on one of your devices, and you can turn it off any time.</div>';
   }else{
     body+=f('How many sessions',inp('pke-sessions',p.sessions,'6','numeric'))
       +f('What each session is (optional)',inp('pke-service',p.service,'e.g. facial'))
@@ -33954,7 +34026,7 @@ function _pkEditSave(){
     p.price=_pkNum(g('pke-price'),0);if(!(p.price>0))return err('Enter the price.');
     p.every=Math.max(1,_pkInt(g('pke-every'),1));p.interval=g('pke-interval')||'month';p.credits=Math.max(0,_pkInt(g('pke-credits'),0));p.creditLabel=g('pke-clabel')||'visit';
     p.rollover=g('pke-roll')||'none';p.rolloverCap=Math.max(0,_pkInt(g('pke-cap'),1));p.svcPct=g('pke-svc')?Math.min(100,Math.max(0,_pkNum(g('pke-svc'),0))):'';p.prodPct=g('pke-prod')?Math.min(100,Math.max(0,_pkNum(g('pke-prod'),0))):'';
-    p.minTerm=g('pke-term')?Math.max(0,_pkInt(g('pke-term'),0)):'';p.perksText=g('pke-perks');p.terms=g('pke-terms');
+    p.minTerm=g('pke-term')?Math.max(0,_pkInt(g('pke-term'),0)):'';p.perksText=g('pke-perks');p.terms=g('pke-terms');p.autoCharge=ck('pke-auto');
   }else{
     p.sessions=_pkInt(g('pke-sessions'),0);if(p.sessions<1||p.sessions>500)return err('Sessions must be a number from 1 to 500.');
     p.service=g('pke-service');p.price=_pkNum(g('pke-price'),0);if(!(p.price>0))return err('Enter the price.');p.expiresDays=g('pke-expd')?Math.max(0,_pkInt(g('pke-expd'),0)):'';p.terms=g('pke-terms');
@@ -33979,7 +34051,7 @@ function _pkClientOut(cid){
     const c=CL[cid];if(!c||c.isAnimal)return undefined;
     const cards=_pkPlansOf('loyalty').map(function(pl){const st=_pkCardState(c,pl);return {name:pl.name||'Loyalty card',have:st.have,need:st.need,ready:st.ready,expires:st.expires||'',reward:_pkRewardText(pl),desc:pl.desc||''};});
     const members=_pkJoins(c).map(function(j){const ms=_pkMemState(c,j);if(ms.status==='ended')return null;const s=ms.s;
-      return {name:s.name||'Membership',status:ms.status,credits:_pkInt(s.credits,0)>0?ms.credits:null,creditLabel:s.creditLabel||'visit',nextDue:ms.status==='active'?ms.nextDue:'',end:ms.end||'',price:ms.price,every:_pkEveryText(s),discount:(_pkNum(s.svcPct,0)||_pkNum(s.prodPct,0))?_pkMemDiscText(s):'',perks:s.perksText||'',terms:s.terms||''};}).filter(Boolean);
+      return {name:s.name||'Membership',status:ms.status,credits:_pkInt(s.credits,0)>0?ms.credits:null,creditLabel:s.creditLabel||'visit',nextDue:ms.status==='active'?ms.nextDue:'',end:ms.end||'',price:ms.price,every:_pkEveryText(s),discount:(_pkNum(s.svcPct,0)||_pkNum(s.prodPct,0))?_pkMemDiscText(s):'',perks:s.perksText||'',terms:s.terms||'',auto:!!(ms.autopay&&(_pkPlan(j.p)||{}).autoCharge)};}).filter(Boolean);
     const packages=_pkBuys(c).map(function(b){const ps=_pkPkgState(c,b);if(!ps.open)return null;return {name:ps.s.name||'Package',left:ps.left,total:ps.total,service:ps.s.service||'session',exp:ps.exp||'',terms:ps.s.terms||''};}).filter(Boolean);
     const offers=_pkPlansOf('membership').concat(_pkPlansOf('package')).map(function(pl){return {kind:pl.kind,name:pl.name||'',summary:_pkSummary(pl),desc:pl.desc||'',terms:pl.terms||''};});
     if(!cards.length&&!members.length&&!packages.length&&!offers.length)return undefined;

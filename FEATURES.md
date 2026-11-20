@@ -405,6 +405,8 @@ saved anywhere", not "does this always call that".
 | `_loadFeedbackInbox` | `/api/feedback` | direct |
 | `_loadIntegGcalStatus` | `/api/google-cal` | via `_gcalStatus` |
 | `_loadIntegSquareStatus` | `/api/square/connection` | via `_sqConnState` |
+| `_loadPerkPlans` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_loadPerkPlans` | `/api/square/connection` | via `_sqConnState` |
 | `_loadPersistenceSweep` | `/api/transcribe` | via `_probeWhisper` |
 | `_loadRemovedPhotos` | `/api/guide-file` | via `_getGuideFile` |
 | `_loadSessions` | `/api/sessions` | direct |
@@ -515,6 +517,8 @@ saved anywhere", not "does this always call that".
 | `_pkCancelDo` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_pkChargeAll` | `/api/square/charge-card` | via `_pkChargeOne` |
 | `_pkChargeAllSheet` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkChargeAllSheet` | `/api/square/connect` | via `_sqConnect` |
+| `_pkChargeAllSheet` | `/api/square/connection` | via `_sqConnState` |
 | `_pkChargeOne` | `/api/square/charge-card` | direct |
 | `_pkClientCard` | `/api/square/charge-card` | via `_pkChargeOne` |
 | `_pkJoinDo` | `/api/square/charge-card` | via `_loadClientCards` |
@@ -539,6 +543,8 @@ saved anywhere", not "does this always call that".
 | `_pkMemMarkPaid` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_pkMemMarkPaid` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_pkMemPaySheet` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkMemPaySheet` | `/api/square/connect` | via `_sqConnect` |
+| `_pkMemPaySheet` | `/api/square/connection` | via `_sqConnState` |
 | `_pkPunch` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_pkPunch` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_pkPunch` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
@@ -559,11 +565,20 @@ saved anywhere", not "does this always call that".
 | `_pkSellRecord` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_pkSellRecord` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_pkSellRecord` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkSetAutopay` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkSetAutopay` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkSetAutopay` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkSetAutopay` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkSetAutopay` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_pkSetExp` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_pkSetExp` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_pkSetExp` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_pkSetExp` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_pkSetExp` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkSquareNote` | `/api/square/connect` | via `_sqConnect` |
+| `_pkSquareNote` | `/api/square/connection` | via `_sqConnState` |
+| `_pkSquareNoteFill` | `/api/square/connect` | via `_sqConnect` |
+| `_pkSquareNoteFill` | `/api/square/connection` | via `_sqConnState` |
 | `_pkUndoBar` | `/api/square/charge-card` | via `_loadClientCards` |
 | `_pkUndoBar` | `/api/square/loyalty` | via `_loadClientLoyalty` |
 | `_pkUndoBar` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
@@ -733,6 +748,8 @@ saved anywhere", not "does this always call that".
 | `_saveAndSendNote` | `/api/beta-event` | via `_pingChart` |
 | `_saveEditedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveManualAppts` | `/api/google-cal` | via `_gcalPush` |
+| `_savePerkPlans` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_savePerkPlans` | `/api/square/connection` | via `_sqConnState` |
 | `_savePersistenceSweep` | `/api/announcements` | via `_checkNews` |
 | `_savePersistenceSweep` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_savePersistenceSweep` | `/api/square/connection` | via `_sqConnState` |
@@ -1166,7 +1183,11 @@ saved anywhere", not "does this always call that".
 | `renderPasswordSecurity` | `/api/sessions` | via `_loadSessions` |
 | `renderPasswordSecurity` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `renderPasswordSecurity` | `/api/totp-verify` | via `_confirmDisableTotp` |
+| `renderPerkEdit` | `/api/square/connect` | via `_sqConnect` |
+| `renderPerkEdit` | `/api/square/connection` | via `_sqConnState` |
 | `renderPerks` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `renderPerks` | `/api/square/connect` | via `_sqConnect` |
+| `renderPerks` | `/api/square/connection` | via `_sqConnState` |
 | `renderPhotos` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderProductRecs` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderProviderFillIntake` | `/api/provider-form` | via `_flushInPersonForms` |
