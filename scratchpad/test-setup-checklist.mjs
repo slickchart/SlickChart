@@ -43,7 +43,7 @@ for (const width of [390,1280]) {
   const r = await readSetup(page);
   const ids=r.steps.map(s=>s.id).join(',');
   ok(ids==='pay,clients,services,hours,booking,forms,logo,invite,app', `${width}: checklist in order (${ids})`);
-  ok(r.next==='pay' && /need a Square account to take card payments/.test(r.nextText) && /first \$1,000/.test(r.nextText), `${width}: next step is payments, says Square is needed, names $1,000`);
+  ok(r.next==='pay' && /first \$1,000 in card sales, processed free/.test(r.nextText) && /run through your own Square account/.test(r.nextText) && /first \$1,000/.test(r.nextText), `${width}: next step is payments, says Square is needed, names $1,000`);
   ok(r.signup===REF, `${width}: payments button is the referral link`);
   ok(/of 9 done/.test(r.count||''), `${width}: progress count shown (${r.count})`);
   ok(!r.overflow, `${width}: no overflow`);
