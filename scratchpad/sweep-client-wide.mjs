@@ -20,7 +20,7 @@ if (process.env.BUSY) { const rec0 = rec; { const rec = rec0.client.data; const 
   rec.pendingForms = Array.from({ length: 8 }, (_, i) => ({ formId: 'f' + i, title: ['New Client Intake and Health History Questionnaire', 'Chemical Peel Consent', 'Photo Release', 'Lash Lift Consent'][i % 4] + ' ' + (i + 1), assignedAt: i + 1, qs: [{ id: 'q1', label: 'Any allergies?', type: 'Short answer', required: true }] }));
   rec.products = Array.from({ length: 15 }, (_, i) => ({ id: 'p' + i, name: L + ' ' + i, brand: 'Very Long Professional Skincare Brand Name', why: 'Supports your barrier between visits.' })); } }
 const out = {};
-const ctx = await browser.newContext({ ...VP, serviceWorkers: 'block' }); const page = await ctx.newPage();
+const ctx = await browser.newContext({ ...VP, serviceWorkers: 'block', ...(process.env.LOCALE ? { locale: process.env.LOCALE } : {}), ...(process.env.TZ_ID ? { timezoneId: process.env.TZ_ID } : {}) }); const page = await ctx.newPage();
 // DARK=1: the client picked Dark in Settings.
 if (process.env.DARK) await page.addInitScript(() => { try { localStorage.setItem('sc_client_theme', 'dark'); } catch (e) {} });
 const errs = []; page.on('pageerror', e => errs.push(String(e.message).slice(0, 160)));
