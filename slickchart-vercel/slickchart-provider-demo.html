@@ -31593,7 +31593,10 @@ async function _loadCalFeedUrl(){
 
 // ── Take payment (via the provider's own connected Square) ──
 function _coVal(x){const el=document.getElementById(x);return el?el.value.trim():'';}
-function _coErr(msg,reconnect){_coActionLock=false;if(reconnect==='gone')msg='Square isn\u2019t connected right now. Tap Reconnect Square, sign in, then try again.';try{_alAdd('toast-err',(_alLastNav?_alLastNav+': ':'')+_alScrub(msg));}catch(e){}const el=document.getElementById('co-result');if(!el)return;el.innerHTML='<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:11px 13px;font-size:16px;color:var(--p-red);line-height:1.5;">'+String(msg).replace(/</g,'&lt;')+(reconnect?' <button onclick="_sqConnect()" style="background:none;border:none;color:var(--p-red);text-decoration:underline;font-weight:600;cursor:pointer;font-family:inherit;font-size:16px;">Reconnect Square</button>':'')+'</div>';}
+function _coErr(msg,reconnect){_coActionLock=false;
+  // Lines that add up to $0: say which one needs a price, not "add line items" when she already has.
+  try{if(msg==='Add line items or an amount first.'){const z=_coItems.filter(it=>it.variationId&&!((+it.price)>0));if(z.length)msg='Type a price for '+z.map(it=>(it.name&&String(it.name).trim())||'the line item').slice(0,3).join(', ')+' in the line items, or remove '+(z.length>1?'them':'it')+' and type the amount at the top.';}}catch(e){}
+  if(reconnect==='gone')msg='Square isn\u2019t connected right now. Tap Reconnect Square, sign in, then try again.';try{_alAdd('toast-err',(_alLastNav?_alLastNav+': ':'')+_alScrub(msg));}catch(e){}const el=document.getElementById('co-result');if(!el)return;el.innerHTML='<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:11px 13px;font-size:16px;color:var(--p-red);line-height:1.5;">'+String(msg).replace(/</g,'&lt;')+(reconnect?' <button onclick="_sqConnect()" style="background:none;border:none;color:var(--p-red);text-decoration:underline;font-weight:600;cursor:pointer;font-family:inherit;font-size:16px;">Reconnect Square</button>':'')+'</div>';}
 function _coBusy(t){const el=document.getElementById('co-result');if(el)el.innerHTML='<div style="text-align:center;color:var(--p-mut);font-size:16px;padding:8px;">'+t+'</div>';}
 // Shared in-flight lock so a double-tap on "Send payment link"/"Send invoice"/"Charge"
 // can't fire the action twice (duplicate invoice email, duplicate payment-link record).
@@ -32017,7 +32020,21 @@ async function _coEnsureMenu(){
   _coApplyTaxChoices(merged);
   _coMenu=merged;_coMenuAt=Date.now();return _coMenu;
 }
-function _coValidItems(){return _coItems.filter(it=>it.variationId||(+it.price)>0).map(it=>Object.assign({},it,{name:(it.name&&String(it.name).trim())||'Item'}));}
+// A Square service with a price set at checkout ("variable price") comes into the line items at $0, often
+// filled in on its own from today's visit. She then types the price in Amount at the top, and every
+// button said "Add line items or an amount first" because the $0 line won (a provider tapped it 3 times
+// in a minute on 2026-11-19, provider watch). When exactly one line has no price and the lines add up to
+// $0, the amount she typed is that line's price (before tax, so the total is what she typed).
+function _coFillZeroPrice(){
+  try{const typed=_price(_coVal('co-amt'));if(!(typed>0))return;
+    const live=_coItems.filter(it=>it.variationId||(+it.price)>0);if(!live.length)return;
+    if(live.some(it=>(+it.price)>0))return;
+    if(live.length!==1||(live[0].qty||1)!==1)return;
+    const it=live[0],rate=(it.taxable===false)?0:_effTaxRate();
+    it.price=Math.round((rate>0?typed/(1+rate/100):typed)*100)/100;
+  }catch(e){}
+}
+function _coValidItems(){_coFillZeroPrice();return _coItems.filter(it=>it.variationId||(+it.price)>0).map(it=>Object.assign({},it,{name:(it.name&&String(it.name).trim())||'Item'}));}
 // Round to whole cents using a tiny epsilon so values like 0.835 (which float math
 // can store as 0.83499999) still round up correctly.
 function _money(n){const r=Math.round((Number(n)||0)*100+(Number(n)>=0?1e-6:-1e-6))/100;return r===0?0:r;}
