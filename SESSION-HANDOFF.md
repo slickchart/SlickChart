@@ -9943,6 +9943,12 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzze: client app sheets keep Tab on a computer
+
+The provider app got a sheet focus trap in zx; the client app never did, so a client on a laptop pressing
+Tab in an open sheet walked into the covered screen. Same handler, using the client's `_topOverlay()`.
+Escape still closes. Test: `scratchpad/test-client-sheet-tab-trap.mjs` (both engines, fails 2 on the old code).
+
 ## 2026-11-19 — build 2026-11-19zzzd: a client's profile photo that could not reach the provider is sent again
 
 Sweep find (background-and-back angle). In the client app, a new profile photo that failed to send (often
