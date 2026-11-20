@@ -39,7 +39,8 @@ const read = page => page.evaluate(()=>{
     signupText:sign&&sign.textContent.trim(), connect:!!(o&&o.querySelector('[data-ob-sq="connect"]')),
     have:!!(o&&o.querySelector('[data-ob-sq="have"]')), primary:prim&&prim.textContent.trim(),
     overflow: st? st.scrollWidth>st.clientWidth+1 : true,
-    signupBox: sign? sign.getBoundingClientRect().height : 0};
+    signupBox: sign? sign.getBoundingClientRect().height : 0,
+    offerFirst: !!(st&&st.firstElementChild&&st.firstElementChild.dataset.sqOffer)};
 });
 
 for (const width of [390, 1280]) {
@@ -48,7 +49,7 @@ for (const width of [390, 1280]) {
   let r = await read(page);
   ok(/need a Square account to take card payments/i.test(r.text), `${width}: says Square is needed for card payments`);
   ok(/Payment links/.test(r.text) && /Deposits/.test(r.text) && /membership billing/i.test(r.text), `${width}: lists what Square powers`);
-  ok(/first \$1,000/.test(r.text) && /no code to type/i.test(r.text), `${width}: names the $1,000 offer, nothing to type`);
+  ok(/first \$1,000 in card sales, processed free/.test(r.text) && /nothing to type/i.test(r.text) && r.offerFirst, `${width}: the free $1,000 leads the step, nothing to type`);
   ok(r.signupHref===REF, `${width}: the one big button is the referral link`);
   ok(r.signupText==='Set up Square payments' && r.signupBox>=44, `${width}: button reads "Set up Square payments", tap-sized`);
   ok(r.have, `${width}: "Already have Square? Connect it" offered`);
