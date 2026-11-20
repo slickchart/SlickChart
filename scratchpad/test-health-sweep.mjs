@@ -12,7 +12,7 @@ const db = new PGlite();
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-'));
 for (const d of ['api/admin', 'lib']) fs.mkdirSync(path.join(dir, d), { recursive: true });
 fs.copyFileSync(path.join(SRC, 'api/admin/health-sweep.js'), path.join(dir, 'api/admin/health-sweep.js'));
-for (const f of ['cron-runs.js', 'app-build.js', 'app-launch-log.js', 'auth.js', 'founder-settings.js']) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
+for (const f of ['cron-runs.js', 'app-build.js', 'app-launch-log.js', 'auth.js', 'founder-settings.js', 'device-report.js', 'cancellations.js', 'email.js', 'pricing.js'].filter(f => fs.existsSync(path.join(SRC, 'lib', f)))) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
 // Trial outcomes (2026-11-11): the real lib, with Stripe answered by globalThis.__stripe.
 fs.copyFileSync(path.join(SRC, 'lib/trial-outcomes.js'), path.join(dir, 'lib/trial-outcomes.js'));

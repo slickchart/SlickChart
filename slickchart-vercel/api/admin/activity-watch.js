@@ -122,7 +122,7 @@ export async function runWatch(q, since) {
     for (const r of rows) {
       const p = r.report || {}, acct = who(r.provider_id), dev = String(r.device_key).slice(-4), where = (p.platform || '?') + ' ' + (p.kind || '');
       const add = (level, kind, detail) => problems.push({ level, kind, account: acct, device: dev, where, detail, count: 1, last: new Date(r.updated_at).getTime(), key: kind + '|' + acct + '|' + dev });
-      if ((p.unsent || 0) >= 5) add('fix', 'not-saving', p.unsent + ' changes on this device not yet saved to the account');
+      if (_stuck(p) >= 5) add('fix', 'not-saving', _stuck(p) + ' changes on this device not yet saved to the account' + ('unsentStale' in p ? ' (waiting over 5 minutes)' : ''));
       if ((p.memOnly || 0) > 0 || p.idbWorks === false) add('fix', 'storage', 'device storage not working' + ((p.memOnly || 0) > 0 ? ', ' + p.memOnly + ' items held only in memory' : '') + storageWhy(p));
       if (p.reloadFails) add('fix', 'reload-fails', 'screens failing to reload: ' + String(p.reloadFails).slice(0, 100));
       if ((p.evPollFails || 0) >= 3) add('fix', 'submissions', 'client forms and check-ins are not reaching this device (' + p.evPollFails + ' failed checks)');
@@ -196,3 +196,6 @@ export default async function handler(req, res) {
   const since = Number.isFinite(s) && s > 0 ? Math.max(s, Date.now() - 7 * 86400000) : Date.now() - 2 * 3600000;
   res.status(200).json(await runWatch(q, since));
 }
+// Changes still waiting: builds from 2026-11-20a also say how many have waited over 5 minutes, which is the
+// real "not saving" signal; older builds only send the plain count.
+function _stuck(p) { return ('unsentStale' in p) ? (+p.unsentStale || 0) : (+p.unsent || 0); }

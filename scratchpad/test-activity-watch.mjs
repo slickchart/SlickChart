@@ -14,7 +14,8 @@ const db = new PGlite();
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-'));
 for (const d of ['api/admin', 'lib']) fs.mkdirSync(path.join(dir, d), { recursive: true });
 for (const f of ['activity-watch.js', 'health-sweep.js']) fs.copyFileSync(path.join(SRC, 'api/admin', f), path.join(dir, 'api/admin', f));
-for (const f of ['cron-runs.js', 'app-build.js', 'app-launch-log.js', 'auth.js', 'founder-settings.js', 'trial-outcomes.js', 'device-report.js']) fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
+// Every lib file the endpoints import (the list grows as other checks are added); lib/db.js and referral are stubbed below.
+for (const f of fs.readdirSync(path.join(SRC, 'lib'))) if (f.endsWith('.js') && f !== 'db.js') fs.copyFileSync(path.join(SRC, 'lib', f), path.join(dir, 'lib', f));
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
 fs.writeFileSync(path.join(dir, 'lib/referral.js'), 'export async function stripeApi(){ return {}; }');
 fs.writeFileSync(path.join(dir, 'api/feedback.js'), 'export async function monitorKeyOk(){return true;}');
@@ -58,6 +59,12 @@ const { ensureDeviceReportsTable } = await import(pathToFileURL(path.join(dir, '
 await ensureDeviceReportsTable();
 await db.query(`INSERT INTO device_reports VALUES ('p_big','dev_big',$1::jsonb, now())`, [JSON.stringify({ platform: 'ios', kind: 'app', memOnly: 1, idbWorks: false, unsent: 7 })]);
 await db.query(`INSERT INTO device_reports VALUES ('p_ok','dev_ok',$1::jsonb, now())`, [JSON.stringify({ platform: 'ios', kind: 'app', unsent: 1, idbWorks: true })]);
+// New builds say how many changes have waited over 5 minutes. 6 still going up at launch is a phone saving fine;
+// 6 waiting over 5 minutes is not.
+await db.query(`INSERT INTO providers VALUES ('p_tr','transit@gmail.com',$1),('p_st','stuckphone@gmail.com',$1)`, [new Date(now - 300 * H).toISOString()]);
+await db.query(`INSERT INTO kv VALUES ('p_tr','sc_onboarded','true'),('p_st','sc_onboarded','true')`);
+await db.query(`INSERT INTO device_reports VALUES ('p_tr','dev_tr',$1::jsonb, now())`, [JSON.stringify({ platform: 'android', kind: 'app', unsent: 6, unsentStale: 0, idbWorks: true })]);
+await db.query(`INSERT INTO device_reports VALUES ('p_st','dev_st',$1::jsonb, now())`, [JSON.stringify({ platform: 'android', kind: 'app', unsent: 6, unsentStale: 6, idbWorks: true })]);
 
 const { runWatch, shape } = await import(pathToFileURL(path.join(dir, 'api/admin/activity-watch.js')));
 const r = await runWatch(db.query ? (strs, ...v) => { let t = ''; strs.forEach((s, i) => { t += s + (i < v.length ? '$' + (i + 1) : ''); }); return db.query(t, v).then(x => x.rows); } : null, since);
@@ -76,6 +83,8 @@ ok(find('script-error', 'new')[0]?.level === 'fix', 'script error on a computer 
 ok(find('launch-cut-off', 'new').length === 0, 'a closed browser tab is not a crash');
 ok(find('camera', 'new').length === 1, 'camera failure flagged');
 ok(find('storage', 'ros').length === 1 && find('not-saving', 'ros').length === 1, 'device report: storage broken + 7 unsaved flagged');
+ok(find('not-saving', 'tra').length === 0, '6 changes still going up at launch (none older than 5 min) is not flagged');
+ok(find('not-saving', 'stu').length === 1, '6 changes waiting over 5 minutes is flagged');
 ok(find('failed-sign-in', 'stu')[0]?.level === 'urgent', '4 failed sign-ins in the window is urgent');
 ok(find('failed-sign-in', 'fre').length === 0, 'failed 3x then got in another way is not stuck');
 ok(find('failed-sign-in', 'lon').length === 0, 'failed sign-ins before since are not reported');
@@ -90,6 +99,6 @@ const r2 = await runWatch((strs, ...v) => { let t = ''; strs.forEach((s, i) => {
 ok(JSON.stringify(r2.problems.map(p => p.key)) === JSON.stringify(keys), 'keys are stable across runs');
 ok(shape('Could not save 3 photos') === shape('Could not save 12 photos'), 'message shape ignores numbers');
 const txt = JSON.stringify(r);
-ok(!/rosalind@|happyprovider@|newbie@|stuck@gmail|tahoo@tahoo|moved@x/.test(txt), 'no full email anywhere in the reply');
+ok(!/transit@|stuckphone@|rosalind@|happyprovider@|newbie@|stuck@gmail|tahoo@tahoo|moved@x/.test(txt), 'no full email anywhere in the reply');
 console.log(fail ? fail + ' FAILED' : 'ALL PASS');
 process.exit(fail ? 1 : 0);

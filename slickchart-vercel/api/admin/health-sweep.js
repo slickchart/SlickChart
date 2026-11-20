@@ -317,7 +317,7 @@ export async function runSweep(q) {
     for (const r of rows) {
       const p = r.report || {}, bad = [];
       // 1 or 2 is a save still in its few-second delay when the report was taken (first live run).
-      if ((p.unsent || 0) >= 5) bad.push(p.unsent + ' changes not yet saved to the account');
+      if (_stuck(p) >= 5) bad.push(_stuck(p) + ' changes not yet saved to the account');
       if ((p.memOnly || 0) > 0) bad.push(p.memOnly + ' items held only in memory');
       if (p.idbWorks === false) bad.push('device storage not working' + storageWhy(p));
       if (p.reloadFails) bad.push('screens failing to reload: ' + String(p.reloadFails).slice(0, 80));
@@ -625,3 +625,6 @@ export default async function handler(req, res) {
   }
   res.status(200).json(await runSweep(q));
 }
+// Changes still waiting: builds from 2026-11-20a also say how many have waited over 5 minutes, which is the
+// real "not saving" signal; older builds only send the plain count.
+function _stuck(p) { return ('unsentStale' in p) ? (+p.unsentStale || 0) : (+p.unsent || 0); }
