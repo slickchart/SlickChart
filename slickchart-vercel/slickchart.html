@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-20g';
+const APP_BUILD='2026-11-20h';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -17335,15 +17335,23 @@ function _tryConsumeDeepLink(){
     try{if(cid&&CL[cid])nav('client',cid);}catch(e){}
   }
 }
-let _ncLastOrient=0;
-async function _ncPhotoDataUrl(fromCamera,maxW){
+let _ncLastOrient=0,_ncLastRaw=false;
+// raw: an Android PHONE fresh capture asks the plugin for the camera's own pixels and its own
+// orientation tag (correctOrientation:false), and _uprightFresh turns it. With correction on, the
+// plugin turns the photo by the tag and then RESETS the tag to 1, so "the phone guessed landscape
+// the other way" (3) and "upside down" (8) arrived looking like 1 and came out upside down, and a
+// photo she held sideways on purpose could not be told apart from a flat-on-the-bed guess.
+async function _ncPhotoDataUrl(fromCamera,maxW,raw){
   try{
+    _ncLastRaw=false;
     if(!_isNativeApp())return null;
     const Camera=window.Capacitor.Plugins&&window.Capacitor.Plugins.Camera;
     if(!Camera||!Camera.getPhoto){_ncLastErr='no-plugin';return null;}
     _ncLastErr='';
-    const photo=await Camera.getPhoto({quality:82,width:(maxW||1600),resultType:'dataUrl',correctOrientation:true,source:fromCamera?'CAMERA':'PHOTOS',saveToGallery:false});
-    // The orientation the camera guessed, if the plugin reports it, so _lockUpright can undo a
+    const useRaw=!!(raw&&fromCamera&&_ncRawOk());
+    const photo=await Camera.getPhoto({quality:82,width:(maxW||1600),resultType:'dataUrl',correctOrientation:!useRaw,source:fromCamera?'CAMERA':'PHOTOS',saveToGallery:false});
+    _ncLastRaw=useRaw;
+    // The orientation the camera guessed, if the plugin reports it, so _uprightFresh can undo a
     // sideways guess in the right direction. Absent is fine: it falls back to a quarter turn.
     try{const ex=photo&&photo.exif;_ncLastOrient=ex?(parseInt(ex.Orientation||ex.orientation,10)||0):0;}catch(e){_ncLastOrient=0;}
     return (photo&&photo.dataUrl)||null;
@@ -17405,19 +17413,20 @@ function _commitPhoto(clientId,phase,url,after,angle){
 }
 function takePhoto(clientId,phase,after,fromLibrary){
   const save=url=>_commitPhoto(clientId,phase,url,after);
-  // A fresh capture is locked upright (_lockUpright); a library pick is left exactly as it was shot,
+  // A fresh capture is locked upright (_uprightFresh); a library pick is left exactly as it was shot,
   // because a landscape photo chosen from the camera roll is meant to be landscape.
-  const lock=(url,orient)=>{if(!url||fromLibrary||!_isTouchDevice()){save(url);return;}_lockUpright(url,orient,save);};
+  if(!fromLibrary)_gravWatch();
+  const lock=(url,orient,raw)=>{if(!url||fromLibrary||!_isTouchDevice()){save(url);return;}_uprightFresh(url,orient,!!raw,save);};
   // Native app: a fresh capture goes through the OS camera plugin; "From library" keeps the web picker.
   const web=function(){
     const inp=_ensureCamInput(fromLibrary);inp.value='';inp.multiple=false;
     inp.onchange=()=>{
       const f=inp.files&&inp.files[0];
-      if(f){_exifOrientation(f).then(function(o){_downscaleImg(f,function(url){lock(url,o);},1600);});}else save('');
+      if(f){_exifOrientation(f).then(function(o){_downscaleImg(f,function(url){lock(url,o,false);},1600);});}else save('');
     };
     inp.click();
   };
-  if(!fromLibrary&&_isNativeApp()){ _ncLastOrient=0;_ncPhotoDataUrl(true,1600).then(function(d){ if(d)lock(d,_ncLastOrient); else _ncCameraFailed(web,after); }); return; }
+  if(!fromLibrary&&_isNativeApp()){ _ncLastOrient=0;_ncPhotoDataUrl(true,1600,true).then(function(d){ if(d)lock(d,_ncLastOrient,_ncLastRaw); else _ncCameraFailed(web,after); }); return; }
   web();
 }
 function _isTouchDevice(){try{return (navigator.maxTouchPoints>0)||!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);}catch(e){return false;}}
@@ -17450,24 +17459,85 @@ function _exifOrientation(file){
     }).catch(function(){return 0;});
   }catch(e){return Promise.resolve(0);}
 }
-// "Lock upright" for a fresh capture. The orientation tag IS applied (_downscaleImg), so a photo
-// still comes out sideways when the phone guessed its own orientation wrong: held flat over a client
-// on the treatment bed, it cannot tell which way is up and tags the shot landscape (1 or 3) or upside
-// down (8). A before/after is shot portrait, so put it back the way the phone was really held. A
-// phone's camera sensor is landscape and "held upright" is a quarter turn clockwise of it (tag 6), so
-// tag 1 needs a quarter turn clockwise, 3 a quarter turn back and 8 a half turn. Unknown direction
-// (no tag, or the camera plugin baked the turn in) gets a quarter turn clockwise; the rotate arrow
-// under the photo fixes the rare one that lands wrong.
-function _lockUpright(url,orient,cb){
-  const img=new Image();
-  img.onload=function(){
-    const land=img.width>img.height;
-    const mode=land?(orient===3?'rot270':'rot'):(orient===8?'rot180':'');
+// ── Which way the phone is really held ──────────────────────────────────────────────────────────
+// The camera's own orientation tag is a guess, and for the shot an esthetician takes most (looking
+// straight down at a client on the bed) it is a coin toss: flat, the phone cannot tell which way is
+// up. Ashley 2026-11-20: "when i snap photos most of the time they show immediately as sideways".
+// The app notes the phone's gravity sensor around the capture (the tap, and the moment the camera
+// hands the photo back) in the launch log, so the next report can be read instead of asked about.
+// Nothing asks for permission: where the sensor needs one (iPhone) it simply sends nothing.
+let _grav={x:0,y:0,z:0,t:0},_gravOnAt=0,_gravTap='';
+function _gravWatch(){
+  try{
+    if(!_gravOnAt&&typeof window.DeviceMotionEvent!=='undefined'){   // never asks: an iPhone that wants permission just sends nothing
+      window.addEventListener('devicemotion',function(e){const g=e&&e.accelerationIncludingGravity;if(g&&g.x!=null&&g.y!=null){_grav={x:+g.x||0,y:+g.y||0,z:+g.z||0,t:Date.now()};}},{passive:true});
+    }
+    _gravOnAt=_gravOnAt||Date.now();
+    _gravTap='';setTimeout(function(){_gravTap=_gravHold(800);},120);
+  }catch(e){}
+}
+// 'land+' (top of the phone to the left), 'land-' (top to the right), 'up', 'flat', or '' (no reading).
+// The sensor's axes belong to the phone's body, so this only means "portrait" on a phone whose own
+// shape is tall (_ncRawOk); a tablet is never read.
+function _gravHold(maxAge){
+  try{
+    if(!_grav.t||Date.now()-_grav.t>(maxAge||800)||!_phoneBody())return '';
+    const x=_grav.x,y=_grav.y,z=_grav.z,tot=Math.hypot(x,y,z)||1,inPlane=Math.hypot(x,y);
+    if(inPlane/tot<0.5)return 'flat';                      // within ~30 degrees of lying flat
+    if(Math.abs(x)>Math.abs(y)*1.7)return x>0?'land+':'land-';
+    if(Math.abs(y)>Math.abs(x)*1.7)return 'up';
+    return '';
+  }catch(e){return '';}
+}
+// A phone, held portrait in the hand: its natural shape is tall. Tablets (natural landscape on most
+// Android tablets, and an iPad on its side is a normal way to work) keep the camera's own turn.
+function _phoneBody(){
+  try{
+    const so=screen.orientation;
+    if(so&&typeof so.angle==='number'&&so.type){const pNow=/portrait/.test(so.type);const natPortrait=(so.angle%180===0)?pNow:!pNow;if(!natPortrait)return false;}
+    return Math.min(screen.width||0,screen.height||0)<600;
+  }catch(e){return false;}
+}
+// The raw capture is only used where every step of the turn is known: the Android app on a phone.
+function _ncRawOk(){try{return _isNativeApp()&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform()==='android'&&_phoneBody();}catch(e){return false;}}
+// The reading just after the camera hands the photo back (the phone is still where she shot from),
+// waiting a moment for the first fresh sample once the app is in front again.
+function _gravAfter(){
+  return new Promise(function(res){
+    if(!_gravOnAt){res('');return;}
+    const start=Date.now();
+    (function poll(){const h=(_grav.t>=start-150)?_gravHold(600):'';if(h||Date.now()-start>500){res(h);return;}setTimeout(poll,60);})();
+  });
+}
+// A fresh capture, put upright. raw = the Android camera's own pixels with its tag NOT applied yet
+// (sensor frame: landscape, the top of the scene at the image's LEFT edge when the phone is upright).
+// Otherwise the tag is already applied (_downscaleImg, or the iPhone plugin) and `orient` is the
+// camera's guess. The result is the photo the way she held the phone:
+//   held on its side on purpose (sensor says so)  -> landscape, upright that way round
+//   anything else (upright, flat on the bed)      -> portrait, top of the phone at the top
+// The rotate arrow under the photo still fixes any one that lands wrong.
+function _uprightFresh(url,orient,raw,cb){
+  Promise.all([_gravAfter(),new Promise(function(res){const im=new Image();im.onload=function(){res({w:im.width,h:im.height});};im.onerror=function(){res(null);};im.src=url;})]).then(function(r){
+    const hold=(r[0]||'-')+'/'+(_gravTap||'-');
+    const dim=r[1];
+    if(!dim){cb(url);return;}
+    // Her rule (2026-11-20): "no matter what just make sure the picture stays upright after taking
+    // it". So a fresh capture is ALWAYS a portrait with the top of the phone at the top, whatever the
+    // camera guessed. The sensor reading is only written to the launch log, so a photo that still
+    // lands wrong can be diagnosed by reading, not by asking her.
+    const land=dim.w>dim.h;
+    let mode='';
+    if(raw){
+      // Every Android tag ends in the same body-frame turn, a quarter clockwise. A camera app that
+      // already turned its pixels (portrait raw) is left as it came.
+      if(land)mode='rot';
+    }else{
+      mode=land?(orient===3?'rot270':'rot'):(orient===8?'rot180':'');
+    }
+    try{_alAdd('photo-upright',(raw?'raw ':'tag ')+dim.w+'x'+dim.h+' o'+(orient||0)+' '+hold+' '+(mode||'kept'));}catch(e){}
     if(!mode){cb(url);return;}
     _imgTransform(url,mode,cb);
-  };
-  img.onerror=function(){cb(url);};
-  img.src=url;
+  });
 }
 // ── Ghost overlay camera ─────────────────────────────────────────────────────────────────────────
 // A before/after only reads as progress if the two frames line up. Matching an old angle from memory
@@ -17848,8 +17918,13 @@ function handlePhotoSelect(input){
   const preview=document.getElementById('photo-preview-row');
   const _cid=uploadModalClientId;
   _photoReading+=files.length;_photoSaveBtnState();
+  // The sheet's Camera button is a fresh capture too: put it upright like Start session's (a library
+  // pick, or a drop on a computer, stays exactly as it was shot).
+  const _fresh=!!(input&&input.id==='photo-cam-input'&&_isTouchDevice());
+  if(_fresh)_gravWatch();
   files.forEach(file=>{
-    _downscaleImg(file,function(url){
+    const _read=_fresh?function(f,cb,max){_exifOrientation(f).then(function(o){_downscaleImg(f,function(u){if(!u){cb(u);return;}_uprightFresh(u,o,false,cb);},max);});}:_downscaleImg;
+    _read(file,function(url){
       _photoReading=Math.max(0,_photoReading-1);
       if(uploadModalClientId!==_cid||!document.getElementById('photo-upload-modal')){_photoSaveBtnState();return;}   // sheet closed meanwhile
       if(!url){_photoSaveBtnState();try{if(typeof proToast==='function')proToast('Couldn\u2019t read '+((file&&file.name)||'a file')+', skipped');}catch(e){}return;}

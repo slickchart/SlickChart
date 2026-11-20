@@ -78,6 +78,18 @@ const got = await B.p.evaluate(async ({ pid, ets, turned }) => {
 T.check('another device swaps in the turned photo', got.first && got.n === 1, JSON.stringify(got));
 T.check('and does not refetch it on every sync', got.again === 'data:image/jpeg;base64,KEEP');
 
+// The "Add session photos" sheet: its Camera button is a fresh capture (turned), its library pick is not.
+const sheet = async (p, inputId, file) => p.evaluate(async ({ inputId }) => { _pendingPhotos = []; openPhotoUpload('c1'); return !!document.getElementById(inputId); }, { inputId })
+  .then(async ok => { await p.setInputFiles('#' + inputId, D + file); await p.waitForTimeout(1500);
+    return p.evaluate(async () => { const u = _pendingPhotos[0] && _pendingPhotos[0].url; if (!u) return null; const img = new Image(); img.src = u; await img.decode();
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      const red = (X, Y) => { const d = x.getImageData(X, Y, 1, 1).data; return d[0] > 180 && d[1] < 110; };
+      const r = { w: c.width, h: c.height, side: red(c.width >> 1, 4) ? 'top' : red(4, c.height >> 1) ? 'left' : red(c.width - 4, c.height >> 1) ? 'right' : red(c.width >> 1, c.height - 4) ? 'bottom' : '?' };
+      document.getElementById('photo-upload-modal')?.remove(); return r; }); });
+{ const r = await sheet(A.p, 'photo-cam-input', 'o1.jpg'); T.check('photo sheet Camera on a phone comes out upright portrait', r && r.h > r.w && r.side === 'top', JSON.stringify(r)); }
+{ const r = await sheet(A.p, 'photo-cam-input', 'o3.jpg'); T.check('photo sheet Camera, other-way guess, upright portrait', r && r.h > r.w && r.side === 'top', JSON.stringify(r)); }
+{ const r = await sheet(A.p, 'photo-file-input', 'o1.jpg'); T.check('photo sheet library pick keeps a landscape photo landscape', r && r.w > r.h, JSON.stringify(r)); }
+
 // ── Computer (no touch): a "Take photo" there is a file pick, never turned ──
 const C = await open(false);
 await shoot(C.p, 'before', 'o1.jpg'); { const r = await look(C.p, 0); T.check('on a computer a landscape photo stays landscape', r.w > r.h, JSON.stringify(r)); }

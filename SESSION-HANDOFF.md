@@ -11232,3 +11232,29 @@ Pacific, Prattville AL) could not be traced: /build and /build-any-business reco
   (Chromium, needs `vercel-like-server.mjs` on 8898). WebKit could not run in that container.
 - Instagram/Facebook in-app browsers often send no referrer, so a social click without a utm link reads
   as "Direct". Links she posts should carry `?utm_source=instagram` etc. (the Pinterest pins already do).
+
+## 2026-11-20 — Build 2026-11-20h: Before/After photos always upright on the Android app (PREVIEW -> release)
+**Observed (Ashley, her Android phone, app build 2026-11-19zzzg):** "when i snap photos most of the time they
+show immediately as sideways". It is the Before/After camera in Start session, "taking picture of client
+while laying down" (phone pointing down at the bed). Her rule: *"no matter what just make sure the picture
+stays upright after taking it."* Device read from `/api/admin/app-launches` (her account = android 16).
+- **Cause:** `@capacitor/camera` 8 with `correctOrientation:true` turns the photo by the camera's guess and
+  then RESETS the reported tag to 1 (Android `ImageUtils.correctOrientation` -> `exif.resetOrientation()`;
+  iOS `overwriteMetadataOrientation(to:1)`). So `_lockUpright`'s tag logic (2026-10-20) never saw 3 or 8 on
+  the phone app: a flat shot the camera guessed "landscape the other way" or "upside down" came out
+  upside down / sideways. Flat over a bed the guess is close to random, hence "most of the time".
+- **Fix:** an Android PHONE capture (`_ncRawOk`: Android app, natural portrait, screen < 600 px) asks for
+  `correctOrientation:false`, gets the camera's own sensor pixels, and `_uprightFresh` turns them a quarter
+  clockwise: the same body-frame turn for every tag, so it is upright whatever the camera guessed. Already-
+  portrait raw pixels (a camera app that turns them itself) are left alone. Tablets and the iPhone app keep
+  the plugin's turn and the old tag logic (`_lockUpright` folded into `_uprightFresh`). The Photos-tab
+  camera uses the same path; the "Add session photos" sheet's Camera button is now turned too (its library
+  pick is not). Library picks, computers and the ghost line-up camera are unchanged. The rotate arrow stays.
+- **Diagnose by reading:** every fresh capture writes `photo-upright` to the launch log:
+  `raw|tag WxH o<tag> <gravity at return>/<gravity at tap> <turn>` (gravity = flat/up/land+/land-, read
+  from `devicemotion`, never asks permission; an iPhone just sends nothing). No photo or client data.
+- Existing photos were NOT turned automatically: nothing can tell a sideways one from a meant-landscape
+  one. The turn arrow under each photo fixes one in a tap and re-sends it everywhere (2026-10-20 `reup`).
+- Tests: `scratchpad/test-upright-android.mjs` 13/13 Chromium (WebKit runs its iPhone part, 2/2),
+  `test-upright-photos.mjs` 21/21 in Chromium AND WebKit (3 new: the photo sheet), `sweep3-session-photos`
+  6/6, `sweep2-photo-recover-reupload` 4/4, every `scripts/check-*.cjs` green.
