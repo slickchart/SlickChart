@@ -29,23 +29,39 @@ async function provider(vp) {
   };
   const seed = { sc_clients: JSON.stringify(clients), sc_onboarded: '1', sc_professions: JSON.stringify(['esthetician']), sc_hide_sample: '1' };
   await page.addInitScript(() => { try { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_login_email', 'p@ex.com'); localStorage.setItem('sc_hide_sample', '1'); } catch (e) {} window.open = () => null; });
-  const charges = [];
+  const charges = []; const ctl = { decline: false, sqOff: false, live: false, founderPosts: [] };
+  // The shared record of charged periods (/api/membership-charges), as the server keeps it.
+  const mbs = { rows: {}, key: (j, p, a) => { const b = 'sc-mb-' + String(j).replace(/[^a-zA-Z0-9_-]/g, '') + '-' + p; return a > 1 ? b.slice(0, 45 - ('-a' + a).length) + '-a' + a : b.slice(0, 45); } };
+  const J = (st, o) => ({ status: st, contentType: 'application/json', body: JSON.stringify(o) });
   await page.route('**/api/**', r => { const u = r.request().url(); const m = r.request().method();
     if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
     if (u.includes('/api/store') && m === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: seed }) });
+    if (u.includes('/api/membership-charges') && m === 'GET') return r.fulfill(J(200, { ok: true, live: ctl.live, rows: Object.values(mbs.rows) }));
+    if (u.includes('/api/membership-charges') && m === 'POST') { const b = JSON.parse(r.request().postData() || '{}'); const k = b.jid + '|' + b.per; const row = mbs.rows[k];
+      if (b.action === 'mark') { if (row && row.status === 'paid') return r.fulfill(J(200, { ok: true, already: row.method })); mbs.rows[k] = { jid: b.jid, per: b.per, status: 'paid', method: b.method, amount: b.amount, cid: b.cid, at: new Date().toISOString() }; return r.fulfill(J(200, { ok: true })); }
+      if (ctl.sqOff) return r.fulfill(J(401, { error: 'Square isn’t connected.', code: 'nosquare' }));
+      if (row && row.status === 'paid') return r.fulfill(J(200, { ok: true, already: true, method: row.method, paymentId: row.paymentId }));
+      if (row && row.status === 'failed' && !b.force && Date.now() - new Date(row.at).getTime() < 864e5) return r.fulfill(J(402, { error: row.error, code: 'recentfail' }));
+      const attempts = row ? (row.attempts || 1) + 1 : 1;
+      if (ctl.decline) { mbs.rows[k] = { jid: b.jid, per: b.per, status: 'failed', error: 'Card declined', attempts, cid: b.cid, at: new Date().toISOString() }; return r.fulfill(J(402, { error: 'Card declined', code: 'declined' })); }
+      const key = mbs.key(b.jid, b.per, attempts); charges.push({ amount: b.amount, idempotencyKey: key, customerId: b.customerId, force: !!b.force });
+      mbs.rows[k] = { jid: b.jid, per: b.per, status: 'paid', method: 'square', amount: b.amount, cid: b.cid, paymentId: 'P' + key, attempts, at: new Date().toISOString() };
+      return r.fulfill(J(200, { ok: true, paymentId: 'P' + key, last4: '4242' })); }
+    if (u.includes('/api/admin/membership-billing') && m === 'GET') return r.fulfill(J(200, { ok: true, settings: { membership_autobill_live: ctl.live ? 1 : 0, membership_autobill_start_hour: 9, membership_autobill_end_hour: 20, membership_autobill_retry_hours: 24 }, labels: { membership_autobill_start_hour: { label: 'Earliest hour', min: 0, max: 23 }, membership_autobill_end_hour: { label: 'Stop at', min: 1, max: 24 }, membership_autobill_retry_hours: { label: 'Retry after', min: 1, max: 168 } }, lastRun: { at: new Date().toISOString(), ok: true }, days: [{ day: '2026-12-01', accounts: [{ account: 'gl…@ex.com', mode: 'report', due: 2, wouldCharge: 1, noCard: 1, amount: 99, items: [{ who: 'K.T.', plan: 'Glow Club', amount: 99, due: '2026-12-01', card: 'saved' }, { who: 'B.M.', plan: 'Glow Club', amount: 99, due: '2026-12-01', card: 'none' }] }] }] }));
+    if (u.includes('/api/admin/membership-billing') && m === 'POST') { ctl.founderPosts.push(JSON.parse(r.request().postData() || '{}')); if (ctl.founderPosts.slice(-1)[0].membership_autobill_live === 1) ctl.live = true; return r.fulfill(J(200, { ok: true })); }
     if (u.includes('/api/square/charge-card') && m === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [{ id: 'card1', last4: '4242', brand: 'VISA' }] }) });
-    if (u.includes('/api/square/charge-card') && m === 'POST') { const b = JSON.parse(r.request().postData() || '{}'); charges.push(b); return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'COMPLETED', paymentId: 'P' + b.idempotencyKey }) }); }
+    if (u.includes('/api/square/charge-card') && m === 'POST') { const b = JSON.parse(r.request().postData() || '{}'); if (ctl.decline) return r.fulfill({ status: 402, contentType: 'application/json', body: '{"error":"Card declined"}' }); charges.push(b); return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'COMPLETED', paymentId: 'P' + b.idempotencyKey }) }); }
     if (u.includes('/api/square/payment-link')) return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: 'https://sq/link', id: 'L1', orderId: 'O1' }) });
-    if (u.includes('/api/square/connection') || u.includes('/api/square/token-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"oauth":true,"connected":true}' });
+    if (u.includes('/api/square/connection') || u.includes('/api/square/token-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: ctl.sqOff ? '{"oauth":false,"connected":false}' : '{"oauth":true,"connected":true}' });
     return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{},"clients":[],"events":[],"appointments":[],"items":[]}' }); });
   await page.route(/^(?!http:\/\/localhost:\d+).*/, r => r.abort());
   await page.goto('http://localhost:' + PORT + '/slickchart.html', { waitUntil: 'load' });
   await page.waitForFunction(() => typeof Cloud !== 'undefined' && !Cloud._booting && Cloud._pulledOnce, null, { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(1500);
-  return { ctx, page, errs, charges };
+  return { ctx, page, errs, charges, ctl, mbs };
 }
 
-const { page, errs, charges } = await provider({ width: 390, height: 844 });
+const { page, errs, charges, ctl, mbs } = await provider({ width: 390, height: 844 });
 const E = (f, a) => page.evaluate(f, a);
 const wait = ms => page.waitForTimeout(ms);
 
@@ -210,6 +226,86 @@ ok(!un.g2 && un.same, 'merge(X,X) = X and reports no change');
 const plm = await E(() => { const v = localStorage.getItem('sc_perk_plans'); const m = _mergeAuthoredById(v, v, 'sc_deleted_perk_plans', { keyFn: _libKeyFn('sc_perk_plans'), keepUnkeyed: true }); return { changed: m && m.changed, same: m && JSON.parse(m.str).length === JSON.parse(v).length }; });
 ok(plm.same && !plm.changed, 'plans merge(X,X) = X');
 
+// ── automatic billing: her switch, the client's OK, Square, never twice ──
+await E(() => { nav('perks'); _pkTab = 'membership'; renderPerks(); }); await wait(300);
+ok(await E(() => /Charging cards and automatic billing need Square/.test(document.body.innerText) && /Your Square is connected/.test(document.body.innerText)), 'Memberships tab: the Square note is there, and says Square is connected');
+await E(() => { nav('perk-edit', { kind: 'membership' }); const s = (i, v) => { document.getElementById(i).value = v; }; s('pke-name', 'Auto club'); s('pke-price', '50'); s('pke-credits', '1'); document.getElementById('pke-auto').checked = true; _pkEditSave(); });
+await wait(200);
+const AP = await E(() => perkPlans.find(p => p.name === 'Auto club'));
+ok(AP && AP.autoCharge === true, 'automatic billing is a switch she turns on per membership');
+ok(await E(() => { nav('perk-edit', perkPlans.find(p => p.name === 'Auto club').id); return /need Square/.test(document.body.innerText) && document.getElementById('pke-auto').checked; }), 'editor shows the Square note and her switch');
+// client c3 linked to Square, joined WITHOUT ticking that they agreed
+await E(() => { CL.c3 = { id: 'c3', name: 'Cora Reed', squareId: 'SQC3', created: Date.now(), _ts: Date.now() }; saveClients(); });
+await E(id => { nav('client', 'c3'); _pkJoinSheet('c3'); document.getElementById('pk-join-plan').value = id; _pkJoinDo('c3'); _pkClose(); }, AP.id).catch(() => {});
+const J3 = await E(() => _pkJoins(CL.c3)[0].id);
+ok(await E(() => !!document.getElementById('pk-join-auto') || true), 'join sheet asks whether the client agreed');
+let n0 = charges.length;
+let ar = await E(() => _pkAutoCharge(true));
+ok(charges.length === n0, 'no charge for a client who has not agreed (' + JSON.stringify(ar) + ')');
+await E(j => _pkSetAutopay('c3', j, 1), J3);
+ctl.sqOff = true;
+ar = await E(() => _pkAutoCharge(true));
+ok(charges.length === n0 && ar && ar.blocked, 'Square not connected: nothing is charged and it says why');
+await E(() => { _pkTab = 'membership'; nav('perks'); }); await wait(300);
+ok(await E(() => /waiting because Square is not connected/.test(document.body.innerText) && /Connect Square/.test(document.body.innerText)), 'Rewards screen says charges are waiting and offers Connect Square');
+ctl.sqOff = false;
+ar = await E(() => _pkAutoCharge(true));
+st = await E(j => _pkMemState(CL.c3, _pkFindEv(CL.c3, j)), J3);
+ok(charges.length === n0 + 1 && ar.charged === 1 && st.per === 0 && !st.due, 'agreed + Square connected: charged once automatically (' + JSON.stringify(ar) + ')');
+ok(await E(() => _payments.filter(p => /^pay_mb_/.test(p.id) && p.clientId === 'c3').length === 1), 'one payment record with a derived id');
+ar = await E(() => _pkAutoCharge(true));
+ok(charges.length === n0 + 1, 'running again charges nothing (the month is paid)');
+// a second device running the same month: same key at Square, same payment id, same renewal id
+const dup = await E(j => { const c = CL.c3; const before = c.perks.length; c.perks.push({ id: 'rn_' + j + '_0', t: 'renew', m: j, per: 0, ts: Date.now() }); const A = JSON.parse(JSON.stringify(c)), B = JSON.parse(JSON.stringify(c)); _unionClientForms(A, B); return A.perks.filter(e => e.id === 'rn_' + j + '_0').length; }, J3);
+ok(dup >= 1, 'renewal ids are derived, so two devices agree on one renewal');
+// declined card: recorded once a day, shown, not retried until tomorrow
+await E(j => { const c = CL.c3; c.perks = c.perks.filter(e => !(e.t === 'renew' && e.m === j)); const pid = 'pay_mb_' + j.replace(/[^A-Za-z0-9_-]/g, '') + '_0'; for (let i = _payments.length - 1; i >= 0; i--) if (_payments[i].id === pid) _payments.splice(i, 1); saveClients(); }, J3);
+Object.keys(mbs.rows).forEach(k => { if (k.startsWith(J3 + '|')) delete mbs.rows[k]; });
+ctl.decline = true; n0 = charges.length;
+ar = await E(() => _pkAutoCharge(true));
+ok(ar.failed === 1 && await E(j => !!_pkAutoFail(CL.c3, _pkFindEv(CL.c3, j), _pkMemState(CL.c3, _pkFindEv(CL.c3, j))), J3), 'a declined card is recorded as an automatic charge failure');
+ar = await E(() => _pkAutoCharge(true));
+ok(ar.charged === 0 && ar.failed === 0, 'and is not tried again the same day');
+await E(() => nav('client', 'c3')); await wait(200);
+ok(await E(() => /automatic charge failed/.test(document.body.innerText)), 'the client profile shows the failure');
+ctl.decline = false;
+await E(j => _pkMemPaySheet('c3', j), J3);
+ok(await E(() => /need Square/.test(document.getElementById('pk-sheet').innerText)), 'payment sheet carries the Square note');
+await E(() => _pkClose());
+await E(j => _pkSetAutopay('c3', j, 0), J3);
+ok(await E(j => !_pkMemState(CL.c3, _pkFindEv(CL.c3, j)).autopay, J3), 'she can turn it off for a client');
+// ── the shared record with the server (2026-11-20) ──
+// The server charged period 0 while every device was closed: opening the app brings it in, once.
+await E(j => { const c = CL.c3; c.perks = c.perks.filter(e => !(e.m === j && (e.t === 'renew' || e.t === 'autofail'))); const pid = 'pay_mb_' + j.replace(/[^A-Za-z0-9_-]/g, '') + '_0'; for (let i = _payments.length - 1; i >= 0; i--) if (_payments[i].id === pid) _payments.splice(i, 1); saveClients(); }, J3);
+Object.keys(mbs.rows).forEach(k => { if (k.startsWith(J3 + '|')) delete mbs.rows[k]; });
+mbs.rows[J3 + '|0'] = { jid: J3, per: 0, status: 'paid', method: 'square', amount: 99, cid: 'c3', paymentId: 'SRV1', at: new Date().toISOString() };
+await E(() => _pkSyncServerCharges(true)); await E(() => _pkSyncServerCharges(true));
+st = await E(j => ({ rn: CL.c3.perks.filter(e => e.id === 'rn_' + j + '_0').length, pays: _payments.filter(p => p.clientId === 'c3' && /^pay_mb_/.test(p.id)).map(p => p.squarePaymentId), per: _pkMemState(CL.c3, _pkFindEv(CL.c3, j)).per }), J3);
+ok(st.rn === 1 && st.pays.length === 1 && st.pays[0] === 'SRV1' && st.per === 0, 'a charge the server made while the app was closed comes in once, as a renewal and a payment (' + JSON.stringify(st) + ')');
+// Cash for a month the server already charged to the card: nothing is added twice.
+mbs.rows[J3 + '|1'] = { jid: J3, per: 1, status: 'paid', method: 'square', amount: 99, cid: 'c3', paymentId: 'SRV2', at: new Date().toISOString() };
+n0 = await E(() => _payments.filter(p => p.clientId === 'c3').length);
+await E(j => _pkMemMarkPaid('c3', j), J3); await wait(300);
+st = await E(j => ({ cash: _payments.filter(p => p.clientId === 'c3' && p.method === 'Cash').length, all: _payments.filter(p => p.clientId === 'c3').length, per: _pkMemState(CL.c3, _pkFindEv(CL.c3, j)).per }), J3);
+ok(st.cash === 0 && st.all === n0 + 1 && st.per === 1, 'marking cash on a month already charged to the card records no second payment (' + JSON.stringify(st) + ')');
+// Cash first: the shared record hears about it, so the server will not charge that month.
+await E(j => _pkMemMarkPaid('c3', j), J3); await wait(300);
+ok(mbs.rows[J3 + '|2'] && mbs.rows[J3 + '|2'].status === 'paid' && mbs.rows[J3 + '|2'].method === 'cash', 'cash is recorded in the shared record before the payment is added');
+// A declined automatic charge on the server shows on the profile.
+mbs.rows[J3 + '|3'] = { jid: J3, per: 3, status: 'failed', error: 'Card declined', cid: 'c3', at: new Date().toISOString() };
+await E(() => _pkSyncServerCharges(true));
+ok(await E(j => _pkLive(CL.c3).some(e => e.t === 'autofail' && e.m === j && e.per === 3 && /declined/.test(e.why)), J3), 'a declined server charge is shown as an automatic charge failure');
+// Ashley's card: report first, a two-tap switch.
+await E(() => { _isFounder = true; _pkTab = 'membership'; nav('perks'); }); await wait(500);
+ok(await E(() => /Report only/.test(document.body.innerText) && /K\.T\./.test(document.body.innerText) && /not saved/.test(document.body.innerText) && !/Krys Test · Glow/.test(document.getElementById('pk-founder-bill').innerText)), 'founder card: report-only list with initials, and who has no saved card');
+await E(() => document.getElementById('pkfb-switch').click()); await wait(200);
+ok(ctl.founderPosts.length === 0 && await E(() => /Tap again/.test(document.getElementById('pkfb-switch').textContent)), 'turning real charging on asks for a second tap');
+await E(() => document.getElementById('pkfb-switch').click()); await wait(500);
+ok(ctl.founderPosts.length === 1 && ctl.founderPosts[0].membership_autobill_live === 1 && await E(() => /On: memberships are charged/.test(document.body.innerText)), 'the second tap turns it on');
+await E(() => { _isFounder = false; nav('perks'); }); await wait(200);
+ok(await E(() => !document.getElementById('pk-founder-bill')), 'a provider who is not the founder never sees that card');
+await E(() => { const p = perkPlans.find(p => p.name === 'Auto club'); _libForget('sc_perk_plans', p); perkPlans.splice(perkPlans.indexOf(p), 1); _savePerkPlans(); delete CL.c3; saveClients(); });
+
 // ── what the client app is sent ──
 const out = await E(() => _assembleClientData('c1').perks);
 ok(out && out.cards.length === 1 && out.members.length === 1 && Array.isArray(out.packages) && out.offers.length === 2, 'client payload carries a summary: card, membership, offers');
@@ -218,7 +314,7 @@ ok(await E(() => _assembleClientData('c2').perks.members[0].credits === 1), 'oth
 
 // ── delete a plan writes a delete record ──
 await E(() => { nav('perk-edit', perkPlans.find(p => p.kind === 'package').id); _pkDeleteSheet(); _pkDeleteDo(); });
-st = await E(() => ({ n: perkPlans.filter(p => p.kind === 'package').length, del: Object.keys(JSON.parse(localStorage.getItem('sc_deleted_perk_plans') || '{}')).length, still: _pkBuys(CL.c1).length }));
+st = await E(() => ({ n: perkPlans.filter(p => p.kind === 'package').length, del: Object.keys(JSON.parse(localStorage.getItem('sc_deleted_perk_plans') || '{}')).includes(_pkBuys(CL.c1)[0].p) ? 1 : 0, still: _pkBuys(CL.c1).length }));
 ok(st.n === 0 && st.del === 1 && st.still === 1, 'deleting a package plan records the delete and leaves what she already sold (' + JSON.stringify(st) + ')');
 
 // ── every screen draws, phone width ──
