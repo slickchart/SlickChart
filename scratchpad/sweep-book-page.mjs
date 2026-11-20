@@ -15,6 +15,7 @@ fs.writeFileSync(d + '/lib/consult.js', 'export async function getProviderBySlug
 const all = '{sun:{open:true,start:"09:00",end:"17:00"},mon:{open:true,start:"09:00",end:"17:00"},tue:{open:true,start:"09:00",end:"17:00"},wed:{open:true,start:"09:00",end:"17:00"},thu:{open:true,start:"09:00",end:"17:00"},fri:{open:true,start:"09:00",end:"17:00"},sat:{open:true,start:"09:00",end:"17:00"}}';
 fs.writeFileSync(d + '/lib/booking.js', `
 export const DAY_KEYS=['sun','mon','tue','wed','thu','fri','sat'];
+export async function providerTz(){return ${JSON.stringify(process.env.PROV_TZ || 'America/Los_Angeles')};}
 export const toMins=s=>{const [h,m]=String(s).split(':').map(Number);return h*60+(m||0);};
 export const openDayKeys=h=>DAY_KEYS.filter(k=>h[k]&&h[k].open);
 export const serviceMins=(s,c)=>s.mins||60; export const serviceDeposit=(s)=>s.dep||0;
@@ -30,7 +31,7 @@ const srv = http.createServer((q, s) => { s.setHeader('content-type', 'text/html
 const engine = process.env.PW_ENGINE === 'chromium' ? pw.chromium : pw.webkit;
 const b = await engine.launch(process.env.PW_ENGINE === 'chromium' ? { executablePath: '/opt/pw-browsers/chromium' } : {});
 const VP = SIZE === 'mac' ? { viewport: { width: 1440, height: 900 } } : { viewport: { width: +(process.env.W || 390), height: 844 }, hasTouch: true, isMobile: true };
-const ctx = await b.newContext({ ...VP, serviceWorkers: 'block' }); const p = await ctx.newPage();
+const ctx = await b.newContext({ ...VP, serviceWorkers: 'block', ...(process.env.LOCALE ? { locale: process.env.LOCALE } : {}), ...(process.env.TZ_ID ? { timezoneId: process.env.TZ_ID } : {}) }); const p = await ctx.newPage();
 const errs = []; p.on('pageerror', e => errs.push(String(e.message).slice(0, 160)));
 let posted = null;
 await p.route('**/api/book-slots**', r => SLOTS === 'offline' ? r.abort('internetdisconnected') : SLOTS === '500' ? r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Something went wrong."}' }) : r.fulfill({ status: 200, contentType: 'application/json', body: '{"slots":["9:00 AM","10:00 AM","2:30 PM"]}' }));
@@ -51,6 +52,7 @@ await p.click('#go'); await p.waitForTimeout(300); out.empty = await p.evaluate(
 await p.fill('#f-name', 'Jo Test'); await p.fill('#f-email', 'jo@ex.com'); await p.fill('#f-phone', '5550001111');
 await p.selectOption('#f-svc', { index: 1 }); await p.waitForTimeout(800);
 out.afterSvc = (await p.evaluate(() => [document.getElementById('slots').innerText, document.getElementById('go').innerText, (document.getElementById('depnote') || {}).innerText])).join(' | ');
+out.tznote = await p.evaluate(() => { const e = document.getElementById('tznote'); return e && e.style.display !== 'none' ? e.innerText : ''; });
 const slot = await p.$('.slot'); if (slot) await slot.click(); else { const t = await p.$('#f-time'); if (t && await t.isVisible()) await t.fill('10:00'); }
 await p.click('#go'); await p.waitForTimeout(1200);
 out.after = (await T()).slice(0, 700); out.err = await p.evaluate(() => (document.getElementById('err') || {}).innerText || '');

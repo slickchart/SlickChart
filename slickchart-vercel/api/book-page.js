@@ -7,7 +7,7 @@
 import { dbEnabled } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
 import { readBrand, brandVars, brandRowHtml, BRAND_CSS, esc, jsonForScript } from '../lib/public-brand.js';
-import { getBookingConfig, getServices, getHours, openDayKeys, toMins, DAY_KEYS, serviceMins, serviceDeposit } from '../lib/booking.js';
+import { getBookingConfig, getServices, getHours, openDayKeys, toMins, DAY_KEYS, serviceMins, serviceDeposit, providerTz } from '../lib/booking.js';
 
 // JSON.stringify escapes quotes but NOT `<`, so a business name containing `</script>` would break
 // out of the inline script. Escape the terminator so provider-controlled text can never inject.
@@ -86,6 +86,11 @@ export default async function handler(req, res) {
     if (!hours) { res.status(404).send(notActive()); return; }
     const services = await getServices(prov.id, cfg);
     const openDays = openDayKeys(hours);
+    // Her time zone, so a client somewhere else is told the times are hers (2026-11-20 sweep: a client in
+    // another zone saw "10:00 AM" with nothing saying whose 10 o'clock). Only from what her app saved; no
+    // Square call here. Unknown = no note, as before.
+    let tz = '';
+    try { tz = (await providerTz(prov.id, null)) || ''; } catch (e) { tz = ''; }
 
     const accent = brand.accent;
     const bizName = brand.name || 'Book an appointment';
@@ -115,6 +120,7 @@ export default async function handler(req, res) {
     <label for="f-date">Day</label><input class="f" id="f-date" type="date">
     <div id="timewrap">
       <label for="f-time">Time</label>
+      <div id="tznote" class="muted" style="display:none;margin:-4px 0 10px;line-height:1.5;"></div>
       <div class="slots" id="slots"></div>
       <input class="f" id="f-time" type="time" style="display:none;">
     </div>
@@ -128,7 +134,7 @@ export default async function handler(req, res) {
 
     const boot = `<script>
 var SLUG=${jsStr(slug)}, MODE=${jsStr(cfg.mode)}, BIZ=${jsStr(bizName)}, OPEN=${jsonForScript(openDays)},
-    HORIZON=${cfg.horizonDays}, LEAD=${Math.max(0, parseInt(cfg.leadHours, 10) || 0)}, ACCENT=${jsStr(accent)}, DONEIC='\\u2713';
+    TZ=${jsStr(tz)}, HORIZON=${cfg.horizonDays}, LEAD=${Math.max(0, parseInt(cfg.leadHours, 10) || 0)}, ACCENT=${jsStr(accent)}, DONEIC='\\u2713';
 // name → {mins, deposit}, so the page can say what each one costs in time and money up front.
 var SVC=${jsonForScript(services.reduce((m, sv) => { m[sv.name] = { mins: serviceMins(sv, cfg), dep: serviceDeposit(sv, cfg), desc: String(sv.desc || '').slice(0, 600) }; return m; }, {}))};
 // A friend passes the page on (2026-11-16 feedback: "a friend can share the link to invite another
@@ -152,7 +158,24 @@ function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'
 function tooSoon(d){var e=new Date(d);e.setHours(23,59,0,0);return e.getTime()<Date.now()+LEAD*3600000;}
 function firstOpen(){var d=new Date();d.setHours(12,0,0,0);for(var i=0;i<=HORIZON;i++){if(OPEN.indexOf(DKEY[d.getDay()])>=0&&!tooSoon(d))return iso(d);d.setDate(d.getDate()+1);}return iso(new Date());}
 function leadText(){if(!LEAD)return '';var n=(LEAD>=24&&LEAD%24===0)?(LEAD/24)+(LEAD===24?' day':' days'):LEAD+(LEAD===1?' hour':' hours');return 'Appointments need '+n+' of notice.';}
+// Only when the visitor's clock reads differently from hers right now: then say whose time it is.
+function tzNote(){
+  var el=$('tznote'); if(!el||!TZ)return;
+  try{
+    var o={month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',hour12:false};
+    var now=new Date(), mine=now.toLocaleString('en-US',o), hers=now.toLocaleString('en-US',Object.assign({timeZone:TZ},o));
+    if(mine===hers)return;
+    var nm='';
+    try{nm=(new Intl.DateTimeFormat('en-US',{timeZone:TZ,timeZoneName:'longGeneric'}).formatToParts(now).filter(function(p){return p.type==='timeZoneName';})[0]||{}).value||'';}catch(e){}
+    if(!nm){try{nm=(new Intl.DateTimeFormat('en-US',{timeZone:TZ,timeZoneName:'long'}).formatToParts(now).filter(function(p){return p.type==='timeZoneName';})[0]||{}).value||'';}catch(e){}}
+    var at=now.toLocaleTimeString('en-US',{timeZone:TZ,hour:'numeric',minute:'2-digit'});
+    var who=(BIZ&&BIZ!=='Book an appointment')?(', '+BIZ+'\\u2019s time zone'):'';
+    el.textContent='Times are in '+(nm||TZ.replace(/_/g,' '))+who+'. It\\u2019s '+at+' there now.';
+    el.style.display='';
+  }catch(e){}
+}
 function setupDate(){
+  tzNote();
   var el=$('f-date'); var t=new Date(); t.setHours(12,0,0,0);
   el.min=iso(t); var max=new Date(t); max.setDate(max.getDate()+HORIZON); el.max=iso(max);
   el.value=firstOpen(); el.addEventListener('change',onDate); onDate();

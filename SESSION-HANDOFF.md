@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzzc: the public booking page says whose time zone its times are in
+
+Sweep find. The booking page shows times on the provider's clock (correct), but a client in another time
+zone saw "10:00 AM" with nothing saying whose 10 o'clock. `api/book-page.js` now reads her zone with
+`providerTz(prov.id, null)` (only what her app saved, no Square call) and, ONLY when the visitor's clock
+differs, shows "Times are in Pacific Time, <business>'s time zone. It's 5:39 PM there now." above the times,
+in both instant and request modes. Same zone or unknown zone: nothing changes. `sweep-book-page.mjs`
+gained TZ_ID=/LOCALE= and reports `tznote`; the three book-page harness stubs export `providerTz`
+(PROV_TZ=). Checked LA (no note), New York, Honolulu, Chicago, both modes, phone + computer, both engines.
+
 ## 2026-11-19 — build 2026-11-19zzzb: the photo "Assign to which client?" search ignores accents
 
 The last client search that did not: typing "jose" did not find José. Now uses `_normSearch` like the

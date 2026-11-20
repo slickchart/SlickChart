@@ -14,6 +14,7 @@ fs.writeFileSync(d + '/lib/consult.js', 'export async function getProviderBySlug
 const LEAD = +(process.env.LEAD || 12);
 fs.writeFileSync(d + '/lib/booking.js', `
 export const DAY_KEYS=['sun','mon','tue','wed','thu','fri','sat'];
+export async function providerTz(){return ${JSON.stringify(process.env.PROV_TZ || 'America/Los_Angeles')};}
 export const toMins=s=>{const [h,m]=String(s).split(':').map(Number);return h*60+(m||0);};
 export const openDayKeys=h=>DAY_KEYS.filter(k=>h[k]&&h[k].open);
 export const serviceMins=(s,c)=>s.mins||60; export const serviceDeposit=()=>0;
