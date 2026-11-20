@@ -503,6 +503,87 @@ saved anywhere", not "does this always call that".
 | `_photoRmAfter` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_photoRmToast` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_pingChart` | `/api/beta-event` | direct |
+| `_pkAdjust` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkAdjust` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkAdjust` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkAdjust` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkAdjust` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkCancelDo` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkCancelDo` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkCancelDo` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkCancelDo` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkCancelDo` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkChargeAll` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkChargeAllSheet` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkChargeOne` | `/api/square/charge-card` | direct |
+| `_pkClientCard` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkJoinDo` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkJoinDo` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkJoinDo` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkJoinDo` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkJoinDo` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkMemCharge` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkMemCharge` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkMemCharge` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkMemCharge` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkMemCharge` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkMemEv` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkMemEv` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkMemEv` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkMemEv` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkMemEv` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkMemManage` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkMemMarkPaid` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkMemMarkPaid` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkMemMarkPaid` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkMemMarkPaid` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkMemMarkPaid` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkMemPaySheet` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkPunch` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkPunch` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkPunch` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkPunch` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkPunch` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkRedeemDo` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkRedeemDo` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkRedeemDo` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkRedeemDo` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkRedeemDo` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkRemoveDo` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkRemoveDo` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkRemoveDo` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkRemoveDo` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkRemoveDo` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkSellRecord` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkSellRecord` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkSellRecord` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkSellRecord` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkSellRecord` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkSetExp` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkSetExp` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkSetExp` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkSetExp` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkSetExp` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkUndoBar` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkUndoBar` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkUndoBar` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkUndoBar` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkUndoBar` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkUnpunch` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkUnpunch` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkUnpunch` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkUnpunch` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkUnpunch` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkUseCredit` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkUseCredit` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkUseCredit` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkUseCredit` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkUseCredit` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkUsePkg` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_pkUsePkg` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_pkUsePkg` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_pkUsePkg` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_pkUsePkg` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_plDocUrl` | `/api/collection-pdf` | direct |
 | `_plRender` | `/api/collection-pdf` | via `_plDocUrl` |
 | `_plSetStyle` | `/api/collection-pdf` | via `_plDocUrl` |
@@ -1085,6 +1166,7 @@ saved anywhere", not "does this always call that".
 | `renderPasswordSecurity` | `/api/sessions` | via `_loadSessions` |
 | `renderPasswordSecurity` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `renderPasswordSecurity` | `/api/totp-verify` | via `_confirmDisableTotp` |
+| `renderPerks` | `/api/square/charge-card` | via `_pkChargeOne` |
 | `renderPhotos` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderProductRecs` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderProviderFillIntake` | `/api/provider-form` | via `_flushInPersonForms` |
@@ -1362,13 +1444,13 @@ A key that accumulates data and is NOT listed here rides the plain overwrite, wh
 stale device can wipe newer data from another one (CLAUDE.md §0.6).
 
 **union by id + delete record (_mergeAuthoredById)**  
-`sc_affiliate_links`, `sc_autos`, `sc_bundles`, `sc_checkins`, `sc_custom_note_templates`, `sc_docs`, `sc_form_folders`, `sc_inventory`, `sc_msg_templates`, `sc_needle_presets`, `sc_note_starters`, `sc_partners`, `sc_payments`, `sc_protocols`, `sc_reminders`, `sc_service_menu`, `sc_shop_bundles`, `sc_vc_types`, `sc_vendors`
+`sc_affiliate_links`, `sc_autos`, `sc_bundles`, `sc_checkins`, `sc_custom_note_templates`, `sc_docs`, `sc_form_folders`, `sc_inventory`, `sc_msg_templates`, `sc_needle_presets`, `sc_note_starters`, `sc_partners`, `sc_payments`, `sc_perk_plans`, `sc_protocols`, `sc_reminders`, `sc_service_menu`, `sc_shop_bundles`, `sc_vc_types`, `sc_vendors`
 
 **map of lists, union per bucket (_mergeAuthoredMap)**  
 `sc_routines`
 
 **grow-only object union (_TOMB_OBJ)**  
-`sc_ci_clear_at`, `sc_ci_dismissed`, `sc_course_purchases`, `sc_deleted_appts`, `sc_deleted_autos`, `sc_deleted_bundles`, `sc_deleted_clients`, `sc_deleted_docs`, `sc_deleted_form_folders`, `sc_deleted_inv`, `sc_deleted_msg_tmpls`, `sc_deleted_needle_presets`, `sc_deleted_note_drafts`, `sc_deleted_note_tmpls`, `sc_deleted_partners`, `sc_deleted_payments`, `sc_deleted_products`, `sc_deleted_protocols`, `sc_deleted_reminders`, `sc_deleted_routines`, `sc_deleted_shop_bundles`, `sc_deleted_starters`, `sc_deleted_svc`, `sc_deleted_vc_types`, `sc_deleted_vendors`, `sc_deposit_handled`, `sc_hidden_courses`, `sc_hidden_forms`, `sc_hidden_guides`, `sc_hidden_square`, `sc_merged_ids`, `sc_merged_into`, `sc_photo_removed`, `sc_summary_guide_optout`, `sc_undeleted_clients`
+`sc_ci_clear_at`, `sc_ci_dismissed`, `sc_course_purchases`, `sc_deleted_appts`, `sc_deleted_autos`, `sc_deleted_bundles`, `sc_deleted_clients`, `sc_deleted_docs`, `sc_deleted_form_folders`, `sc_deleted_inv`, `sc_deleted_msg_tmpls`, `sc_deleted_needle_presets`, `sc_deleted_note_drafts`, `sc_deleted_note_tmpls`, `sc_deleted_partners`, `sc_deleted_payments`, `sc_deleted_perk_plans`, `sc_deleted_products`, `sc_deleted_protocols`, `sc_deleted_reminders`, `sc_deleted_routines`, `sc_deleted_shop_bundles`, `sc_deleted_starters`, `sc_deleted_svc`, `sc_deleted_vc_types`, `sc_deleted_vendors`, `sc_deposit_handled`, `sc_hidden_courses`, `sc_hidden_forms`, `sc_hidden_guides`, `sc_hidden_square`, `sc_merged_ids`, `sc_merged_into`, `sc_photo_removed`, `sc_summary_guide_optout`, `sc_undeleted_clients`
 
 **grow-only list union (_TOMB_ARR)**  
 `sc_ci_cleared`, `sc_ci_read`, `sc_deleted_sq`, `sc_flag_dismissed`, `sc_form_flag_dismissed`, `sc_home_dismissed`, `sc_imported_products`, `sc_notif_cleared`, `sc_notif_read`, `sc_paper_removed`, `sc_photo_backed`

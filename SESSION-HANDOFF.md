@@ -11137,3 +11137,27 @@ she cancelled but "didn't get confirmation"; the trial-only report could not say
   (with "Tell me what I could do better") and both How to cancel help bodies; same line in the email.
 - Tests: scratchpad/test-cancel-feedback.mjs 25/25 Chromium + WebKit; test-growth-ui.mjs 77/77 both (now skips the ask);
   scratchpad/test-cancellations-server.mjs 17/17 (`node --import ./scratchpad/stub-neon-loader.mjs ...`).
+
+### 2026-11-20 — Loyalty punch cards, memberships and packages (build 2026-11-20a)
+Ashley: "build the loyalty program. lets also build a memebership program and the ability for providers to create
+packages. make these fully customizable and editable." Krys (feedback #22) asked for the punch card: she picks how many
+punches and the reward (20-50% off or a free service). Her Gmail draft promises to tell her when it is ready.
+- Where: More → **Loyalty, memberships & packages** (`renderPerks`, `renderPerkEdit`), the client's **Visit** tab
+  (`_pkClientCard`), a panel in **Take payment** (`_pkCheckoutHTML`), and the client app's Home and Shop (`_perksHTML`).
+- Data: plans in `sc_perk_plans` (`_LIB_TOMB`, delete record `sc_deleted_perk_plans`). Each client's history is
+  `c.perks`, an append-only event ledger (an undo is a `void` event) unioned by id in `_unionClientForms`. Automatic
+  events have DERIVED ids (punch `pp_<card>_<day|payment>`, renewal `rn_<membership>_<period>`, sale `bp_<payment>_<i>`)
+  so two devices make the same one. Memberships and packages snapshot their terms at sale; "also change it for current
+  members" writes a `terms` event. The client app gets a summary (`_pkClientOut`), never the ledger.
+- Punches: `_pkScanPayments` runs on every `_savePayments` and after a pull: PAID payments for a client, dated on or
+  after the card's "count payments from" date, with optional minimum spend, service words and one-a-day. Membership
+  payments carry `perkSkip` and never punch.
+- Money: membership payments go through the existing paths. Charge card on file uses `/api/square/charge-card` with
+  idempotency key `sc-mb-<membership>-<period>`, and refuses a period that is not due, already paid, or has an unpaid
+  link/QR/invoice out for it (`_pkPendingPay`). "Charge all with a card on file" is an explicit tap with a list and
+  total. NOT automatic billing: that would need Square's SUBSCRIPTIONS scopes (every provider reconnects) and a cron
+  that charges cards unattended; left for Ashley to decide.
+- Rewards and member prices change the checkout lines (a catalog line becomes a custom line so an invoice charges the
+  discounted price); Undo puts every price back and voids the redeem.
+- Tests: `scratchpad/test-perks.mjs` 44/44 in Chromium and WebKit; `sweep-sync-growth.mjs` no growth/echo/dups;
+  checkout-qr-tip, square-pay-cta, tap-to-pay, decimal-comma, payment-detail-buttons all pass.

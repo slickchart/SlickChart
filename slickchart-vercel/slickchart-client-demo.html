@@ -2688,6 +2688,7 @@ function renderHome(){
   ${_welcomeBannerHTML()||_homeIntroHTML()}
 
   ${_suggestedTimeBannerHTML()}
+  ${(function(){try{return _perksHTML('home');}catch(e){return '';}})()}
 
   ${vcInvite?`
   <div onclick="nav('virtual-submit')" role="button" style="margin:0 16px 14px;background:linear-gradient(135deg,var(--c-ai-bg),var(--c-card));border:1.5px solid #d8c8f0;border-radius:16px;padding:14px;cursor:pointer;display:flex;align-items:center;gap:11px;">
@@ -3903,6 +3904,46 @@ function _shopProdCard(p,idx){
     </div>
   </div>`;
 }
+
+// ── Rewards: loyalty card, membership and package, as the provider set them up (2026-11-20) ──
+function _pkCliDate(iso){try{if(!iso)return '';const p=String(iso).slice(0,10).split('-').map(Number);return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return '';}}
+function _perksHTML(where){
+  let pk=null;try{pk=activeProvider().perks;}catch(e){pk=null;}
+  if(!pk||typeof pk!=='object')return '';
+  const box='margin:0 16px 12px;background:var(--c-card);border:1px solid var(--accent-lt);border-radius:14px;padding:13px 15px;';
+  const head=function(icon,t,sub){return '<div style="display:flex;align-items:center;gap:8px;"><i class="ti '+icon+'" aria-hidden="true" style="font-size:18px;color:var(--accent-ink-lt);"></i><div style="flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--c-ink);">'+_txt(t)+'</div>'+(sub?'<div style="font-size:11px;color:var(--c-mut);white-space:nowrap;">'+_txt(sub)+'</div>':'')+'</div>';};
+  let h='';
+  (Array.isArray(pk.cards)?pk.cards:[]).forEach(function(cd){
+    const need=Math.max(1,parseInt(cd.need,10)||1),have=Math.max(0,Math.min(need,parseInt(cd.have,10)||0));
+    let dots='';
+    if(need<=30){for(let i=0;i<need;i++)dots+='<span style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:2px solid var(--accent);background:'+(i<have?'var(--accent)':'transparent')+';">'+(i<have?'<i class="ti ti-check" style="font-size:12px;color:var(--accent-ink);"></i>':'')+'</span>';}
+    h+='<div style="'+box+'">'+head('ti-star',cd.name||'Loyalty card',have+' of '+need)
+      +(need<=30?'<div role="img" aria-label="'+have+' of '+need+' punches" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px;">'+dots+'</div>':'')
+      +(cd.ready?'<div style="margin-top:6px;background:var(--accent-lt);border-radius:10px;padding:9px 11px;font-size:13px;font-weight:700;color:var(--accent-ink-lt);"><i class="ti ti-gift" aria-hidden="true"></i> Your reward is ready: '+_txt(cd.reward)+(cd.expires?' · use by '+_txt(_pkCliDate(cd.expires)):'')+'</div>'
+        :'<div style="font-size:12px;color:var(--c-mut);line-height:1.5;">'+(need-have)+' more visit'+((need-have)===1?'':'s')+' to earn '+_txt(String(cd.reward||'').replace(/^A /,'a '))+'.</div>')
+      +(cd.desc?'<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-top:4px;">'+_txt(cd.desc)+'</div>':'')+'</div>';
+  });
+  (Array.isArray(pk.members)?pk.members:[]).forEach(function(m){
+    const st=m.status==='paused'?'Paused':(m.status==='cancelling'?('Ends '+_pkCliDate(m.end)):(m.nextDue?('Renews '+_pkCliDate(m.nextDue)):''));
+    h+='<div style="'+box+'">'+head('ti-heart',m.name||'Membership',st)
+      +(m.credits!=null?'<div style="margin-top:8px;font-size:20px;font-weight:700;color:var(--c-ink);">'+(parseInt(m.credits,10)||0)+' <span style="font-size:13px;font-weight:500;color:var(--c-mut);">'+_txt(m.creditLabel||'visit')+((parseInt(m.credits,10)||0)===1?'':'s')+' left</span></div>':'')
+      +(m.discount?'<div style="font-size:12px;color:var(--c-mut);margin-top:3px;">'+_txt(m.discount)+'</div>':'')
+      +(m.perks?'<div style="font-size:12px;color:var(--c-mut);margin-top:3px;">'+_txt(m.perks)+'</div>':'')
+      +(m.terms?'<details style="margin-top:6px;"><summary style="font-size:12px;color:var(--accent-ink-lt);cursor:pointer;">Membership terms</summary><div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-top:4px;white-space:pre-wrap;">'+_txt(m.terms)+'</div></details>':'')+'</div>';
+  });
+  (Array.isArray(pk.packages)?pk.packages:[]).forEach(function(b){
+    h+='<div style="'+box+'">'+head('ti-package',b.name||'Package',b.exp?('Use by '+_pkCliDate(b.exp)):'')
+      +'<div style="margin-top:8px;font-size:20px;font-weight:700;color:var(--c-ink);">'+(parseInt(b.left,10)||0)+' <span style="font-size:13px;font-weight:500;color:var(--c-mut);">of '+(parseInt(b.total,10)||0)+' '+_txt(b.service||'session')+((parseInt(b.total,10)||0)===1?'':'s')+' left</span></div>'
+      +(b.terms?'<details style="margin-top:6px;"><summary style="font-size:12px;color:var(--accent-ink-lt);cursor:pointer;">Package terms</summary><div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-top:4px;white-space:pre-wrap;">'+_txt(b.terms)+'</div></details>':'')+'</div>';
+  });
+  // What she offers, shown once on Shop (not on Home) so it reads as information, not an ad.
+  const mine=(Array.isArray(pk.members)&&pk.members.length)||(Array.isArray(pk.packages)&&pk.packages.length);
+  if(where==='shop'&&Array.isArray(pk.offers)&&pk.offers.length&&!mine){
+    h+='<div style="'+box+'">'+head('ti-gift','Memberships & packages','')+pk.offers.map(function(o){return '<div style="border-top:1px solid var(--accent-lt);margin-top:9px;padding-top:9px;"><div style="font-size:13px;font-weight:700;color:var(--c-ink);">'+_txt(o.name)+'</div><div style="font-size:12px;color:var(--c-mut);line-height:1.5;">'+_txt(o.desc||o.summary)+'</div>'+(o.desc?'<div style="font-size:11px;color:var(--c-mut);line-height:1.5;">'+_txt(o.summary)+'</div>':'')+'</div>';}).join('')
+      +'<div style="font-size:11px;color:var(--c-mut);margin-top:9px;">Ask '+_txt(client.providerFirst||'your provider')+' at your next visit.</div></div>';
+  }
+  return h;
+}
 function renderShop(){
   setNav('shop');
   document.getElementById('tt').textContent='Shop';
@@ -3914,7 +3955,7 @@ function renderShop(){
   const seg=`<div style="display:flex;gap:3px;margin:0 16px 14px;background:var(--c-surf3);border-radius:11px;padding:4px;">${tabs.map(([v,lbl])=>`<button onclick="setShopView('${v}')" style="flex:1;border:none;border-radius:8px;padding:8px 2px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;background:${shopView===v?'#fff':'transparent'};color:${shopView===v?'var(--accent)':'var(--c-mut)'};box-shadow:${shopView===v?'0 1px 2px rgba(0,0,0,.08)':'none'};">${lbl}</button>`).join('')}</div>`;
   const _loy=activeProvider().loyalty;
   const _loyCard=(_loy&&_loy.points!=null)?`<div style="margin:0 16px 12px;background:linear-gradient(135deg,var(--accent-lt),var(--c-card));border:1px solid var(--accent-lt);border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:10px;"><i class="ti ti-star-filled" aria-hidden="true" style="font-size:20px;color:var(--accent-ink-lt);"></i><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:700;color:var(--c-ink);">${_loy.points} loyalty point${_loy.points===1?'':'s'}</div><div style="font-size:11px;color:var(--c-mut);">Earned with ${_txt(client.providerFirst)}${_loy.lifetime?` · ${_loy.lifetime} lifetime`:''}</div></div></div>`:'';
-  const header=`<div style="padding:14px 16px 12px;"><div id="page-heading" tabindex="-1" style="font-size:17px;font-weight:700;color:var(--c-ink);">${_txt(client.providerFirst)}'s Shop</div></div>`+_loyCard;
+  const header=`<div style="padding:14px 16px 12px;"><div id="page-heading" tabindex="-1" style="font-size:17px;font-weight:700;color:var(--c-ink);">${_txt(client.providerFirst)}'s Shop</div></div>`+_loyCard+_perksHTML('shop');
   const empty=(icon,msg)=>`<div style="margin:18px 16px;background:var(--c-surf);border-radius:14px;padding:30px 22px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center;"><i class="ti ${icon}" aria-hidden="true" style="font-size:26px;color:#cbbba9;"></i><div style="font-size:13px;color:var(--c-mut);line-height:1.5;">${msg}</div></div>`;
   let body='';
   if(shopView==='recommended'){
@@ -7195,6 +7236,9 @@ function _applyRealClientData(j){
   p.routine=(d.routine&&typeof d.routine==='object'&&(d.routine.name||d.routine.note))?{name:d.routine.name||'Your routine',note:d.routine.note||'',date:d.routine.date||''}:null;
   // Square loyalty balance the provider checked for this client (points + lifetime), shown on Shop.
   p.loyalty=(d.loyalty&&typeof d.loyalty==='object'&&d.loyalty.points!=null)?{points:d.loyalty.points,lifetime:d.loyalty.lifetime||0}:null;
+  // Loyalty card, membership and package summary the provider's app sends (2026-11-20). A summary
+  // only: counts, dates and her wording, never her raw records. Explicitly reset when absent.
+  p.perks=(d.perks&&typeof d.perks==='object')?d.perks:null;
   // Full shop catalog (every active product the provider offers), for the "Shop all" tab.
   p.catalog=Array.isArray(d.catalog)?d.catalog:[];
   // Before/after progress photos the provider chose to share with this client (refs only; bytes are
