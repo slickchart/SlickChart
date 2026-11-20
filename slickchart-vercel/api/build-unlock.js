@@ -65,6 +65,7 @@ export default async function handler(req, res) {
         amountCents: Number.isFinite(j.amount_total) ? j.amount_total : null,
         currency: j.currency || null,
         roadmap: String((j.metadata && j.metadata.roadmap) || ''),
+        metadata: j.metadata || null,
         marketingOptIn: promo === 'opt_in' ? true : (promo === 'opt_out' ? false : undefined)
       });
     } catch (e) { console.error('[build-unlock] recording the sale failed:', e && e.message || e); }

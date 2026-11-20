@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><script src="/mkt-pixel.js" defer></script></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><script src="/mkt-pixel.js" defer></script><script>/* where a visitor came from: utm link (slicksrc) and first outside referrer (slickfirst); read at checkout by _buySrc */try{(function(){var sp=new URLSearchParams(location.search),c=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,50)},us=c(sp.get('utm_source')),uc=c(sp.get('utm_campaign')),ut=c(sp.get('utm_content')),pa=String(location.pathname||'/').toLowerCase().replace(/\.html$/,'').replace(/[^a-z0-9\/-]/g,'').slice(0,60)||'/',h=function(x){return String(x||'').toLowerCase().replace(/^www\./,'')};if(us||uc||ut)localStorage.setItem('slicksrc',JSON.stringify({s:'utm__'+us+'__'+uc+'__'+ut,p:pa,t:Date.now()}));var rf='';try{var u=new URL(document.referrer);if(u.hostname&&h(u.hostname)!==h(location.hostname))rf=h(u.hostname).slice(0,60)}catch(e){}var f=null;try{f=JSON.parse(localStorage.getItem('slickfirst')||'null')}catch(e){}if(!f||!(Date.now()-f.t<60*864e5)||(!f.r&&rf))localStorage.setItem('slickfirst',JSON.stringify({r:rf,p:pa,t:Date.now()}))})()}catch(e){}</script></head><body>
 <title>Build Your Own Booking App for Your Beauty Business</title>
 <meta name="description" content="An esthetician built her own client app with no coding. The step by step roadmap and AI prompts for lash, skin, nails, hair, massage and tattoo.">
 <link rel="canonical" href="https://slickchart.app/build">
@@ -900,12 +900,25 @@ Before you write any code, tell me your plan and which screens change. Then buil
 /* Checkout. /api/build-checkout creates the Stripe Session whose success_url carries the session id
    that /build/unlocked verifies — so every buy button on the page goes through here, not a bare
    payment link. Failure re-enables the buttons and offers a human, rather than dead-ending. */
+/* Where this buyer came from, for her sale alert and the daily report (lib/build-sales.js
+   buildSourceMetadata cleans it on the server): the newest ad/pin/ChatGPT link (slicksrc), the
+   outside site that first sent them (slickfirst, both kept 60 days on this device by the snippet in
+   <head>), and this page's own referrer. Never blocks checkout. */
+function _buySrc(){
+  var o={},F=60*864e5,n=Date.now(),h=function(x){return String(x||'').toLowerCase().replace(/^www\./,'');};
+  try{var ss=JSON.parse(localStorage.getItem('slicksrc')||'null'); if(ss&&n-ss.t<F&&/^utm__/.test(ss.s||'')){o.utm=ss.s;o.lp=ss.p;}}catch(e){}
+  try{var f=JSON.parse(localStorage.getItem('slickfirst')||'null'); if(f&&n-f.t<F){if(f.r)o.ref=f.r; if(!o.lp&&f.p)o.lp=f.p;}}catch(e){}
+  try{if(!o.utm){var sp=new URLSearchParams(location.search),c=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,50);},us=c(sp.get('utm_source')),uc=c(sp.get('utm_campaign')),ut=c(sp.get('utm_content')); if(us||uc||ut){o.utm='utm__'+us+'__'+uc+'__'+ut;o.lp=location.pathname;}}}catch(e){}
+  try{var u=new URL(document.referrer); if(u.hostname&&h(u.hostname)!==h(location.hostname))o.lref=h(u.hostname);}catch(e){}
+  if(!o.lp)o.lp=location.pathname;
+  return o;
+}
 function startCheckout(){
   try{window.scTrack&&window.scTrack('InitiateCheckout',{content_name:'build-roadmap',value:97,currency:'USD'});}catch(e){}
   var btns=document.querySelectorAll('button.buy'), old=[];
   btns.forEach(function(b,i){old[i]=b.innerHTML;b.disabled=true;b.innerHTML='Opening checkout\u2026';});
   var err=document.getElementById('buyerr'); if(err)err.remove();
-  fetch('/api/build-checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  fetch('/api/build-checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({src:_buySrc()})})
     .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
     .then(function(res){
       if(res.ok&&res.j&&res.j.url){location.href=res.j.url;return;}

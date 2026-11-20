@@ -353,6 +353,15 @@ export async function ensureBuildPurchasesTable() {
   // purchase made before the checkbox existed), which is NOT the same as saying no — so the export
   // can tell "declined" apart from "unknown" instead of silently treating both as consent.
   await q`ALTER TABLE build_purchases ADD COLUMN IF NOT EXISTS marketing_opt_in boolean`;
+  // Which roadmap, and where the buyer came from (lib/build-sales.js buildSourceFrom), 2026-11-20.
+  // Added columns only; older rows stay NULL, which reads as "not recorded".
+  await q`ALTER TABLE build_purchases ADD COLUMN IF NOT EXISTS roadmap text`;
+  await q`ALTER TABLE build_purchases ADD COLUMN IF NOT EXISTS src_source text`;
+  await q`ALTER TABLE build_purchases ADD COLUMN IF NOT EXISTS src_campaign text`;
+  await q`ALTER TABLE build_purchases ADD COLUMN IF NOT EXISTS src_content text`;
+  await q`ALTER TABLE build_purchases ADD COLUMN IF NOT EXISTS src_landing text`;
+  await q`ALTER TABLE build_purchases ADD COLUMN IF NOT EXISTS src_referrer text`;
+  await q`ALTER TABLE build_purchases ADD COLUMN IF NOT EXISTS src_label text`;
   _buildReady = true;
 }
 

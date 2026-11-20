@@ -112,6 +112,7 @@ export default async function handler(req, res) {
             marketingOptIn: (found.consent && found.consent.promotions) === 'opt_in' ? true
               : (found.consent && found.consent.promotions) === 'opt_out' ? false : undefined,
             roadmap: String((found.metadata && found.metadata.roadmap) || ''),
+            metadata: found.metadata || null,
             notify: recent ? undefined : false
           });
         } catch (e) {}

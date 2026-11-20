@@ -11211,3 +11211,24 @@ clients (with a walkthrough tutorial), set up payments, full square integration 
   import-profiles entries; everyone else gets generic wording. Upload opens `import-clients` set to that app.
 - Tests: `scratchpad/test-onboard-square-step.mjs`, `scratchpad/test-setup-checklist.mjs`, Chromium AND
   WebKit; `test-square-pay-cta`, `test-onboard-resume` still pass.
+
+## Roadmap sale sources (2026-11-20)
+
+Ashley's first Beauty Biz roadmap sale on her own site (Stripe `cs_live_bgAzkg…`, 2026-11-20 1:11pm
+Pacific, Prattville AL) could not be traced: /build and /build-any-business recorded no source at all
+(no utm capture, no referrer, checkout posted `{}`). Now:
+
+- Every marketing page (blog/switch via `SRC_CAPTURE` in `scripts/lib/site-chrome.cjs`, the forms pages,
+  `free.html`, `index.html`, both Build pages) keeps `slicksrc` (newest utm link + landing page, as
+  before) and NEW `slickfirst` (the first OUTSIDE referrer host + landing page, 60 days; a direct first
+  touch is replaced by a later outside one). Device-only, not `sc_*`.
+- The Build pages' `_buySrc()` sends `{utm, lp, ref, lref}` to `/api/build-checkout`, which cleans it
+  (`buildSourceMetadata`, lib/build-sales.js) onto Stripe metadata `src_*`.
+- `recordBuildSale` (webhook, redirect, lost-email backfill all pass `metadata`) stores `roadmap` and
+  `src_*` + `src_label` on `build_purchases` (ADD COLUMN only) and her email/push say "Came from: …".
+- `GET /api/admin/roadmap-sales` (founder or Monitor key) = per-sale source, masked buyer, counts by
+  channel. The Daily Ops brief reads it (routine-prompt.md §1g).
+- Tests: `scratchpad/founder-push/roadmap-source.mjs` (CI), `scratchpad/test-roadmap-source.mjs`
+  (Chromium, needs `vercel-like-server.mjs` on 8898). WebKit could not run in that container.
+- Instagram/Facebook in-app browsers often send no referrer, so a social click without a utm link reads
+  as "Direct". Links she posts should carry `?utm_source=instagram` etc. (the Pinterest pins already do).

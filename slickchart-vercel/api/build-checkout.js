@@ -1,4 +1,4 @@
-// POST /api/build-checkout  { roadmap?: 'beauty' | 'any' }  -> { url }
+// POST /api/build-checkout  { roadmap?: 'beauty' | 'any', src?: {utm, lp, ref, lref} }  -> { url }
 //
 // `roadmap` says which product the buyer is paying for: /build sells the Beauty Biz App Build Roadmap
 // (the default, so an old copy of that page that still posts {} keeps working) and
@@ -13,6 +13,7 @@
 // second webhook: Stripe is the source of truth for "did this person pay", so we just ask it.
 import { trustedOrigin } from '../lib/email.js';
 import { safeStripeMessage } from '../lib/stripe-safe.js';
+import { buildSourceMetadata } from '../lib/build-sales.js';
 
 // Stripe's way of saying "this account has not agreed to the extra Terms of Service that
 // consent_collection requires". It arrives as a plain invalid_request_error with no `param`, so the
@@ -37,6 +38,11 @@ export default async function handler(req, res) {
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch (_) { body = {}; } }
   const roadmap = (body && body.roadmap === 'any') ? 'any' : 'beauty';
   const backTo = roadmap === 'any' ? '/build-any-business' : '/build';
+  // Where the buyer came from (an ad/pin/ChatGPT link's utm values, the page they landed on, and the
+  // outside site that first sent them), as the page remembered it. Cleaned to short lowercase labels
+  // by buildSourceMetadata; anything else in the body is ignored. It only labels the sale in her
+  // alert and the daily report (lib/build-sales.js buildSourceFrom); it never affects what is sold.
+  const srcMeta = buildSourceMetadata(body && body.src);
   const build = (withPromotions) => {
   const form = new URLSearchParams();
   form.set('mode', 'payment');
@@ -55,6 +61,7 @@ export default async function handler(req, res) {
   // Which roadmap this sale unlocks (lib/build-sales.js roadmapUrlFor). Untagged = the original
   // (a sale from before 2026-10), which is the same product as 'any'.
   form.set('metadata[roadmap]', roadmap);
+  for (const [k, v] of Object.entries(srcMeta)) form.set('metadata[' + k + ']', v);
   // Stripe shows a marketing opt-in tickbox on the checkout page and reports the answer back as
   // session.consent.promotions. That is how the buyer list gets built with real, recorded consent
   // rather than by assuming a purchase is permission to market to someone later.

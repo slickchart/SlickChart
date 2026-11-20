@@ -1273,6 +1273,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/admin/push-state` | POST | founder | GET /api/admin/push-state  Authorization: Monitor <key>   — the founder's OWN notification setup. |
 | `/api/admin/recover-import` | GET, POST | founder, provider session | FOUNDER-ONLY. Pull a provider's work out of a Neon point-in-time |
 | `/api/admin/referrals` | GET, POST | founder, provider session | FOUNDER-ONLY. The referral program's numbers and settings. |
+| `/api/admin/roadmap-sales` | GET | founder, provider session | GET /api/admin/roadmap-sales → FOUNDER-ONLY: every Build roadmap sale and where it came from. |
 | `/api/admin/signups` | GET | founder, provider session | GET /api/admin/signups?since=<ms>  — FOUNDER-ONLY. |
 | `/api/admin/square-create-log` | — | founder, provider session | GET /api/admin/square-create-log — FOUNDER-ONLY, READ-ONLY. |
 | `/api/admin/square-foreign` | — | founder, provider session | GET /api/admin/square-foreign — FOUNDER-ONLY, READ-ONLY. |
@@ -1293,7 +1294,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/book-request` | POST | **public** | PUBLIC (no auth): someone books through a provider's public link — slickchart.app/book/<slug>. |
 | `/api/book-slots` | GET | **public** | PUBLIC (no auth): GET /api/book-slots?slug=<slug>&date=YYYY-MM-DD |
 | `/api/build-access` | POST | **public** | POST /api/build-access  { email }  ->  always the same generic success |
-| `/api/build-checkout` | POST | **public** | POST /api/build-checkout  { roadmap?: 'beauty' \| 'any' }  -> { url } |
+| `/api/build-checkout` | POST | **public** | POST /api/build-checkout  { roadmap?: 'beauty' \| 'any', src?: {utm, lp, ref, lref} }  -> { url } |
 | `/api/build-id` | — | **public** | PUBLIC, no auth: which build is live right now. The app compares this against the build it is |
 | `/api/build-unlock` | — | **public** | GET /api/build-unlock?session_id=cs_...  -> { ok, videoUrl, artifactUrl, email } |
 | `/api/calendar-url` | — | provider session | GET /api/calendar-url  (Bearer session) → { url } : a private, long-lived ICS feed URL |

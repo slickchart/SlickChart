@@ -47,6 +47,101 @@ function money(cents, currency) {
   return (cur === 'USD' ? '$' : cur + ' ') + amount;
 }
 
+// ── Where a roadmap sale came from (2026-11-20, Ashley: "track how those come in just like the app
+// providers"). The Build pages remember an ad/pin/ChatGPT link's utm values, the page it landed on, and
+// the outside site that first sent the visitor (first touch, kept 60 days on that device), and
+// /api/build-checkout copies them, cleaned, onto the Stripe session's metadata as src_*. Every path
+// that records a sale reads them back from there, so the webhook, the success redirect and the
+// "lost my email" backfill all store the same answer. Nothing here is an identity: it is a few short
+// lowercase labels, and nothing about it is ever used to decide access.
+const _cleanTok = (v, n) => String(v || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, n || 50);
+const _cleanHost = v => { const h = String(v || '').toLowerCase().replace(/^www\./, '').replace(/[^a-z0-9.-]/g, '').slice(0, 60); return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(h) ? h : ''; };
+const _cleanPath = v => { let x = String(v || '').toLowerCase().replace(/\.html$/, '').replace(/[^a-z0-9\/-]/g, '').slice(0, 60); if (x && x[0] !== '/') x = '/' + x; return x; };
+
+/** The checkout page's raw `src` object -> Stripe metadata entries (all optional, all cleaned). */
+export function buildSourceMetadata(src) {
+  const o = (src && typeof src === 'object') ? src : {};
+  const out = {};
+  const utm = String(o.utm || '');
+  if (/^utm__/.test(utm) && utm.length <= 200) {
+    const parts = utm.split('__');
+    const [s, c, t] = [_cleanTok(parts[1]), _cleanTok(parts[2]), _cleanTok(parts[3])];
+    if (s) out.src_source = s;
+    if (c) out.src_campaign = c;
+    if (t) out.src_content = t;
+  }
+  const lp = _cleanPath(o.lp || o.fp);
+  if (lp) out.src_landing = lp;
+  const ref = _cleanHost(o.ref);
+  if (ref) out.src_referrer = ref;
+  const lref = _cleanHost(o.lref);
+  if (lref && lref !== ref) out.src_lastref = lref;
+  return out;
+}
+
+// utm_source values and referrer hosts -> the channel name she would use. First match wins, so the
+// more specific Google products sit above Google search.
+const CHANNELS = [
+  [/chatgpt|openai/, 'ChatGPT'], [/perplexity/, 'Perplexity'], [/gemini|bard/, 'Gemini'],
+  [/copilot/, 'Copilot'], [/claude/, 'Claude'],
+  [/pinterest|^pin-?it|pin\.it/, 'Pinterest'], [/instagram|^ig$/, 'Instagram'],
+  [/facebook|^fb$|fb\.com|fb\.me|^meta$/, 'Facebook'], [/tiktok/, 'TikTok'],
+  [/youtube|youtu\.be/, 'YouTube'], [/reddit/, 'Reddit'], [/^t\.co$|^x\.com$|twitter/, 'X'],
+  [/threads/, 'Threads'], [/etsy/, 'Etsy'], [/linkedin|lnkd/, 'LinkedIn'],
+  [/google/, 'Google search'], [/bing/, 'Bing search'], [/duckduckgo/, 'DuckDuckGo'], [/yahoo/, 'Yahoo search'],
+  [/mail|outlook|newsletter|resend|^email$/, 'Email'],
+  [/slickchart/, 'SlickChart']
+];
+function channelOf(v) {
+  const s = String(v || '');
+  if (!s) return '';
+  for (const [rx, name] of CHANNELS) if (rx.test(s)) return name;
+  return s;
+}
+
+/** Stripe metadata (or a stored row) -> { source, campaign, content, landing, referrer, label }. */
+export function buildSourceFrom(meta) {
+  const m = meta || {};
+  const r = {
+    source: _cleanTok(m.src_source) || null, campaign: _cleanTok(m.src_campaign) || null,
+    content: _cleanTok(m.src_content) || null, landing: _cleanPath(m.src_landing) || null,
+    referrer: _cleanHost(m.src_referrer) || null, lastref: _cleanHost(m.src_lastref) || null
+  };
+  r.label = buildSourceLabel(r);
+  return r;
+}
+
+/** Just the channel ("Pinterest", "Google search", "Direct"), for counting sales by source. */
+export function buildSourceChannel(r) {
+  if (!r) return 'Direct';
+  if (r.source) return channelOf(_cleanTok(r.source));
+  const h = _cleanHost(r.referrer) || _cleanHost(r.lastref);
+  if (h) return channelOf(h);
+  return 'Direct';
+}
+
+/** One plain line: "Pinterest (pin link · build · landed on /build)". */
+export function buildSourceLabel(r) {
+  if (!r) return '';
+  const bits = [];
+  let ch = '';
+  if (r.source) {
+    ch = channelOf(r.source);
+    if (r.campaign) bits.push(r.campaign);
+    if (r.content) bits.push(r.content);
+    if (r.referrer && channelOf(r.referrer) !== ch) bits.push('first came from ' + channelOf(r.referrer));
+  } else if (r.referrer) {
+    ch = channelOf(r.referrer);
+    if (ch === r.referrer) ch = 'a link on ' + r.referrer;
+  } else if (r.lastref) {
+    ch = channelOf(r.lastref);
+    if (ch === r.lastref) ch = 'a link on ' + r.lastref;
+  }
+  if (!ch) return r.landing ? 'Direct (no link info) · landed on ' + r.landing : '';
+  if (r.landing) bits.push('landed on ' + r.landing);
+  return ch + (bits.length ? ' (' + bits.join(' · ') + ')' : '');
+}
+
 /**
  * Record one paid Build Your Own App checkout, and ping the founder exactly once for it.
  * Safe to call repeatedly with the same session id.
@@ -71,6 +166,9 @@ export async function recordBuildSale(sale) {
   const tag = String((sale && sale.roadmap) || '');
   const product = tag === 'beauty' ? 'Beauty Biz App Build Roadmap'
     : tag === 'any' ? 'Master Build Roadmap (any business)' : 'Build Your Own App';
+  // Where it came from (src_* on the Stripe session). Older sessions and anything without link info
+  // store NULLs; the alert then says plainly that nothing was recorded rather than guessing.
+  const src = buildSourceFrom(sale && sale.metadata);
 
   let q;
   try {
@@ -78,13 +176,22 @@ export async function recordBuildSale(sale) {
     q = sql();
     // COALESCE keeps whatever the first writer knew: if the redirect recorded the sale without an
     // amount, a later webhook fills it in, and neither one blanks a field the other already set.
-    await q`INSERT INTO build_purchases (stripe_session_id, email, amount_cents, currency, marketing_opt_in)
-      VALUES (${sid}, ${email}, ${amountCents}, ${currency}, ${optIn})
+    await q`INSERT INTO build_purchases (stripe_session_id, email, amount_cents, currency, marketing_opt_in,
+        roadmap, src_source, src_campaign, src_content, src_landing, src_referrer, src_label)
+      VALUES (${sid}, ${email}, ${amountCents}, ${currency}, ${optIn},
+        ${tag || null}, ${src.source}, ${src.campaign}, ${src.content}, ${src.landing}, ${src.referrer || src.lastref}, ${src.label || null})
       ON CONFLICT (stripe_session_id) DO UPDATE SET
         email            = COALESCE(build_purchases.email, EXCLUDED.email),
         amount_cents     = COALESCE(build_purchases.amount_cents, EXCLUDED.amount_cents),
         currency         = COALESCE(build_purchases.currency, EXCLUDED.currency),
-        marketing_opt_in = COALESCE(build_purchases.marketing_opt_in, EXCLUDED.marketing_opt_in)`;
+        marketing_opt_in = COALESCE(build_purchases.marketing_opt_in, EXCLUDED.marketing_opt_in),
+        roadmap          = COALESCE(build_purchases.roadmap, EXCLUDED.roadmap),
+        src_source       = COALESCE(build_purchases.src_source, EXCLUDED.src_source),
+        src_campaign     = COALESCE(build_purchases.src_campaign, EXCLUDED.src_campaign),
+        src_content      = COALESCE(build_purchases.src_content, EXCLUDED.src_content),
+        src_landing      = COALESCE(build_purchases.src_landing, EXCLUDED.src_landing),
+        src_referrer     = COALESCE(build_purchases.src_referrer, EXCLUDED.src_referrer),
+        src_label        = COALESCE(build_purchases.src_label, EXCLUDED.src_label)`;
   } catch (e) {
     console.error('[build-sales] could not record sale:', e && e.message || e);
     return;   // no row means no claim to make; better a missed ping than an unrecorded one
@@ -125,6 +232,7 @@ export async function recordBuildSale(sale) {
 
   const who = email || '(no email on the receipt)';
   const price = money(amountCents, currency);
+  const cameFrom = 'Came from: ' + (src.label || 'not recorded (no link info reached checkout)');
   const runningTotal = total ? `${total} sold so far${cents ? ' · ' + money(cents, currency) + ' collected' : ''}` : '';
 
   // ── Founder email ──────────────────────────────────────────────────────────
@@ -135,12 +243,14 @@ export async function recordBuildSale(sale) {
       subject: `🚀 ${product} sold${price ? ' — ' + price : ''}`,
       text: `Someone just bought the ${product}.\n\nEmail: ${who}\n`
         + (price ? `Paid: ${price}\n` : '')
+        + `${cameFrom}\n`
         + (runningTotal ? `\n${runningTotal}\n` : '')
         + `\nTheir access links went out automatically.`,
       html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;">'
         + `<div style="font-size:22px;margin-bottom:6px;">🚀 ${escHtml(product)} sold</div>`
         + `<div style="font-size:14px;color:#333;line-height:1.9;"><b>Email:</b> ${escHtml(who)}`
-        + (price ? `<br><b>Paid:</b> ${escHtml(price)}` : '') + '</div>'
+        + (price ? `<br><b>Paid:</b> ${escHtml(price)}` : '')
+        + `<br><b>Came from:</b> ${escHtml(src.label || 'not recorded (no link info reached checkout)')}` + '</div>'
         + (runningTotal ? `<div style="font-size:13px;color:#2a7;margin-top:10px;">${escHtml(runningTotal)}</div>` : '')
         + '<div style="font-size:12px;color:#777;margin-top:10px;">Their access links went out automatically.</div></div>'
     });
@@ -155,6 +265,7 @@ export async function recordBuildSale(sale) {
       skipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT, APNS_KEY_P8 or VAPID keys)';
     } else {
       const body = (price ? price + ' — ' : '') + who
+        + (src.label ? ' · from ' + src.label : '')
         + (total ? ` · that's ${total} sold 🎉` : ' 🎉');
       const r = await pushFoundersReport({ title: `🚀 ${product} sold!`, body, url: '/slickchart', tag: 'build-sale:' + sid });
       devices = r.devices || 0; sentCount = r.sent || 0;
