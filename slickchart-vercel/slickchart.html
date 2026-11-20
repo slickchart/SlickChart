@@ -6820,7 +6820,9 @@ function _handleAuthParams(){
     }
     if(p.get('gcal')==='connected'){setTimeout(()=>{if(typeof proToast==='function')proToast('Google Calendar connected \u2713');},500);try{const u=new URL(location.href);u.searchParams.delete('gcal');history.replaceState({},'',u);}catch(e){}}
     const sq=p.get('sq');
-    if(sq){const reason=p.get('reason');setTimeout(()=>{if(typeof proToast==='function')if(sq==='connected')proToast('Square connected \u2713');else proToast(_sqConnectFailMsg(reason),6000,'error');},500);try{const u=new URL(location.href);u.searchParams.delete('sq');u.searchParams.delete('reason');history.replaceState({},'',u);}catch(e){}}
+    if(sq){const reason=p.get('reason');setTimeout(()=>{if(typeof proToast==='function')if(sq==='connected')proToast('Square connected \u2713');else proToast(_sqConnectFailMsg(reason),6000,'error');},500);
+      // Back from Square in the middle of setup: carry on with the checklist, not Home.
+      try{if(localStorage.getItem('scsetup_started')==='1'){_sqPayState=null;setTimeout(()=>{try{if(Cloud&&Cloud.token&&(!_navCur||_navCur.screen==='home'))nav('data-setup');}catch(e){}},900);}}catch(e){}try{const u=new URL(location.href);u.searchParams.delete('sq');u.searchParams.delete('reason');history.replaceState({},'',u);}catch(e){}}
   }catch(e){}
   return false;
 }
@@ -9895,7 +9897,7 @@ function nav(screen,data){
   }
   try{if(typeof _flushSettingsEdits==='function')_flushSettingsEdits();}catch(e){}
   try{if(typeof _savePersistenceSweep==='function')_savePersistenceSweep();}catch(e){}
-  const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Photo consults',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu',perks:'Loyalty & memberships','perk-edit':'Loyalty & memberships','export-data':'Export Data','reports':'Reports','booking-link':'Booking link','refer':'Refer a friend','reminders':'Reminders'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Photo consults',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','setup-clients':'Your clients','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu',perks:'Loyalty & memberships','perk-edit':'Loyalty & memberships','export-data':'Export Data','reports':'Reports','booking-link':'Booking link','refer':'Refer a friend','reminders':'Reminders'};
   document.getElementById('tt').innerHTML='Slick<span class="brandc">Chart</span>';
   document.title='SlickChart' + (titles[screen] ? ', '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
@@ -9947,7 +9949,7 @@ function nav(screen,data){
     'week-appts':renderWeekAppts,
     'week-clients':renderWeekClients,
     requests:renderRequests,
-    'data-setup':renderDataSetup,'invite-clients':renderInviteClients,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,'whats-new':renderWhatsNew,'feedback-inbox':renderFeedbackInbox,'beta-stats':renderBetaStats,'payments':renderPayments,'build-invoice':renderBuildInvoice,'service-menu':renderServiceMenu,perks:renderPerks,'perk-edit':()=>renderPerkEdit(data),reminders:renderReminders,'export-data':renderExportCenter,'reports':renderReports,
+    'data-setup':renderDataSetup,'setup-clients':renderSetupClients,'invite-clients':renderInviteClients,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,'whats-new':renderWhatsNew,'feedback-inbox':renderFeedbackInbox,'beta-stats':renderBetaStats,'payments':renderPayments,'build-invoice':renderBuildInvoice,'service-menu':renderServiceMenu,perks:renderPerks,'perk-edit':()=>renderPerkEdit(data),reminders:renderReminders,'export-data':renderExportCenter,'reports':renderReports,
     checkins:renderCheckins,
     'checkin-detail':()=>renderCheckinDetail(data),
     'add-partner':renderAddPartner,
@@ -10475,30 +10477,27 @@ function _gettingStartedHTML(){
   if(_gsDismissed())return '';
   if(_accountStillLoading())return '';
   const st=_gsState();
-  // Once the provider has a few real clients they're clearly up and running — get out of the way for good.
-  if(st.realCount>=3)return '';
-  const steps=[
-    {done:st.realCount>0,icon:'ti-user-plus',t:'Add your first client',s:'Just a name gets their chart started',act:"nav('new-client')"},
-    {done:st.hours,icon:'ti-clock',t:'Set your working hours',s:'Clients can only request times you’re open',act:"nav('biz-info')"},
-    {done:st.anyInvited,icon:'ti-send',t:'Invite a client to their app',s:'A private link to summaries, forms & rebooking',act:"nav('invite-clients')"},
-    {done:st.anyForms,icon:'ti-file-text',t:'Send a first-visit package',s:'Intake & consent forms, sent in one tap',act:"nav('clients')"}
-  ];
-  const doneN=steps.filter(function(s){return s.done;}).length;
-  if(doneN>=steps.length)return '';
-  return `<div style="background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:16px;padding:14px 15px;">
+  // A provider who went through the new setup keeps the card until her checklist is done (importing
+  // 200 clients on day one must not hide "set up payments"). Anyone else, once she has a few real
+  // clients she's clearly up and running, so it gets out of the way for good, as before.
+  if(st.realCount>=3&&!_setupFlag('started'))return '';
+  try{_setupSqRefresh();}catch(e){}
+  const {n,of,steps}=_setupDone();
+  if(n>=of)return '';
+  const todo=steps.filter(s=>!s.done).slice(0,3);
+  return `<div data-gs-card="1" style="background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:16px;padding:14px 15px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
       <i class="ti ti-sparkles" style="font-size:16px;color:var(--accent-strong);"></i>
-      <span style="font-size:16px;font-weight:600;color:var(--p-ink);">Let’s get you set up</span>
+      <span style="font-size:16px;font-weight:600;color:var(--p-ink);">Get ready to see clients</span>
       <button onclick="dismissGettingStarted()" aria-label="Hide getting started" title="Hide" style="margin-left:auto;border:none;background:none;color:var(--p-mut2);cursor:pointer;font-size:16px;padding:0;line-height:1;"><i class="ti ti-x"></i></button>
     </div>
-    <div style="font-size:16px;color:var(--p-mut2);margin-bottom:9px;">${doneN} of ${steps.length} done · a few quick steps and you’re rolling</div>
-    ${steps.map(function(s){return `<div ${s.done?'':`onclick="${s.act}"`} style="display:flex;align-items:center;gap:11px;padding:9px 0;${s.done?'opacity:.6;':'cursor:pointer;'}border-top:1px solid var(--accent-a30);">
-      <div style="width:27px;height:27px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${s.done?'var(--p-green)':'var(--p-surf3)'};border:1.5px solid ${s.done?'var(--p-green)':'var(--p-chip)'};">
-        ${s.done?'<i class="ti ti-check" style="font-size:16px;color:#fff;"></i>':`<i class="ti ${s.icon}" style="font-size:16px;color:var(--accent-strong);"></i>`}
-      </div>
-      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);${s.done?'text-decoration:line-through;':''}">${s.t}</div><div style="font-size:14px;color:var(--p-mut2);line-height:1.4;">${s.s}</div></div>
-      ${s.done?'':'<i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut2);flex-shrink:0;"></i>'}
+    <div style="font-size:16px;color:var(--p-mut2);margin-bottom:9px;">${n} of ${of} done · next up:</div>
+    ${todo.map(function(s){return `<div data-gs-step="${s.id}" onclick="${s.act}" style="display:flex;align-items:center;gap:11px;padding:9px 0;cursor:pointer;border-top:1px solid var(--accent-a30);">
+      <div style="width:27px;height:27px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--p-surf3);border:1.5px solid var(--p-chip);"><i class="ti ${s.icon}" style="font-size:16px;color:var(--accent-strong);"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${s.t}</div><div style="font-size:14px;color:var(--p-mut2);line-height:1.4;">${s.s}</div></div>
+      <i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut2);flex-shrink:0;"></i>
     </div>`;}).join('')}
+    <button onclick="nav('data-setup')" data-gs-all="1" style="width:100%;margin-top:6px;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:10px;padding:10px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">See my whole setup checklist</button>
   </div>`;
 }
 
@@ -29120,6 +29119,7 @@ function _obRestore(){
     if(p.data&&p.data.biz)onboardData.biz={name:String(p.data.biz.name||''),owner:String(p.data.biz.owner||'')};
     if(p.data&&p.data.avail)try{onboardData.avail=normalizeAvail(p.data.avail);}catch(e){}
     if(Array.isArray(p.profs)&&p.profs.length)selectedProfessions=p.profs.slice();
+    if(p.data&&p.data.sqVisited)onboardData.sqVisited=true;
     onboardStep=i;return true;
   }catch(e){return false;}
 }
@@ -29170,10 +29170,11 @@ function _persistOnboarding(){
 }
 function finishOnboarding(dest,data){
   _persistOnboarding();
+  try{_setupMark('started');}catch(e){}
   localStorage.setItem('sc_onboarded','1');_obClear();
   closeOnboard();
   nav(dest||'data-setup',data);
-  setTimeout(()=>proToast(dest&&dest!=='data-setup'?'You\'re all set \u2728':'You\'re all set, let\'s bring your data in ✨'),200);
+  setTimeout(()=>proToast(dest&&dest!=='data-setup'?'You\'re all set \u2728':'Here\u2019s your setup checklist ✨'),200);
 }
 
 function onboardToggleProf(id){
@@ -29185,7 +29186,16 @@ function onboardToggleProf(id){
 function onboardToggleDay(d){onboardData.avail[d].open=!onboardData.avail[d].open;renderOnboard();}
 function onboardSetHour(k,which,v){onboardData.avail[k][which]=v;_obSave();}
 function onboardCopyHoursToAll(){const ref=onboardData.avail.mon;DAY_DEFS.forEach(([k])=>{if(onboardData.avail[k].open){onboardData.avail[k].start=ref.start;onboardData.avail[k].end=ref.end;}});renderOnboard();proToast('Applied Monday\'s hours to all open days');}
-function onboardConnectSquare(){_persistOnboarding();try{localStorage.setItem('sc_onboarded','1');}catch(e){}_obClear();if(typeof _sqConnect==='function'){_sqConnect();}else{onboardNext();}}
+// "Set up Square payments": the referral is in the link itself. The link opens Square's sign-up in a new
+// tab (or the in-app browser in the phone app) and this step turns into "Connect my Square" for when she
+// is back, so each moment has one obvious button.
+function _obSqSignup(ev){
+  onboardData.sqVisited=true;_obSave();
+  const B=(typeof _nativeBrowser==='function')?_nativeBrowser():null;
+  if(B){try{if(ev)ev.preventDefault();B.open({url:SQ_REFERRAL,presentationStyle:'popover'});}catch(e){}}
+  setTimeout(()=>{if(ONBOARD_STEPS[onboardStep]==='square')renderOnboard();},300);
+}
+function onboardConnectSquare(){_persistOnboarding();try{_setupMark('started');}catch(e){}try{localStorage.setItem('sc_onboarded','1');}catch(e){}_obClear();if(typeof _sqConnect==='function'){_sqConnect();}else{onboardNext();}}
 
 function _togglePw(id,btn){
   const el=document.getElementById(id);if(!el)return;
@@ -29909,23 +29919,45 @@ function renderOnboard(){
   }
 
   else if(step==='square'){
+    // "Get paid" step (2026-11-20, Ashley: "make it very obvious that Square signup is needed for in app
+    // payments ... so it can't be missed. automatically fill in the $1000 free processing referral code"
+    // / "make it an easy one buton setup"). Card payments, payment links, invoices, deposits, cards on
+    // file and membership billing all run through the provider's OWN Square account, and the old step
+    // read as optional data import with the referral in small print, so providers finished setup with no
+    // way to take a card. One big button at a time: "Set up Square payments" opens Square's sign-up
+    // through SQ_REFERRAL (the referral is part of the link, nothing to type); when she comes back the
+    // same card offers "Connect my Square" (OAuth, her own connection via _sqConnect). Already on Square:
+    // one tap to connect. The connected state is read from THIS account's /api/square/connection only.
+    const visited=!!onboardData.sqVisited;
+    const sqSvg=`<svg width="17" height="17" viewBox="0 0 32 32" aria-hidden="true" style="flex-shrink:0;"><path fill="#fff" fill-rule="evenodd" d="M6.5 2h19A4.5 4.5 0 0 1 30 6.5v19a4.5 4.5 0 0 1-4.5 4.5h-19A4.5 4.5 0 0 1 2 25.5v-19A4.5 4.5 0 0 1 6.5 2Zm3.2 8.2a1.5 1.5 0 0 0-1.5 1.5v8.6a1.5 1.5 0 0 0 1.5 1.5h12.6a1.5 1.5 0 0 0 1.5-1.5v-8.6a1.5 1.5 0 0 0-1.5-1.5H9.7Z" clip-rule="evenodd"/></svg>`;
+    const bigBtn='width:100%;background:#1C1C1C;border:none;border-radius:12px;padding:15px;font-size:17px;font-weight:700;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;font-family:inherit;text-decoration:none;';
+    const linkBtn='background:none;border:none;padding:0;color:var(--accent-strong);font-weight:700;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:16px;';
+    const uses=['Take card payments','Payment links and invoices','Deposits when clients book','Cards on file and membership billing'];
     body=`
-    <div style="padding:30px 24px 8px;">
-      <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Bring your business in</div>
-      <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:18px;">SlickChart works beautifully with Square, or completely on its own. Pick whichever fits you.</div>
-      <div style="border:1.5px solid var(--accent-tint2);background:var(--accent-tint);border-radius:16px;padding:16px;margin-bottom:12px;">
-        <div style="display:flex;align-items:center;gap:11px;margin-bottom:9px;"><div style="width:42px;height:42px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-square" style="font-size:22px;color:#000;"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">I use Square</div><div style="font-size:16px;color:var(--accent-strong);">One-click setup</div></div></div>
-        <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:12px;">Connect in a single tap and your clients, product &amp; service catalog, appointments, and invoices all flow in automatically. Nothing to import by hand.</div>
-        <button onclick="onboardConnectSquare()" aria-label="Connect with Square" style="width:100%;background:#1C1C1C;border:none;border-radius:12px;padding:13px;font-size:16px;font-weight:600;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;font-family:inherit;"><svg width="17" height="17" viewBox="0 0 32 32" aria-hidden="true" style="flex-shrink:0;"><path fill="#fff" fill-rule="evenodd" d="M6.5 2h19A4.5 4.5 0 0 1 30 6.5v19a4.5 4.5 0 0 1-4.5 4.5h-19A4.5 4.5 0 0 1 2 25.5v-19A4.5 4.5 0 0 1 6.5 2Zm3.2 8.2a1.5 1.5 0 0 0-1.5 1.5v8.6a1.5 1.5 0 0 0 1.5 1.5h12.6a1.5 1.5 0 0 0 1.5-1.5v-8.6a1.5 1.5 0 0 0-1.5-1.5H9.7Z" clip-rule="evenodd"/></svg> Connect with Square</button>
-        <div style="font-size:14px;color:var(--p-mut);line-height:1.55;margin-top:9px;text-align:center;">New to Square? <a href="https://squareup.com/refer/2832A5A0B0" target="_blank" rel="noopener" style="color:var(--accent-strong);font-weight:600;text-decoration:underline;">Sign up with our link</a> and get your first $1,000 in sales processed free.</div>
+    <div style="padding:30px 24px 8px;" data-ob-square="1">
+      <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Get paid right in SlickChart</div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;"><b style="color:var(--p-ink);">You need a Square account to take card payments in SlickChart.</b> It is free to open and only takes a few minutes. Square is what lets you:</div>
+      <div style="margin-bottom:16px;">${uses.map(u=>`<div style="display:flex;gap:9px;align-items:center;font-size:16px;color:var(--p-ink);line-height:1.5;margin-bottom:6px;"><i class="ti ti-circle-check" style="font-size:18px;color:var(--p-green);flex-shrink:0;"></i>${u}</div>`).join('')}</div>
+      <div id="ob-sq-card" style="border:1.5px solid var(--accent);background:var(--accent-tint);border-radius:16px;padding:16px;margin-bottom:12px;">
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:13px;"><i class="ti ti-gift" style="font-size:20px;color:var(--accent-strong);flex-shrink:0;margin-top:1px;"></i><div style="font-size:16px;color:var(--p-ink);line-height:1.55;"><b>No processing fees on your first $1,000.</b> Our referral is already built into the button, so there is no code to type. (Square's offer, over your first 6 months.)</div></div>
+        ${visited
+          ?`<div style="font-size:16px;color:var(--p-ink);line-height:1.55;margin-bottom:11px;"><b>Done signing up?</b> One more tap links your Square to SlickChart.</div>
+        <button onclick="onboardConnectSquare()" data-ob-sq="connect" style="${bigBtn}">${sqSvg} Connect my Square</button>
+        <div style="font-size:14px;color:var(--p-mut);line-height:1.55;margin-top:10px;text-align:center;">Still signing up? <a href="${SQ_REFERRAL}" target="_blank" rel="noopener" onclick="_obSqSignup(event)" style="color:var(--accent-strong);font-weight:600;text-decoration:underline;">Open Square again</a></div>`
+          :`<a href="${SQ_REFERRAL}" target="_blank" rel="noopener" onclick="_obSqSignup(event)" data-ob-sq="signup" style="${bigBtn}">${sqSvg} Set up Square payments</a>
+        <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-top:12px;text-align:center;">Already have Square? <button onclick="onboardConnectSquare()" data-ob-sq="have" style="${linkBtn}">Connect it</button></div>`}
       </div>
-      <div style="border:1.5px solid var(--p-line);background:var(--surf2);border-radius:16px;padding:16px;">
-        <div style="display:flex;align-items:center;gap:11px;margin-bottom:9px;"><div style="width:42px;height:42px;border-radius:12px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-spreadsheet" style="font-size:22px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">I don't use Square</div><div style="font-size:16px;color:var(--p-mut);">Import your list, or start fresh</div></div></div>
-        <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:12px;">No problem, SlickChart works fully on its own. Right after setup we'll help you bring in your clients and your product or service list from a spreadsheet, with a step-by-step guide. Or just add them as you go.</div>
-        <button onclick="onboardData.dataMethod='import';onboardNext()" style="width:100%;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:12px;font-size:16px;font-weight:600;color:var(--p-blue);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-upload" style="font-size:16px;"></i> I'll import or add my own</button>
-      </div>
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.55;">Square also brings in your clients, services and appointments if you already use it. Only take cash, Venmo or Zelle? You can skip this and still record those payments. You can set up Square any time from Take payment.</div>
     </div>`;
-    primaryLabel='Decide this later';primaryAction='onboardNext()';showSkip=false;
+    primaryLabel='Skip for now';primaryAction='onboardNext()';showSkip=false;
+    // Already connected (replaying setup, or back from Square): say so instead of asking again.
+    setTimeout(async()=>{
+      let st=null;try{st=await _sqConnState();}catch(e){}
+      const c=document.getElementById('ob-sq-card');
+      if(!c||!st||!st.oauth||ONBOARD_STEPS[onboardStep]!=='square')return;
+      c.innerHTML='<div style="display:flex;gap:10px;align-items:center;font-size:16px;color:var(--p-ink);line-height:1.5;"><i class="ti ti-circle-check-filled" style="font-size:22px;color:var(--p-green);flex-shrink:0;"></i><span><b>Square is connected.</b> You are ready to take card payments.</span></div>';
+      const b=document.querySelector('#onboard-overlay [data-ob-primary]');if(b)b.textContent='Next';
+    },0);
   }
 
   else if(step==='install'){
@@ -30050,8 +30082,9 @@ function renderOnboard(){
         <button onclick="finishOnboarding('room','maya')" style="width:100%;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:10px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Start demo session \u2192</button>
       </div>`:''}
       <div style="width:100%;max-width:300px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:14px;text-align:left;">
-        <div style="font-size:16px;font-weight:600;color:var(--accent-strong);margin-bottom:9px;letter-spacing:.04em;">FIRST STEPS</div>
-        ${[['ti-user-plus','Add your first client','new-client'],['ti-send','Invite your clients to their app','invite-clients'],['ti-calendar','Review your calendar','calendar']].map(([ic,t,dest])=>`<div onclick="finishOnboarding('${dest}')" style="display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;"><i class="ti ${ic}" style="font-size:16px;color:var(--p-mut);"></i><span style="font-size:16px;color:var(--p-mut);">${t}</span><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);margin-left:auto;"></i></div>`).join('')}
+        <div style="font-size:16px;font-weight:600;color:var(--accent-strong);margin-bottom:9px;letter-spacing:.04em;">NEXT: YOUR SETUP CHECKLIST</div>
+        <div style="font-size:16px;color:var(--p-mut2);line-height:1.55;margin-bottom:8px;">Next is a short checklist that gets you ready to see clients. Each step ticks itself off:</div>
+        ${['Set up card payments (Square)','Bring your clients over','Your services and prices','Your booking link','Intake and consent forms','Your logo','Invite your clients'].map(t=>`<div style="display:flex;align-items:center;gap:9px;padding:4px 0;"><i class="ti ti-circle" style="font-size:16px;color:var(--accent-strong);"></i><span style="font-size:16px;color:var(--p-ink);">${t}</span></div>`).join('')}
         <div onclick="finishOnboarding('account')" style="display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;"><i class="ti ti-eraser" style="font-size:16px;color:var(--p-mut);"></i><span style="font-size:16px;color:var(--p-mut);">Remove sample data once you're ready</span><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);margin-left:auto;"></i></div>
       </div>
       <button onclick="finishOnboarding('walkthrough')" style="width:100%;max-width:300px;margin-top:14px;background:var(--surf2);border:1px solid var(--accent-tint2);color:var(--p-ink);border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;display:flex;align-items:center;gap:11px;">
@@ -30061,7 +30094,7 @@ function renderOnboard(){
       </button>
       <button onclick="openBetaFeedback()" style="margin-top:14px;background:none;border:1px solid var(--accent-tint2);color:var(--accent-strong);border-radius:8px;padding:9px 16px;font-size:16px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-message-2" style="font-size:16px;"></i> Share feedback</button>
     </div>`;
-    primaryLabel='Enter SlickChart →';primaryAction='finishOnboarding()';
+    primaryLabel='Start my setup checklist →';primaryAction='finishOnboarding()';
   }
 
   // The Next button stays in view while she scrolls a long step (the profession list ran 20+ cards past
@@ -30069,7 +30102,7 @@ function renderOnboard(){
   const footer=`
   <div style="position:sticky;bottom:0;z-index:2;background:var(--p-surf);border-top:1px solid var(--p-line);padding:10px 20px calc(18px + env(safe-area-inset-bottom,0px));">
     ${dots}
-    <button onclick="${primaryAction}" style="width:100%;background:var(--accent);border:1px solid var(--btn-edge);border-radius:12px;padding:14px;font-size:16px;font-weight:600;color:var(--accent-ink);cursor:pointer;">${primaryLabel}</button>
+    <button data-ob-primary="1" onclick="${primaryAction}" style="width:100%;background:var(--accent);border:1px solid var(--btn-edge);border-radius:12px;padding:14px;font-size:16px;font-weight:600;color:var(--accent-ink);cursor:pointer;">${primaryLabel}</button>
     ${(showBack||showSkip)?`<div style="display:flex;gap:6px;margin-top:4px;">${showBack?`<button onclick="onboardBack()" style="flex:1;background:none;border:none;font-size:16px;color:var(--p-mut);cursor:pointer;padding:9px;">Back</button>`:''}${showSkip?`<button onclick="onboardSkip()" style="flex:1;background:none;border:none;font-size:16px;color:#315249;cursor:pointer;padding:9px;">Skip setup for now</button>`:''}</div>`:''}
   </div>`;
 
@@ -34305,25 +34338,174 @@ function closeSetupWalkthrough(){
   try{var v=document.getElementById('setup-walkthrough-video');if(v){v.pause();v.currentTime=0;}}catch(e){}
   ov.remove();
 }
+// ── First-login setup checklist (2026-11-20, Ashley: "The first time they log in there should be a
+// whole flow that prompts them to bring over their clients (with a walkthrough tutorial), set up
+// payments (the square flow), full square integration if they have it, etc. any steps they need to
+// get ready to run their practice"). The setup questions (profession, hours, payments) are the wizard;
+// everything that takes leaving the screen (importing a file, signing in to Square, a logo) is this
+// checklist, which the wizard ends on and Home links back to. Every step checks ITSELF from what is
+// really in the app, so it survives the Square sign-in round trip, a reload, or a second device, and
+// nothing is ticked because she merely looked. The Square state is this account's own
+// /api/square/connection (_sqPayState, same cache as the "Get paid" card), never another account's.
+// Device-only marks use a non-sc_ prefix on purpose: they are this device's place in a checklist, not
+// account data, so they never ride sync.
+const _SETUP_LS={started:'scsetup_started',cash:'scsetup_cashonly',forms:'scsetup_forms_seen'};
+function _setupFlag(k){try{return localStorage.getItem(_SETUP_LS[k])==='1';}catch(e){return false;}}
+function _setupMark(k,on){try{if(on===false)localStorage.removeItem(_SETUP_LS[k]);else localStorage.setItem(_SETUP_LS[k],'1');}catch(e){}}
+let _setupSqLoading=false;
+function _setupSqRefresh(){
+  if(_setupSqLoading)return;
+  if(_sqPayState&&Date.now()-_sqPayStateAt<60000)return;
+  _setupSqLoading=true;
+  _sqConnState().then(st=>{
+    _setupSqLoading=false;
+    if(!st||typeof st.connected!=='boolean')return;
+    const was=_sqPayState&&_sqPayState.oauth;_sqPayState=st;_sqPayStateAt=Date.now();
+    try{const scr=_navCur&&_navCur.screen;
+      if(scr==='data-setup')renderDataSetup();
+      else if(scr==='home'&&!!st.oauth!==!!was){const c=document.getElementById('getting-started-card');if(c){const h=_gettingStartedHTML();c.innerHTML=h;if(!h)c.style.display='none';}}}catch(e){}
+  }).catch(()=>{_setupSqLoading=false;});
+}
+function _setupSq(){const st=_sqPayState;return st&&typeof st.connected==='boolean'?st:null;}
+function _setupSteps(){
+  const gs=_gsState();
+  const sq=_setupSq(),sqOn=!!(sq&&sq.oauth);
+  let svc=false;try{svc=_svcMenuIsCustom()||!!((squareCatalog&&squareCatalog.services)||[]).length;}catch(e){}
+  let book=false;try{book=!!(bookCfg&&bookCfg.on&&(_consultSlug||bookCfg.squareUrl));}catch(e){}
+  let logo=false;try{logo=!!(brandColors&&brandColors.logoDataUrl);}catch(e){}
+  let app=false;try{app=(typeof _isNativeApp==='function'&&_isNativeApp())||!!window.slickchartDesktop||!!localStorage.getItem('sc_getapp_dismissed');}catch(e){}
+  return [
+    {id:'pay',icon:'ti-credit-card',done:sqOn||_setupFlag('cash'),
+      t:'Set up card payments',
+      s:sqOn?'Square is connected. Card payments, links, invoices and deposits are ready.':_setupFlag('cash')?'You chose cash, Venmo or Zelle only. Set up Square any time.':'Card payments need your own free Square account. No fees on your first $1,000.',
+      act:sqOn?"nav('square-guide')":"nav('data-setup','pay')"},
+    {id:'square',icon:'ti-refresh',done:sqOn,hidden:!sqOn,
+      t:'Your Square is synced',s:'Clients, services and appointments come in from Square on their own.',act:"nav('square-sync')"},
+    {id:'clients',icon:'ti-users',done:gs.realCount>0,t:'Bring your clients over',
+      s:gs.realCount>0?(gs.realCount+' client'+(gs.realCount===1?'':'s')+' in SlickChart'):'A short walkthrough for moving your list from your old app',act:"nav('setup-clients')"},
+    {id:'services',icon:'ti-list-details',done:svc,t:'Add your services and prices',s:'What clients can book and what you charge',act:"nav('service-menu')"},
+    {id:'hours',icon:'ti-clock',done:gs.hours,t:'Set your working hours',s:'Clients can only request times you are open',act:"nav('biz-info')"},
+    {id:'booking',icon:'ti-calendar-share',done:book,t:'Turn on your booking link',s:'One link for Instagram and texts, clients book or request a time',act:"nav('booking-link')"},
+    {id:'forms',icon:'ti-clipboard-check',done:gs.anyForms||_setupFlag('forms'),t:'Check your intake and consent forms',s:'Ready made for your profession, edit anything you like',act:"_setupMark('forms');nav('forms')"},
+    {id:'logo',icon:'ti-photo',done:logo,t:'Add your logo',s:'Goes on your forms and your clients’ app',act:"nav('business-branding')"},
+    {id:'invite',icon:'ti-send',done:gs.anyInvited,t:'Invite your clients to their app',s:'A private link to summaries, aftercare, forms and rebooking',act:"nav('invite-clients')"},
+    {id:'app',icon:'ti-device-mobile',done:app,t:'Get the SlickChart phone app',s:'Alerts for new bookings and messages',act:'_setupGetApp()'}
+  ].filter(s=>!s.hidden);
+}
+function _setupDone(){const st=_setupSteps();return {n:st.filter(s=>s.done).length,of:st.length,steps:st};}
+function _setupGetApp(){
+  const APPLE='https://apps.apple.com/app/id6792418818',PLAY='https://play.google.com/store/apps/details?id=com.slickchart.app';
+  const ov=document.createElement('div');ov.id='setup-app-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:var(--ov-w,390px);max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const b=(h,ic,l)=>`<a href="${h}" target="_blank" rel="noopener" onclick="_markGetAppTapped();setTimeout(function(){var s=document.getElementById('setup-app-sheet');if(s)s.remove();if(_navCur&&_navCur.screen==='data-setup')renderDataSetup();},200);" style="display:flex;align-items:center;justify-content:center;gap:9px;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:12px;padding:13px;font-size:16px;font-weight:600;color:var(--p-ink);text-decoration:none;margin-bottom:10px;"><i class="ti ${ic}" aria-hidden="true" style="font-size:20px;"></i>${l}</a>`;
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:18px;">
+    <div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Get the SlickChart app</div>
+    <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:14px;">Download it on your phone, then sign in with this same email. Everything you set up is already saved to your account.</div>
+    ${b(APPLE,'ti-brand-apple','Get it on the App Store')}${b(PLAY,'ti-brand-google-play','Get it on Google Play')}
+    <button onclick="_markGetAppTapped();this.closest('#setup-app-sheet').remove();if(_navCur&&_navCur.screen==='data-setup')renderDataSetup();" style="width:100%;background:none;border:none;color:var(--p-mut2);font-size:16px;padding:9px;cursor:pointer;font-family:inherit;">I already have it</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+// The one-button payments card, shared by setup's first step and the checklist.
+function _setupPayCard(){
+  const st=_setupSq();
+  const bigBtn='width:100%;background:#1C1C1C;border:none;border-radius:12px;padding:15px;font-size:17px;font-weight:700;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;font-family:inherit;text-decoration:none;box-sizing:border-box;';
+  const linkBtn='background:none;border:none;padding:0;color:var(--accent-strong);font-weight:700;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:16px;';
+  if(st&&st.oauth)return '';
+  if(st&&st.expired)return `<div style="font-size:16px;color:var(--p-ink);line-height:1.55;margin-bottom:11px;">Your Square sign-in expired, so card payments are paused.</div><button onclick="_sqConnect()" data-setup-sq="reconnect" style="${bigBtn}">Reconnect Square</button>`;
+  const visited=!!onboardData.sqVisited;
+  return `<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:13px;"><i class="ti ti-gift" style="font-size:20px;color:var(--accent-strong);flex-shrink:0;margin-top:1px;"></i><div style="font-size:16px;color:var(--p-ink);line-height:1.55;"><b>You need a Square account to take card payments in SlickChart.</b> It is free, and our referral is built into the button: <b>no processing fees on your first $1,000</b> (Square’s offer, over 6 months).</div></div>
+    ${visited
+      ?`<div style="font-size:16px;color:var(--p-ink);line-height:1.55;margin-bottom:11px;"><b>Done signing up?</b> One more tap links it to SlickChart.</div><button onclick="_setupMark('started');_sqConnect()" data-setup-sq="connect" style="${bigBtn}">Connect my Square</button>
+         <div style="font-size:14px;color:var(--p-mut);text-align:center;margin-top:10px;">Still signing up? <a href="${SQ_REFERRAL}" target="_blank" rel="noopener" onclick="_setupSqSignup(event)" style="color:var(--accent-strong);font-weight:600;text-decoration:underline;">Open Square again</a></div>`
+      :`<a href="${SQ_REFERRAL}" target="_blank" rel="noopener" onclick="_setupSqSignup(event)" data-setup-sq="signup" style="${bigBtn}">Set up Square payments</a>
+         <div style="font-size:16px;color:var(--p-mut);text-align:center;margin-top:11px;">Already have Square? <button onclick="_setupMark('started');_sqConnect()" data-setup-sq="have" style="${linkBtn}">Connect it</button> and your clients, services and appointments come in too.</div>`}
+    ${_setupFlag('cash')?'':`<div style="font-size:14px;color:var(--p-mut);text-align:center;margin-top:10px;"><button onclick="_setupMark('cash');renderDataSetup()" data-setup-sq="cash" style="${linkBtn}font-size:14px;font-weight:600;">I only take cash, Venmo or Zelle</button></div>`}`;
+}
+function _setupSqSignup(ev){
+  onboardData.sqVisited=true;try{_obSave();}catch(e){}
+  const B=(typeof _nativeBrowser==='function')?_nativeBrowser():null;
+  if(B){try{if(ev)ev.preventDefault();B.open({url:SQ_REFERRAL,presentationStyle:'popover'});}catch(e){}}
+  setTimeout(()=>{if(_navCur&&_navCur.screen==='data-setup')renderDataSetup();},300);
+}
 function renderDataSetup(){
   setNav('account');document.getElementById('tt').textContent='Get Set Up';
-  const card=(icon,ic,bg,title,desc,onclick)=>`<div onclick="${onclick}" style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer;"><div style="width:44px;height:44px;border-radius:12px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:22px;color:${ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${title}</div><div style="font-size:16px;color:var(--p-mut);margin-top:2px;line-height:1.45;">${desc}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div>`;
+  _setupMark('started');
+  _setupSqRefresh();
+  if(typeof _consultSlug!=='undefined'&&_consultSlug===null&&!renderDataSetup._slugAsked){renderDataSetup._slugAsked=1;try{_loadBookingSlug().then(()=>{if(_navCur&&_navCur.screen==='data-setup')renderDataSetup();});}catch(e){}}
+  const {n,of,steps}=_setupDone();
+  const focus=(_navCur&&_navCur.screen==='data-setup'&&_navCur.data)||'';
+  const next=(focus==='pay'&&!(_setupSq()&&_setupSq().oauth)&&steps.find(s=>s.id==='pay'))||steps.find(s=>!s.done);
+  const card=(icon,ic,bg,title,desc,onclick)=>`<div onclick="${onclick}" style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer;"><div style="width:44px;height:44px;border-radius:12px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:22px;color:${ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${title}</div><div style="font-size:16px;color:var(--p-mut);line-height:1.45;margin-top:2px;">${desc}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div>`;
+  const nextBody=!next?'':next.id==='pay'?_setupPayCard()
+    :`<div style="font-size:16px;color:var(--p-mut2);line-height:1.55;margin-bottom:12px;">${next.s}</div><button onclick="${next.act}" data-setup-next="${next.id}" style="width:100%;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;">${next.t} →</button>`;
+  const row=s=>`<div data-setup-step="${s.id}" data-done="${s.done?1:0}" onclick="${s.act}" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--p-line3);cursor:pointer;">
+      <div style="width:30px;height:30px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${s.done?'var(--p-green)':'var(--p-surf3)'};border:1.5px solid ${s.done?'var(--p-green)':'var(--p-chip)'};">${s.done?'<i class="ti ti-check" style="font-size:16px;color:#fff;"></i>':`<i class="ti ${s.icon}" style="font-size:16px;color:var(--accent-strong);"></i>`}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${s.t}</div><div style="font-size:14px;color:var(--p-mut);line-height:1.45;margin-top:1px;">${s.s}</div></div>
+      <i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div>`;
   S.innerHTML=`
-  <div style="padding:14px 16px 4px;"><div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Let\u2019s get your practice set up</div><div style="font-size:16px;color:var(--p-mut);line-height:1.5;">Bring in your clients and products, and choose how you take bookings \u2014 in any order.</div></div>
+  <div style="padding:14px 16px 6px;">
+    <div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">${next?'Get ready to see clients':'You’re all set up ✨'}</div>
+    <div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:10px;">${next?'Everything your practice needs, one step at a time. Each step ticks itself off when it is done, and you can come back here any time from Home.':'Every step is done. You can change any of it whenever you like.'}</div>
+    <div style="display:flex;align-items:center;gap:10px;"><div style="flex:1;height:8px;border-radius:4px;background:var(--p-chip);overflow:hidden;"><div style="width:${Math.round(n/of*100)}%;height:100%;background:var(--accent);"></div></div><span data-setup-count style="font-size:14px;font-weight:700;color:var(--p-mut2);">${n} of ${of} done</span></div>
+  </div>
+  ${next?`<div data-setup-nextcard="${next.id}" style="margin:12px 16px 14px;background:var(--accent-tint);border:1.5px solid var(--accent);border-radius:16px;padding:15px;">
+    <div style="font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-strong);margin-bottom:6px;">Next step</div>
+    <div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">${next.t}</div>
+    ${nextBody}
+  </div>`:''}
+  <div style="margin:0 16px 14px;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;overflow:hidden;">
+    <div style="padding:11px 14px;font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--p-mut2);">Your setup checklist</div>
+    ${steps.map(row).join('')}
+  </div>
   ${_setupWalkthroughCard()}
-  <div class="sh"><h2>Bring your data in</h2></div>
-  ${card('ti-users','var(--p-green)','var(--p-surf2)','Import clients from a file','Moving from another system? Upload a spreadsheet (CSV) of your clients.',"nav('import-clients')")}
+  <div class="sh"><h2>More ways to bring things in</h2></div>
   ${card('ti-shopping-bag','var(--accent)','var(--accent-tint)','Import your product list','Upload a CSV of the products you sell or recommend.',"nav('import-products')")}
-  ${card('ti-user-plus','var(--p-purple)','var(--p-purple-bg)','Add clients one by one','Prefer to add them manually? Start a new client profile.',"nav('new-client')")}
-  ${card('ti-arrows-exchange','var(--p-blue)','var(--p-blue-bg)','Switching from another app?','Booksy, GlossGenius, Vagaro, Calendly and more, see how to bring your data over.',"nav('switch-app')")}
-  <div class="sh"><h2>Invite your clients</h2></div>
-  ${card('ti-send','var(--p-purple)','var(--p-purple-bg)','Invite your clients to their app','Send each client their own private link to summaries, aftercare, forms &amp; rebooking. Bulk-email everyone at once.',"nav('invite-clients')")}
-  <div class="sh"><h2>How you take bookings</h2></div>
-  ${card('ti-square','#000','#fff','I use Square','Connect Square to sync clients &amp; products, then book, reschedule &amp; cancel right here, with only your real open times shown, so you never double-book.',"nav('square-guide')")}
-  ${card('ti-calendar-check','var(--p-blue)','var(--p-blue-bg)','I book myself (no Square)','A real calendar you control, add, edit &amp; reschedule appointments and confirm client booking requests.',"nav('calendar')")}
+  ${card('ti-arrows-exchange','var(--p-blue)','var(--p-blue-bg)','Switching from another app?','What comes over from Booksy, GlossGenius, Vagaro and others, and what moving to Square takes.',"nav('switch-app')")}
   ${card('ti-calendar-share','var(--p-green)','var(--p-surf2)','Sync to Google &amp; Apple Calendar','Subscribe once so your SlickChart appointments show up in your phone calendar automatically.',"nav('connect-calendar')")}
-  <div style="margin:4px 16px 20px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:11px 13px;font-size:16px;color:var(--p-blue);line-height:1.55;"><i class="ti ti-info-circle" style="font-size:16px;"></i> No Square? No problem. SlickChart works fully on its own \u2014 charting, forms, photos, messaging, product recommendations, and booking requests. Square is optional.</div>
   <div style="height:20px;"></div>`;
+}
+// "Bring your clients over" walkthrough: where they are now, how to get the file out, and the upload.
+// Export steps come only from import-profiles.json entries someone has actually followed (verified);
+// every other app gets honest generic wording, never a guessed menu path.
+let _setupCliSrc='';
+function renderSetupClients(){
+  setNav('account');document.getElementById('tt').textContent='Your clients';
+  if(!_impProfiles){_loadImportProfiles().then(()=>{if(_navCur&&_navCur.screen==='setup-clients')renderSetupClients();});}
+  _setupSqRefresh();
+  const sqOn=!!(_setupSq()&&_setupSq().oauth);
+  const gs=_gsState();
+  const list=(_impProfiles||[]).filter(p=>p&&p.id!=='spreadsheet'&&p.id!=='square');
+  const src=_setupCliSrc;
+  const prof=src&&src!=='paper'&&src!=='square'?_impProfile(src):null;
+  const num=(n,on)=>`<div style="width:28px;height:28px;border-radius:50%;background:${on?'var(--accent)':'var(--p-surf3)'};color:${on?'var(--accent-ink)':'var(--p-mut2)'};font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${n}</div>`;
+  const chip=(id,label)=>{const on=src===id;return `<button onclick="_setupCliSrc='${_impEsc(id)}';renderSetupClients()" data-cli-src="${_impEsc(id)}" style="background:${on?'var(--accent)':'var(--p-surf2)'};color:${on?'var(--accent-ink)':'var(--p-ink)'};border:1px solid ${on?'var(--accent)':'var(--p-line-ctl)'};border-radius:999px;padding:8px 14px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">${_impEsc(label)}</button>`;};
+  let step2='',step3='';
+  if(src==='square'){
+    step2=sqOn?`<div style="font-size:16px;color:var(--p-ink);line-height:1.6;"><b>Your Square is connected,</b> so your clients come in on their own. Nothing to export.</div>`
+      :`<div style="font-size:16px;color:var(--p-mut2);line-height:1.6;margin-bottom:12px;">No file needed. Connect your Square and your clients, services and appointments come in on their own and stay in step.</div><button onclick="_setupMark('started');_sqConnect()" data-cli-go="square" style="width:100%;background:#1C1C1C;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;">Connect my Square</button>`;
+  }else if(src==='paper'){
+    step2=`<div style="font-size:16px;color:var(--p-mut2);line-height:1.6;margin-bottom:12px;">Add each client as they come in. A name is all you need to start a chart, and their intake form fills in the rest.</div><button onclick="nav('new-client')" data-cli-go="add" style="width:100%;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;">Add my first client</button>`;
+  }else if(src){
+    const label=prof?prof.label:'your old app';
+    const steps=prof&&prof.verified&&(prof.steps||[]).length
+      ?'<ol style="margin:0;padding-left:18px;font-size:16px;color:var(--p-mut2);line-height:1.8;">'+prof.steps.map(s=>'<li>'+_impEsc(s)+'</li>').join('')+'</ol>'
+      :`<div style="font-size:16px;color:var(--p-mut2);line-height:1.65;">In ${_impEsc(label)}, open your <b>client</b> (or <b>customer</b>) list and look for <b>Export</b> or <b>Download</b>. Choose <b>CSV</b> if it asks. Save the file on this ${_onComputer()?'computer':'phone'}.<br><span style="font-size:14px;color:var(--p-mut);">Can’t find it? ${_impEsc(label)}’s support can email you your client list as a spreadsheet. Any spreadsheet works.</span></div>`;
+    step2=steps;
+    step3=`<div style="font-size:16px;color:var(--p-mut2);line-height:1.6;margin-bottom:12px;">Pick the file. You see exactly what comes over before anything saves, and you can undo the whole import for 30 days.</div><button onclick="_impSource='${_impEsc(src==='other'?'spreadsheet':src)}';try{localStorage.setItem('sc_import_source',_impSource);}catch(e){}nav('import-clients')" data-cli-go="import" style="width:100%;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-file-import"></i> Upload my client list</button>`;
+  }
+  const box=(n,on,title,inner)=>`<div style="margin:0 16px 12px;background:var(--surf1);border:1px solid ${on?'var(--accent)':'var(--p-line-ctl)'};border-radius:14px;padding:14px;"><div style="display:flex;gap:11px;align-items:center;margin-bottom:${inner?'11px':'0'};">${num(n,on)}<div style="font-size:16px;font-weight:600;color:var(--p-ink);">${title}</div></div>${inner}</div>`;
+  S.innerHTML=`
+  <div style="padding:14px 16px 8px;">
+    <div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Bring your clients over</div>
+    <div style="font-size:16px;color:var(--p-mut);line-height:1.55;">${gs.realCount>0?`<b style="color:var(--p-green);">${gs.realCount} client${gs.realCount===1?' is':'s are'} already here.</b> Bring in more any time.`:'Three short steps. Names, emails, phone numbers, birthdays and notes come across.'}</div>
+  </div>
+  ${box(1,!src,'Where are your clients now?',`<div style="display:flex;flex-wrap:wrap;gap:7px;">${chip('square','Square')}${list.map(p=>chip(p.id,p.label)).join('')}${chip('other','A spreadsheet or another app')}${chip('paper','Paper, or nowhere yet')}</div>`)}
+  ${src?box(2,!!src&&!step3,src==='square'?'Connect Square':src==='paper'?'Add them as you go':'Get your client list out',step2):''}
+  ${step3?box(3,true,'Upload it here',step3):''}
+  ${src&&src!=='square'&&src!=='paper'?'<div style="margin:0 16px;">'+_impHonestyHTML()+'</div>':''}
+  <div style="margin:14px 16px 20px;"><button onclick="nav('data-setup')" style="width:100%;background:transparent;border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Back to my setup checklist</button></div>`;
 }
 
 function renderIntegrations(){
@@ -34331,7 +34513,7 @@ function renderIntegrations(){
   S.innerHTML=`
   
   <div style="margin:10px 16px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-blue);line-height:1.5;">These are the apps SlickChart connects to. Anything else comes in as a one-time CSV import.</div>
-  <div onclick="nav('data-setup')" style="margin:0 16px 12px;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-line-ctl);border-radius:12px;padding:13px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;"><div style="width:44px;height:44px;border-radius:12px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-upload" style="font-size:22px;color:var(--p-green);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Get set up / bring your data in</div><div style="font-size:16px;color:var(--p-mut2);margin-top:1px;">Import clients &amp; products, choose how you book</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div>
+  <div onclick="nav('data-setup')" style="margin:0 16px 12px;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-line-ctl);border-radius:12px;padding:13px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;"><div style="width:44px;height:44px;border-radius:12px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-upload" style="font-size:22px;color:var(--p-green);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Get set up</div><div style="font-size:16px;color:var(--p-mut2);margin-top:1px;">Your setup checklist: payments, clients, services, booking link</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div>
   <div class="sh"><h2>Connected</h2></div>
   <div id="integ-square-card" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">

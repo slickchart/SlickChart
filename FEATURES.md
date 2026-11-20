@@ -317,6 +317,7 @@ saved anywhere", not "does this always call that".
 | `_gcalStatus` | `/api/google-cal` | direct |
 | `_gcalStatusCached` | `/api/google-cal` | via `_gcalStatus` |
 | `_getGuideFile` | `/api/guide-file` | direct |
+| `_gettingStartedHTML` | `/api/square/connection` | via `_sqConnState` |
 | `_growCancel` | `/api/billing-status` | via `_loadBillingStatus` |
 | `_growCancel` | `/api/create-portal-session` | via `_openBillingPortal` |
 | `_growPause` | `/api/billing-status` | via `_loadBillingStatus` |
@@ -466,6 +467,9 @@ saved anywhere", not "does this always call that".
 | `_noteEditCancel` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_noteEditCancel` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_notifyBookingClient` | `/api/provider-message` | via `_sendProviderMessageToClient` |
+| `_obSqSignup` | `/api/feedback` | via `_sendBetaFeedback` |
+| `_obSqSignup` | `/api/square/connect` | via `_sqConnect` |
+| `_obSqSignup` | `/api/square/connection` | via `_sqConnState` |
 | `_offerCourseRecovery` | `/api/course-versions` | via `_cvFetchList` |
 | `_offerTakeBackDeleted` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_openBillingPortal` | `/api/create-portal-session` | direct |
@@ -791,6 +795,18 @@ saved anywhere", not "does this always call that".
 | `_setPhotoCategory` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_setProviderMsgStatus` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_setRecReason` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_setupGetApp` | `/api/consult-slug` | via `_loadConsultLink` |
+| `_setupGetApp` | `/api/square/connect` | via `_sqConnect` |
+| `_setupGetApp` | `/api/square/connection` | via `_sqConnState` |
+| `_setupPayCard` | `/api/consult-slug` | via `_loadConsultLink` |
+| `_setupPayCard` | `/api/square/connect` | via `_sqConnect` |
+| `_setupPayCard` | `/api/square/connection` | via `_sqConnState` |
+| `_setupSqRefresh` | `/api/consult-slug` | via `_loadConsultLink` |
+| `_setupSqRefresh` | `/api/square/connect` | via `_sqConnect` |
+| `_setupSqRefresh` | `/api/square/connection` | via `_sqConnState` |
+| `_setupSqSignup` | `/api/consult-slug` | via `_loadConsultLink` |
+| `_setupSqSignup` | `/api/square/connect` | via `_sqConnect` |
+| `_setupSqSignup` | `/api/square/connection` | via `_sqConnState` |
 | `_shareClientLinkSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_shareClientLinkSheet` | `/api/logout` | via `_doLogout` |
 | `_shareClientLinkSheet` | `/api/native-push` | via `_doLogout` |
@@ -1038,6 +1054,7 @@ saved anywhere", not "does this always call that".
 | `loadVcState` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `markAllNotifsRead` | `/api/clients` | via `_wholeSlimEvents` |
 | `markAllNotifsRead` | `/api/provider-form` | via `_flushInPersonForms` |
+| `maybeShowOnboarding` | `/api/square/connection` | via `_sqConnState` |
 | `moveClientProd` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `nav` | `/api/ai` | via `_aiComplete` |
 | `nav` | `/api/clients` | via `_wholeSlimEvents` |
@@ -1048,15 +1065,21 @@ saved anywhere", not "does this always call that".
 | `onSend` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `onboardBack` | `/api/feedback` | via `_sendBetaFeedback` |
 | `onboardBack` | `/api/square/connect` | via `_sqConnect` |
+| `onboardBack` | `/api/square/connection` | via `_sqConnState` |
 | `onboardConnectSquare` | `/api/square/connect` | via `_sqConnect` |
+| `onboardConnectSquare` | `/api/square/connection` | via `_sqConnState` |
 | `onboardCopyHoursToAll` | `/api/feedback` | via `_sendBetaFeedback` |
 | `onboardCopyHoursToAll` | `/api/square/connect` | via `_sqConnect` |
+| `onboardCopyHoursToAll` | `/api/square/connection` | via `_sqConnState` |
 | `onboardNext` | `/api/feedback` | via `_sendBetaFeedback` |
 | `onboardNext` | `/api/square/connect` | via `_sqConnect` |
+| `onboardNext` | `/api/square/connection` | via `_sqConnState` |
 | `onboardToggleDay` | `/api/feedback` | via `_sendBetaFeedback` |
 | `onboardToggleDay` | `/api/square/connect` | via `_sqConnect` |
+| `onboardToggleDay` | `/api/square/connection` | via `_sqConnState` |
 | `onboardToggleProf` | `/api/feedback` | via `_sendBetaFeedback` |
 | `onboardToggleProf` | `/api/square/connect` | via `_sqConnect` |
+| `onboardToggleProf` | `/api/square/connection` | via `_sqConnState` |
 | `openApptDetail` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `openApptDetail` | `/api/square/availability` | via `_adLoadSlots` |
 | `openApptDetail` | `/api/square/cancel-booking` | via `_doCancelSquare` |
@@ -1120,6 +1143,10 @@ saved anywhere", not "does this always call that".
 | `renderConnectCalendar` | `/api/calendar-url` | via `_loadCalFeedUrl` |
 | `renderConnectCalendar` | `/api/google-cal` | via `_gcalStatus` |
 | `renderCourseBuilder` | `/api/course-versions` | via `_cvMarkDeleted` |
+| `renderDataSetup` | `/api/consult-slug` | via `_loadConsultLink` |
+| `renderDataSetup` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `renderDataSetup` | `/api/square/connect` | via `_sqConnect` |
+| `renderDataSetup` | `/api/square/connection` | via `_sqConnState` |
 | `renderDeleteAccount` | `/api/delete-account` | via `_confirmDeleteAccount` |
 | `renderDeleteAccount` | `/api/guide-file` | via `_getGuideFile` |
 | `renderDeleteAccount` | `/api/store` | via `_confirmDeleteAccount` |
@@ -1134,11 +1161,6 @@ saved anywhere", not "does this always call that".
 | `renderForms` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `renderForms` | `/api/course-versions` | via `_cvMarkDeleted` |
 | `renderGuidePreview` | `/api/guide-file` | via `_getGuideFile` |
-| `renderHome` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `renderHome` | `/api/create-portal-session` | via `_openBillingPortal` |
-| `renderHome` | `/api/referral` | via `_refLoad` |
-| `renderHome` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `renderHome` | `/api/square/connect` | via `_sqConnect` |
 | `renderIntegrations` | `/api/google-cal` | via `_gcalStatus` |
 | `renderIntegrations` | `/api/square/connection` | via `_sqConnState` |
 | `renderInventory` | `/api/square/inventory` | via `_syncInventoryFromSquare` |
@@ -1161,6 +1183,7 @@ saved anywhere", not "does this always call that".
 | `renderNotes` | `/api/transcribe` | via `_probeWhisper` |
 | `renderOnboard` | `/api/feedback` | via `_sendBetaFeedback` |
 | `renderOnboard` | `/api/square/connect` | via `_sqConnect` |
+| `renderOnboard` | `/api/square/connection` | via `_sqConnState` |
 | `renderPasswordSecurity` | `/api/change-email` | via `_drawLoginEmail` |
 | `renderPasswordSecurity` | `/api/change-password` | via `_updatePassword` |
 | `renderPasswordSecurity` | `/api/sessions` | via `_loadSessions` |
@@ -1180,6 +1203,8 @@ saved anywhere", not "does this always call that".
 | `renderRoutineBuilder` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderRoutineBuilder` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `renderSessionDetail` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `renderSetupClients` | `/api/square/connect` | via `_sqConnect` |
+| `renderSetupClients` | `/api/square/connection` | via `_sqConnState` |
 | `renderShop` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `renderSignOnDevice` | `/api/provider-form` | via `_flushInPersonForms` |
 | `renderSquareGuide` | `/api/square/connect` | via `_sqConnect` |
@@ -1214,6 +1239,7 @@ saved anywhere", not "does this always call that".
 | `renderWriteNote` | `/api/beta-event` | via `_pingChart` |
 | `renderWriteNote` | `/api/referral` | via `_refLoad` |
 | `renderWriteNote` | `/api/square/catalog` | via `_autoSyncCatalog` |
+| `replayOnboarding` | `/api/square/connection` | via `_sqConnState` |
 | `requestCard` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `requestCard` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `requestCard` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -1269,6 +1295,7 @@ saved anywhere", not "does this always call that".
 | `showDemoInfo` | `/api/square/save-card` | via `_addCardOnFile` |
 | `showOnboarding` | `/api/feedback` | via `_sendBetaFeedback` |
 | `showOnboarding` | `/api/square/connect` | via `_sqConnect` |
+| `showOnboarding` | `/api/square/connection` | via `_sqConnState` |
 | `startProductDictate` | `/api/transcribe` | via `_probeWhisper` |
 | `startVoiceNote` | `/api/transcribe` | via `_probeWhisper` |
 | `submitSignOnDevice` | `/api/clients` | via `_syncSpecificClientsToServer` |
