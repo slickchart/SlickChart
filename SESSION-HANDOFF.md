@@ -9943,6 +9943,16 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzza: a price typed with a decimal comma is read right
+
+Sweep find (not a provider report). A phone set to a region that writes decimals with a comma puts ","
+on the price keypad, and `_price` stripped commas, so "45,50" became $4,550 on checkout, payment links,
+invoices, logged payments, line items, service prices and product costs. New `_typedNum` reads a comma
+followed by 1-2 digits as the decimal point, keeps "1,200" as 1200 and reads "1.234,50" as 1234.50. Also
+used for the two deposit amounts, the custom tip on Tap to Pay and the tax rate ("8,25" was 8).
+Test: `scratchpad/test-decimal-comma.mjs` (Chromium + WebKit, fails 7 on the old code); checkout, QR tip,
+Square checkout, product prices and Tap to Pay tests still pass.
+
 ## 2026-11-19 — build 2026-11-19zzz: a save that failed in the background goes again the moment the app is back
 
 On top of zzy (the "couldn't back up" warning now waits until the app has been on screen 10 s). Ashley's
