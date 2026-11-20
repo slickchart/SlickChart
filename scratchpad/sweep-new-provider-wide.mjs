@@ -62,6 +62,7 @@ if (process.env.SAFE) await page.addInitScript(() => { window.__SAFE = [47, 34];
 if (process.env.DARK) await page.addInitScript(() => { try { localStorage.setItem('sc_provider_theme', 'dark'); } catch (e) {} });
 if (process.env.DIRTY) await page.addInitScript(() => { window.__DIRTY = 1; });
 if (process.env.SLOW || process.env.DUPSAVE) await page.addInitScript(() => { window.__SLOW = 1; });
+if (process.env.BGFLIP) await page.addInitScript(() => { window.__vis = 'visible'; Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.__vis }); Object.defineProperty(document, 'hidden', { configurable: true, get: () => window.__vis === 'hidden' }); });
 if (process.env.TEXTZOOM) await page.addInitScript(z => { window.__TZOOM = z; }, +process.env.TEXTZOOM);
 await page.addInitScript(([app, native]) => { try { localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_login_email', 'new@spa.com'); localStorage.setItem('sc_hide_sample', '1'); } catch (e) {}
   if (native) window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} };
@@ -76,7 +77,7 @@ const NET = process.env.NET || ''; let netFail = false;
 const SLOW = !!(process.env.SLOW || process.env.DUPSAVE); const posts = []; let slowOn = false;
 await page.route('**/api/**', async r => { const u = r.request().url(); const m = r.request().method();
   if (process.env.SLOW && slowOn && m !== 'GET') { posts.push({ t: Date.now(), p: u.replace(/^https?:\/\/[^/]+/, '').split('?')[0], b: (r.request().postData() || '').slice(0, 160) }); await new Promise(z => setTimeout(z, 3000)); }
-  if (netFail && !/cloud-status|billing-status/.test(u) && !(u.includes('/api/store') && m === 'GET')) return NET === 'offline' ? r.abort('internetdisconnected') : NET === '401' ? r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Not signed in"}' }) : r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Something went wrong."}' });
+  if (netFail && !/cloud-status|billing-status/.test(u) && !(u.includes('/api/store') && m === 'GET')) return (NET === 'offline' || process.env.BGFLIP) ? r.abort('internetdisconnected') : NET === '401' ? r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Not signed in"}' }) : r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Something went wrong."}' });
   if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
   if (u.includes('/api/store') && m === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: seed }) });
   // BUSY=1: a full book from Square: 10 back-to-back today, 4 a day for two weeks, a few cancelled.
@@ -178,6 +179,31 @@ if (process.env.LEAVE) {
   }
   for (const r of rows) console.log(r[0].padEnd(6) + ' ' + r[1] + '  [' + r[2] + ']');
   console.log('LEAVE: ' + rows.length + ' screens with a box; lost ' + rows.filter(r => r[0] === 'LOST').length);
+  await browser.close(); srv.close(); process.exit(0);
+}
+// BGFLIP=1 (2026-11-20, after Ashley's Android warned "couldn't back up" each time she came back from the
+// camera): on every screen, make an edit, put the app in the background with no network for 4 s, bring it
+// back with the network still down for 1 s, then up. Nothing she can act on should be shown, and nothing
+// may throw. Reports every toast and error per screen, then exits.
+if (process.env.BGFLIP) {
+  const out = [];
+  for (const [k, scr] of seen) {
+    if (scr.renderErr) continue; if (ONLY && !ONLY.test(scr.s)) continue;
+    errs = []; cerrs = [];
+    await page.evaluate(([s, d]) => { try { document.getElementById('pro-toast')?.remove(); } catch (e) {} try { d == null ? nav(s) : nav(s, d); } catch (e) {}
+      try { localStorage.setItem('sc_bgflip_probe', String(Date.now())); } catch (e) {}
+      window.__toasts = []; if (!window.__toastW) { const o = window.proToast; window.proToast = function (m) { window.__toasts.push(String(m).slice(0, 140) + ' [' + document.visibilityState + ']'); return o.apply(this, arguments); }; window.__toastW = 1; }
+      window.__vis = 'hidden'; document.dispatchEvent(new Event('visibilitychange')); }, [scr.s, scr.d]);
+    netFail = true; const keepNet = NET;
+    await page.waitForTimeout(4000);
+    await page.evaluate(() => { window.__vis = 'visible'; document.dispatchEvent(new Event('visibilitychange')); });
+    await page.waitForTimeout(1000); netFail = !!keepNet; await page.waitForTimeout(3500);
+    const t = await page.evaluate(() => window.__toasts.slice());
+    out.push({ screen: k, toasts: t, errs: errs.concat(cerrs) });
+    const ee = errs.concat(cerrs).filter(x => !/\[Cloud sync\] save failed/.test(x)); if (t.length || ee.length) console.log('BG ' + k + ' ' + JSON.stringify({ t, e: errs.concat(cerrs) }));
+  }
+  fs.writeFileSync(OUT, JSON.stringify(out, null, 1));
+  console.log(`BGFLIP ${SIZE}: ${out.length} screens, ${out.filter(o => o.toasts.length).length} with a toast, ${out.filter(o => o.errs.length).length} with an error`);
   await browser.close(); srv.close(); process.exit(0);
 }
 for (const [k, scr] of seen) {
