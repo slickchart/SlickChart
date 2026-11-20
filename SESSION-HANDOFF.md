@@ -9943,6 +9943,11 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzzb: the photo "Assign to which client?" search ignores accents
+
+The last client search that did not: typing "jose" did not find José. Now uses `_normSearch` like the
+others. Test: `scratchpad/test-photo-assign-search.mjs` (both engines, fails 2 on the old code).
+
 ## 2026-11-19 — build 2026-11-19zzza: a price typed with a decimal comma is read right
 
 Sweep find (not a provider report). A phone set to a region that writes decimals with a comma puts ","
