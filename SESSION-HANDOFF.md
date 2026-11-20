@@ -9943,6 +9943,17 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzzf: landing page demo shows its bottom tabs
+
+Ashley saw it on slickchart.app: in the landing page's demo phone, the CLIENT app's bottom tabs were cut
+off. The client demo showed two banners (the demo's "Live demo" one and the client app's own "Sample
+preview" one), the second added 40px of body padding, and the demo CSS still made the app a full screen
+tall, so the tabs sat 40px below the frame. The provider demo's banner also covered its top bar. Now
+`build-demo.cjs` measures the demo banner (it wraps to 1 or 2 lines) and lays the app out below it at
+exactly the remaining height, and the client app skips its sample banner when `__SC_DEMO__` is set.
+Test: `scratchpad/test-landing-demo-tabs.mjs` (both demos, 9 phone/computer sizes, Chromium + WebKit;
+the old code fails 18 of 18).
+
 ## 2026-11-19 — build 2026-11-19zzze: client app sheets keep Tab on a computer
 
 The provider app got a sheet focus trap in zx; the client app never did, so a client on a laptop pressing

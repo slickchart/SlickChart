@@ -18,7 +18,21 @@ const fs = require('fs');
 const path = require('path');
 const dir = path.join(__dirname, '..');
 
-const BANNER_CSS = `#sc-demo-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#2a231b,#1a1208);border-bottom:1px solid #3c3227;color:#f3ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 14px;flex-wrap:wrap;text-align:center;}#sc-demo-banner b{color:#C8A882;}#sc-demo-banner button{background:none;border:1px solid #6b5d45;color:#C8A882;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}#sc-demo-banner button:hover{border-color:#C8A882;}html,body{height:100%;margin:0;}.shell{height:100vh !important;max-height:100vh !important;min-height:0 !important;}`;
+const BANNER_CSS = `#sc-demo-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#2a231b,#1a1208);border-bottom:1px solid #3c3227;color:#f3ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 14px;flex-wrap:wrap;text-align:center;}#sc-demo-banner b{color:#C8A882;}#sc-demo-banner button{background:none;border:1px solid #6b5d45;color:#C8A882;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}#sc-demo-banner button:hover{border-color:#C8A882;}html,body{height:100%;margin:0;}body{box-sizing:border-box;padding-top:var(--scdemo-top,0px) !important;padding-bottom:0 !important;}.shell{height:calc(100vh - var(--scdemo-top,0px)) !important;max-height:calc(100vh - var(--scdemo-top,0px)) !important;min-height:0 !important;}`;
+
+// The banner is fixed, and how tall it is depends on how many lines its text wraps to (2 lines in the
+// landing page's phone frame, 1 on a computer). The app is laid out BELOW it, with the app's own
+// height reduced by exactly that much, so the bottom tabs always sit on the bottom edge. Before this,
+// the client demo was a full screen tall AND pushed down 40px by its own sample banner, so its bottom
+// tabs were cut off in the landing page's demo phone (Ashley, 2026-11-20).
+const BANNER_FIT = `<script>
+(function(){try{
+  var b=document.getElementById('sc-demo-banner');if(!b)return;
+  function fit(){try{document.documentElement.style.setProperty('--scdemo-top',b.offsetHeight+'px');}catch(e){}}
+  fit();window.addEventListener('resize',fit);window.addEventListener('load',fit);
+  try{new ResizeObserver(fit).observe(b);}catch(e){}
+}catch(e){}})();
+</script>`;
 
 const ISOLATION = `<script>
 /* DEMO ISOLATION: this public demo shares its origin with the real app, so without this it would
@@ -92,6 +106,7 @@ function build(srcFile, outFile, bannerText, withSeed, withClientSeed) {
     (withSeed ? PROVIDER_LIGHT + '\n' + DEMO_SEED + '\n' : '') +
     (withClientSeed ? CLIENT_SEED + '\n' : '') +
     bannerDiv(bannerText) + '\n' +
+    BANNER_FIT + '\n' +
     RESET + '\n';
 
   html = html.replace(ANCHOR, replacement);
