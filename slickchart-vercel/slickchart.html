@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-19zzx';
+const APP_BUILD='2026-11-19zzy';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -5236,7 +5236,7 @@ const Cloud={
             // two tries. Combined with the 'online' listener below, this makes the reassurance we show
             // ("will sync when you're back online") actually true \u2014 the old code dropped them for good.
             this._retryLater(items,retryCount);
-            if(typeof proToast==='function')_cloudSyncToast('Changes couldn\u2019t back up to the cloud yet, they\u2019re saved on this device and will sync when you\u2019re back online.');
+            if(typeof proToast==='function')_cloudSyncToast('Changes couldn\u2019t back up to the cloud yet, they\u2019re saved on this device and will sync when you\u2019re back online.','HTTP '+r.status);
           }
         }
       })
@@ -5245,7 +5245,7 @@ const Cloud={
         // Restore only keys not re-edited while the request was in flight (see above), then keep retrying
         // with backoff (a network error usually means offline \u2014 the 'online' listener will also kick it).
         this._retryLater(items,retryCount);
-        if(retryCount>0&&typeof proToast==='function')_cloudSyncToast('Changes couldn\u2019t back up to the cloud yet, they\u2019re saved on this device and will sync when you\u2019re back online.');
+        if(retryCount>0&&typeof proToast==='function')_cloudSyncToast('Changes couldn\u2019t back up to the cloud yet, they\u2019re saved on this device and will sync when you\u2019re back online.',(e&&e.message)||'network');
       });
   },
 };
@@ -29195,13 +29195,23 @@ async function _updatePassword(){
     const d=await r.json().catch(()=>({}));proToast(d.error||'Could not update password \u2014 check your current password');
   }catch(e){proToast('Could not reach the server \u2014 try again');}
 }
-let _cloudSyncToastAt=0;
-function _cloudSyncToast(msg){
+let _cloudSyncToastAt=0,_cloudSyncShownAt=0,_cloudSyncFailLogAt=0;
+// When the app is in the background (the camera is open over it, the phone is locked) the phone pauses
+// its network, so a save in flight fails and is retried, and the first retry on coming back can fail
+// before the network is up again. Ashley's Android phone showed this message 4 times in one hour on
+// 2026-11-19 doing nothing but taking room photos (provider watch). Nothing was wrong: the save stays
+// queued and goes up on its own. So the message waits until the app has been on screen for 10 s;
+// a save that still fails after that is real and she is told.
+try{document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')_cloudSyncShownAt=Date.now();});}catch(_){}
+function _cloudSyncToast(msg,why){
+  const now=Date.now();
+  // Say why in the launch log (once a minute), so a real failure can be read without asking her.
+  try{if(now-_cloudSyncFailLogAt>60000){_cloudSyncFailLogAt=now;_alAdd('store-retry',String(why||'')+(document.visibilityState==='hidden'?' (in background)':''));}}catch(_){}
+  try{if(document.visibilityState==='hidden')return;if(_cloudSyncShownAt&&now-_cloudSyncShownAt<10000)return;}catch(_){}
   // Background cloud-sync failures fire on a timer, independent of what the provider is doing,
   // so a flaky connection could pop this repeatedly on screens unrelated to the failed save.
   // Throttle to once per 30s and use the (auto-dismissing) error tone so it informs without
   // nagging or masquerading as a success.
-  const now=Date.now();
   if(now-_cloudSyncToastAt<30000)return;
   _cloudSyncToastAt=now;
   if(typeof proToast==='function')proToast(msg,0,'error');
