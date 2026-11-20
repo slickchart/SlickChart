@@ -11188,3 +11188,26 @@ punches and the reward (20-50% off or a free service). Her Gmail draft promises 
   discounted price); Undo puts every price back and voids the redeem.
 - Tests: `scratchpad/test-perks.mjs` 44/44 in Chromium and WebKit; `sweep-sync-growth.mjs` no growth/echo/dups;
   checkout-qr-tip, square-pay-cta, tap-to-pay, decimal-comma, payment-detail-buttons all pass.
+
+## 2026-11-20 — Build 2026-11-20d: first-login setup flow with one-button Square payments (PREVIEW)
+
+Ashley: "make the provider setup include making it very obvious that Square signup is needed for in app
+payments ... automatically fill in the $1000 free processing referral code" / "make it an easy one buton
+setup" / "the first time they log in there should be a whole flow that prompts them to bring over their
+clients (with a walkthrough tutorial), set up payments, full square integration if they have it, etc."
+- **Wizard step `square`** is now "Get paid right in SlickChart": a Square account is needed for card
+  payments, links/invoices, deposits, cards on file and membership billing. One big button "Set up Square
+  payments" = `SQ_REFERRAL` (squareup.com/refer/2832A5A0B0 redirects to refer-a-seller?signup_token=...,
+  checked live 2026-11-20, so the referral is in the link). After tapping, the card becomes "Connect my
+  Square" (`onboardConnectSquare` -> `_sqConnect`); `onboardData.sqVisited` survives a reload. Footer is
+  "Skip for now". Connected -> "Square is connected".
+- **Get Set Up (`data-setup`) is the setup checklist** (`_setupSteps`): pay, square (only when
+  connected), clients, services, hours, booking, forms, logo, invite, app. Each ticks from real data;
+  the only device marks are `scsetup_started`, `scsetup_cashonly`, `scsetup_forms_seen` (NOT sc_, never
+  synced). The wizard ends on it ("Start my setup checklist"), a Square return (`?sq=`) goes back to it
+  when setup was started, and Home's getting-started card follows the same list (stays for a set-up
+  provider even with 3+ clients; old rule for everyone else).
+- **`setup-clients`**: "Bring your clients over" walkthrough. Export steps only from verified
+  import-profiles entries; everyone else gets generic wording. Upload opens `import-clients` set to that app.
+- Tests: `scratchpad/test-onboard-square-step.mjs`, `scratchpad/test-setup-checklist.mjs`, Chromium AND
+  WebKit; `test-square-pay-cta`, `test-onboard-resume` still pass.
