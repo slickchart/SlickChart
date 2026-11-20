@@ -9943,6 +9943,14 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzz: a save that failed in the background goes again the moment the app is back
+
+On top of zzy (the "couldn't back up" warning now waits until the app has been on screen 10 s). Ashley's
+Android logged that warning 4 times on 2026-11-19 with the app hidden or 26 ms after it came back. The
+queued save used to wait out its backoff (up to a minute after a few failed tries while the phone was
+locked); now coming back to the app sends it 0.6 s later. Test: `scratchpad/test-sync-toast-hidden.mjs`
+(Chromium + WebKit, fails 3 on the old code), and `test-sync-toast-background.mjs` still passes.
+
 ## 2026-11-19 — build 2026-11-19zzw: a pasted sign-in code keeps all 6 digits
 
 The client email-code box, the authenticator box at log in, and the two authenticator boxes in
