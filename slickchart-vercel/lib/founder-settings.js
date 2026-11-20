@@ -17,6 +17,13 @@ export const FOUNDER_SETTINGS = {
   // from them: "make sure it doesnt happen again". Separate from the one above on purpose: this one
   // fires only when someone who paid is actively being turned away (lib/signup-rescue.js).
   signup_problem_alert_on: { def: 1, min: 0, max: 1, label: 'Tell me right away when someone who paid is turned away at sign-up' },
+  // Membership billing on the server (lib/perks-billing.js, 2026-11-20). Ashley chose "report-only
+  // first": while this is 0 the hourly job only lists who it WOULD charge and charges nobody. She
+  // turns it on from Loyalty & memberships after reading that list.
+  membership_autobill_live: { def: 0, min: 0, max: 1, label: 'Charge memberships automatically from the server (off = report only)' },
+  membership_autobill_start_hour: { def: 9, min: 0, max: 23, label: 'Earliest hour of the day to charge a membership (provider\u2019s own time)' },
+  membership_autobill_end_hour: { def: 20, min: 1, max: 24, label: 'Stop charging memberships at this hour (provider\u2019s own time)' },
+  membership_autobill_retry_hours: { def: 24, min: 1, max: 168, label: 'Hours to wait before trying a declined membership card again' },
 };
 
 let _ready = false;
@@ -50,6 +57,8 @@ export async function getFounderSettings(q) {
   } catch (e) {}
   // The alert can never come before the email it follows.
   if (out.orphan_alert_hours <= out.orphan_email_hours) out.orphan_alert_hours = out.orphan_email_hours + 1;
+  // The charging window always holds at least one hour.
+  if (out.membership_autobill_end_hour <= out.membership_autobill_start_hour) out.membership_autobill_end_hour = Math.min(24, out.membership_autobill_start_hour + 1);
   return out;
 }
 

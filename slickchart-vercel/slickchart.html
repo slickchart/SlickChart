@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-20b';
+const APP_BUILD='2026-11-20c';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -33087,7 +33087,7 @@ function _loadPerkPlans(){
   try{const raw=(typeof _lsGet==='function')?_lsGet('sc_perk_plans'):localStorage.getItem('sc_perk_plans');
     const a=JSON.parse(raw||'null');if(Array.isArray(a))perkPlans=a.filter(function(p){return p&&typeof p==='object'&&p.id&&p.kind;});}catch(e){}
   try{_pkScanPayments();}catch(e){}
-  try{setTimeout(function(){try{_pkAutoCharge();}catch(e){}},4000);}catch(e){}
+  try{setTimeout(function(){_pkSyncServerCharges().catch(function(){}).then(function(){try{_pkAutoCharge();}catch(e){}});},4000);}catch(e){}
 }
 function _savePerkPlans(){
   try{_stampRows('sc_perk_plans',perkPlans);}catch(e){}
@@ -33362,10 +33362,17 @@ function _pkPendingPay(jid,per){
   try{return (_payments||[]).find(function(p){return p&&p.status==='unpaid'&&Array.isArray(p.perkActs)&&p.perkActs.some(function(a){return a&&a.kind==='renew'&&a.m===jid&&_pkInt(a.per,-1)===per;});})||null;}catch(e){return null;}
 }
 function _pkMemNote(ms){return 'Membership · '+(ms.s.name||'')+' · '+_pkFmtDate(ms.nextDue);}
-function _pkMemMarkPaid(cid,jid){
+async function _pkMemMarkPaid(cid,jid){
   const c=CL[cid];const j=c&&_pkFindEv(c,jid);if(!j)return;const ms=_pkMemState(c,j);
   const rid='rn_'+jid+'_'+ms.nextPer;if(_pkHas(c,rid)){_pkClose();return;}
-  const pend=_pkPendingPay(jid,ms.nextPer);if(pend){pend.status='paid';pend.paidDate=_todayISO();pend._ts=Date.now();_savePayments();_pkClose();proToast('Marked the sent request paid \u2713');_pkRerender(cid);return;}
+  // Tell the shared record first, so the server never charges a month she was paid in cash. If it
+  // was charged to the card a moment ago (by the server or another device), say so instead of
+  // recording a second payment. No connection: record it here as before.
+  let srv=null;try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)srv=await _sqFetch('/api/membership-charges',{method:'POST',body:{action:'mark',jid:jid,per:ms.nextPer,amount:ms.price,cid:cid,method:'cash'}});}
+  catch(e){if(e&&e.code==='busy'){const res=document.getElementById('pk-pay-res');if(res)res.innerHTML='<div style="font-size:16px;color:var(--p-red);margin-top:6px;">'+_fileEsc(e.message)+'</div>';return;}}
+  if(srv&&srv.already==='square'){await _pkSyncServerCharges(true);_pkClose();proToast('This one was already charged to their card, so nothing was added');_pkRerender(cid);return;}
+  if(srv&&srv.already){_pkAdd(cid,{id:rid,t:'renew',m:jid,per:ms.nextPer,amt:ms.price});_pkClose();proToast('This one was already recorded as paid');_pkRerender(cid);return;}
+  const pend=_pkPendingPay(jid,ms.nextPer);if(pend){pend.status='paid';pend.paidDate=_todayISO();pend._ts=Date.now();_savePayments();_pkClose();proToast('Marked the sent request paid ✓');_pkRerender(cid);return;}
   const pay=_addPayment({clientId:cid,clientName:c.name,amount:ms.price,method:'Cash',status:'paid',date:_todayISO(),note:_pkMemNote(ms)+' (cash / other)',source:'manual',perkSkip:1,_ts:Date.now()});
   _pkAdd(cid,{id:rid,t:'renew',m:jid,per:ms.nextPer,amt:ms.price,pay:pay&&pay.id});
   _pkClose();proToast('Membership payment recorded ✓');_pkRerender(cid);
@@ -33375,10 +33382,11 @@ function _pkMemCheckout(cid,jid){
   _pkClose();nav('checkout',cid);
   setTimeout(function(){try{_coItems.push({name:'Membership: '+(ms.s.name||''),price:ms.price,qty:1,variationId:null,kind:'service',taxable:false,note:'',_pkAct:{cid:cid,kind:'renew',m:jid,per:ms.nextPer}});_coRenderItems();const d=document.getElementById('co-desc');if(d&&!d.value)d.value='Membership · '+(ms.s.name||'');}catch(e){}},0);
 }
-// Charge one membership payment to the client's saved Square card. The idempotency key is the
-// membership and the period, so a retry, a double tap or a second device can never charge the
-// same month twice: Square answers with the payment it already made.
-async function _pkChargeOne(cid,jid,early){
+// Charge one membership payment to the client's saved Square card, through the ONE shared record of
+// charged periods (/api/membership-charges, shared with the hourly server job). Whoever claims the
+// period first charges it, so a retry, a double tap, a second device or the server can never charge
+// the same month twice. `force` is her own tap: it may retry a card that was declined earlier today.
+async function _pkChargeOne(cid,jid,early,force){
   const c=CL[cid];const j=c&&_pkFindEv(c,jid);if(!j)throw new Error('Membership not found');
   const ms=_pkMemState(c,j);
   if(!early&&!ms.due)throw new Error('nothing is due yet');
@@ -33387,20 +33395,53 @@ async function _pkChargeOne(cid,jid,early){
   if(_pkPendingPay(jid,ms.nextPer))throw new Error('a payment request for this period is already out');
   if(!c.squareId)throw new Error('Not linked to Square');
   if(!(ms.price>0))throw new Error('No price set');
-  const d=await _sqFetch('/api/square/charge-card?customerId='+encodeURIComponent(c.squareId));
-  const card=(d.cards||[])[0];if(!card)throw new Error('No saved card');
-  const key=('sc-mb-'+String(jid).replace(/[^a-zA-Z0-9_-]/g,'')+'-'+ms.nextPer).slice(0,45);
-  const r=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId:card.id,amount:ms.price,note:_pkMemNote(ms),idempotencyKey:key}});
-  const pid='pay_mb_'+String(jid).replace(/[^A-Za-z0-9_-]/g,'')+'_'+ms.nextPer;
-  const pay=_payments.find(function(x){return x&&x.id===pid;})||_addPayment({id:pid,clientId:cid,clientName:c.name,amount:ms.price,method:'Square',status:'paid',date:_todayISO(),note:_pkMemNote(ms)+' (card on file)',source:'square',squarePaymentId:(r&&r.paymentId)||'',perkSkip:1,_ts:Date.now()});
+  const r=await _sqFetch('/api/membership-charges',{method:'POST',body:{action:'charge',jid:jid,per:ms.nextPer,amount:ms.price,customerId:c.squareId,cid:cid,note:_pkMemNote(ms),force:!!force}});
+  if(r&&r.already&&r.method&&r.method!=='square'){_pkAdd(cid,{id:rid,t:'renew',m:jid,per:ms.nextPer,amt:ms.price});return {already:true};}
+  const pay=_pkRecordCardPay(cid,jid,ms.nextPer,ms.price,_pkMemNote(ms),(r&&r.paymentId)||'',_todayISO());
   _pkAdd(cid,{id:rid,t:'renew',m:jid,per:ms.nextPer,amt:ms.price,pay:pay&&pay.id});
-  return {ok:true,card:card,amount:ms.price};
+  return r&&r.already?{already:true}:{ok:true,amount:ms.price,last4:(r&&r.last4)||''};
+}
+// The payment record for a period charged to the card. Its id comes from the membership and the
+// period, so this device, another device and the server's record all land on the same one.
+function _pkRecordCardPay(cid,jid,per,amount,note,sqId,date){
+  const c=CL[cid];const pid='pay_mb_'+String(jid).replace(/[^A-Za-z0-9_-]/g,'')+'_'+per;
+  return _payments.find(function(x){return x&&x.id===pid;})||_addPayment({id:pid,clientId:cid,clientName:(c&&c.name)||'',amount:amount,method:'Square',status:'paid',date:date||_todayISO(),note:note+' (card on file)',source:'square',squarePaymentId:sqId||'',perkSkip:1,_ts:Date.now()});
+}
+// Bring in what the shared record knows and this device does not: a period the server (or another
+// device) charged while this one was closed becomes a renewal and a payment here, and a declined
+// automatic charge shows as failed. Same derived ids as everywhere else, so running it again, or on
+// every device, changes nothing.
+let _pkSyncAt=0,_pkServerLive=null;
+async function _pkSyncServerCharges(force){
+  if(_pkBootQuiet())return null;
+  try{if(!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token))return null;}catch(e){return null;}
+  if(!force&&Date.now()-_pkSyncAt<60000)return null;
+  if(!perkPlans.some(function(p){return p&&p.kind==='membership';}))return null;
+  _pkSyncAt=Date.now();
+  let d=null;try{d=await _sqFetch('/api/membership-charges');}catch(e){return null;}
+  if(d&&typeof d.live==='boolean')_pkServerLive=d.live;
+  const rows=(d&&Array.isArray(d.rows))?d.rows:[];let added=0,dirty=false;
+  rows.forEach(function(r){
+    const c=r&&r.cid&&CL[r.cid];if(!c)return;const j=_pkFindEv(c,r.jid);if(!j||j.t!=='join')return;
+    const per=_pkInt(r.per,-1);if(per<0)return;const rid='rn_'+r.jid+'_'+per;
+    if(r.status==='paid'&&r.method==='square'&&!_pkHas(c,rid)){
+      const ms=_pkMemState(c,j);const amt=_money(_pkNum(r.amount,ms.price));const date=r.at?_todayISOOf(new Date(r.at)):_todayISO();
+      const note='Membership · '+(ms.s.name||'')+' · '+_pkFmtDate(_pkAddPeriods(String(j.start||j.d).slice(0,10),ms.s.interval||'month',_pkInt(ms.s.every,1),per));
+      const pay=_pkRecordCardPay(r.cid,r.jid,per,amt,note,r.paymentId||'',date);
+      _pkAdd(r.cid,{id:rid,t:'renew',m:r.jid,per:per,amt:amt,pay:pay&&pay.id},{noSave:true});added++;dirty=true;
+    }else if(r.status==='failed'&&!_pkHas(c,rid)){
+      const day=r.at?_todayISOOf(new Date(r.at)):_todayISO();const fid='af_'+r.jid+'_'+per+'_'+day;
+      if(!_pkHas(c,fid)){_pkAdd(r.cid,{id:fid,t:'autofail',m:r.jid,per:per,why:String(r.error||'did not go through').slice(0,120),d:day},{noSave:true});dirty=true;}
+    }
+  });
+  if(dirty){saveClients();try{_pkRerender();}catch(e){}}
+  return {added:added};
 }
 let _pkCharging=false;
 async function _pkMemCharge(cid,jid){
   if(_pkCharging)return;_pkCharging=true;
   const res=document.getElementById('pk-pay-res');if(res)res.innerHTML='<div style="font-size:16px;color:var(--p-mut);margin-top:6px;"><i class="ti ti-loader-2"></i> Charging…</div>';
-  try{const r=await _pkChargeOne(cid,jid,true);_pkClose();proToast(r.already?'Already paid for this period':('Charged $'+_fmtMoney(r.amount)+' ✓'));_pkRerender(cid);}
+  try{const r=await _pkChargeOne(cid,jid,true,true);_pkClose();proToast(r.already?'Already paid for this period':('Charged $'+_fmtMoney(r.amount)+' ✓'));_pkRerender(cid);}
   catch(e){if(res)res.innerHTML='<div style="font-size:16px;color:var(--p-red);margin-top:6px;">'+_fileEsc((e&&e.message)||'The charge did not go through.')+'</div>';}
   finally{_pkCharging=false;}
 }
@@ -33584,6 +33625,7 @@ let _pkAutoBusy=false,_pkAutoLast={};
 function _pkAutoEligible(c,j,ms){const pl=_pkPlan(j.p);return !!(pl&&pl.autoCharge&&ms.autopay&&c.squareId&&ms.due&&ms.price>0&&!_pkPendingPay(j.id,ms.nextPer));}
 async function _pkAutoCharge(force){
   if(_pkAutoBusy||_pkBootQuiet())return null;
+  try{await _pkSyncServerCharges();}catch(e){}
   try{if(!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token))return null;}catch(e){return null;}
   if(!perkPlans.some(function(p){return p&&p.kind==='membership'&&p.autoCharge;}))return null;
   let last=0;try{last=+localStorage.getItem('pk_auto_at')||0;}catch(e){}
@@ -33612,6 +33654,50 @@ async function _pkAutoCharge(force){
 }
 try{setInterval(function(){try{_pkAutoCharge();}catch(e){}},3600000+17000);}catch(e){}
 function _pkAutoFail(c,j,ms){const evs=_pkLive(c).filter(function(e){return e.t==='autofail'&&e.m===j.id&&_pkInt(e.per,-1)===ms.nextPer;});return evs.length?evs[evs.length-1]:null;}
+// Ashley's own card (founder only): what the server billing job did or would do, and its switch. She
+// chose report-only first (2026-11-20): the job lists who it WOULD charge until she turns it on here.
+let _pkFbConfirm=false;
+async function _pkFounderBillFill(){
+  const el=document.getElementById('pk-founder-bill');if(!el)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+  let j=null;try{const r=await fetch('/api/admin/membership-billing',{headers:{'Authorization':'Bearer '+tok}});j=await r.json().catch(function(){return null;});if(!r.ok)j=null;}catch(e){j=null;}
+  if(!j||!j.ok||!document.getElementById('pk-founder-bill'))return;
+  const st=j.settings||{},live=st.membership_autobill_live===1;
+  const day=(j.days||[])[0];
+  const rows=day?day.accounts:[];
+  const when=function(t){try{return t?new Date(t).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';}catch(e){return '';}};
+  const list=rows.length?rows.map(function(a){
+    const head=_fileEsc(a.account)+': '+(a.mode==='live'?(a.charged+' charged'+(a.failed?(', '+a.failed+' failed'):'')+' \u00b7 $'+_fmtMoney(a.amount)):(a.blocked==='nosquare'?(a.due+' waiting, Square not connected'):(a.wouldCharge+' would be charged \u00b7 $'+_fmtMoney(a.amount)+(a.noCard?(' \u00b7 '+a.noCard+' with no saved card'):''))));
+    const items=(a.items||[]).slice(0,30).map(function(x){return '<div style="font-size:14px;color:var(--p-mut);padding-left:10px;">'+_fileEsc(x.who)+' \u00b7 '+_fileEsc(x.plan||'')+' \u00b7 $'+_fmtMoney(x.amount)+' \u00b7 due '+_pkFmtDate(x.due)+(x.result?(' \u00b7 '+(x.result==='charged'?'charged':('failed: '+_fileEsc(x.why||'')))):(' \u00b7 card '+(x.card==='saved'?'saved':(x.card==='none'?'<b>not saved</b>':'not checked'))))+'</div>';}).join('');
+    return '<div style="font-size:16px;color:var(--p-ink);margin-top:6px;">'+head+'</div>'+items;}).join(''):'<div style="font-size:16px;color:var(--p-mut);margin-top:6px;">No memberships with automatic billing were due'+(day?(' on '+_pkFmtDate(day.day)):' yet')+'.</div>';
+  const inp=function(k){const l=(j.labels||{})[k]||{};return '<label style="display:block;font-size:14px;color:var(--p-mut);margin-top:8px;">'+_fileEsc(l.label||k)+'<input class="fi" type="number" inputmode="numeric" id="pkfb-'+k+'" min="'+l.min+'" max="'+l.max+'" value="'+_fileEsc(String(st[k]))+'" style="margin-top:4px;"></label>';};
+  document.getElementById('pk-founder-bill').innerHTML='<div role="region" aria-label="Server membership billing" style="margin:0 0 12px;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:12px 14px;line-height:1.5;">'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);"><i class="ti ti-server" aria-hidden="true"></i> Server billing, only you see this</div>'
+    +'<div style="font-size:16px;color:'+(live?'var(--p-green)':'var(--p-amber)')+';font-weight:600;margin-top:4px;">'+(live?'On: memberships are charged on their due day, even when the app is closed.':'Report only: the server lists who it would charge and charges nobody.')+'</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);">'+(j.lastRun?('Last run '+when(j.lastRun.at)+(j.lastRun.ok===false?' (it had a problem)':'')):'It has not run yet. It runs every hour.')+(day?(' \u00b7 list for '+_pkFmtDate(day.day)):'')+'</div>'
+    +list
+    +'<details style="margin-top:8px;"><summary style="font-size:16px;color:var(--p-ink);cursor:pointer;">Hours and retries</summary>'+inp('membership_autobill_start_hour')+inp('membership_autobill_end_hour')+inp('membership_autobill_retry_hours')
+    +'<button class="btng" onclick="_pkFounderBillSave()" style="width:100%;border-radius:12px;margin-top:8px;justify-content:center;">Save hours</button></details>'
+    +'<button class="'+(live?'btng':'btnp')+'" id="pkfb-switch" onclick="_pkFounderBillSwitch('+(live?0:1)+')" style="width:100%;border-radius:12px;margin-top:10px;justify-content:center;">'+(live?'Turn off, back to report only':'Turn on real charging')+'</button>'
+    +'<div id="pkfb-res" role="status" style="font-size:14px;color:var(--p-mut);margin-top:6px;"></div></div>';
+  _pkFbConfirm=false;
+}
+async function _pkFounderBillPost(body){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  const r=await fetch('/api/admin/membership-billing',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)});
+  const k=await r.json().catch(function(){return null;});if(!r.ok||!k||!k.ok)throw new Error((k&&k.error)||'Could not save. Try again.');return k;
+}
+async function _pkFounderBillSwitch(on){
+  const res=document.getElementById('pkfb-res'),b=document.getElementById('pkfb-switch');
+  if(on&&!_pkFbConfirm){_pkFbConfirm=true;if(b)b.textContent='Tap again to start charging real cards';if(res)res.textContent='From the next hourly run, due memberships are charged to the client\u2019s saved card.';return;}
+  try{await _pkFounderBillPost({membership_autobill_live:on?1:0});proToast(on?'Server billing is on':'Back to report only');_pkFounderBillFill();}
+  catch(e){if(res)res.textContent=e.message;}
+}
+async function _pkFounderBillSave(){
+  const res=document.getElementById('pkfb-res');const body={};
+  ['membership_autobill_start_hour','membership_autobill_end_hour','membership_autobill_retry_hours'].forEach(function(k){const v=(document.getElementById('pkfb-'+k)||{}).value;if(v!==''&&v!=null)body[k]=v;});
+  try{await _pkFounderBillPost(body);proToast('Saved');_pkFounderBillFill();}catch(e){if(res)res.textContent=e.message;}
+}
 function _pkSetAutopay(cid,jid,on){_pkAdd(cid,{t:'autopay',m:jid,on:on?1:0});_pkClose();proToast(on?'Automatic charging on for this client':'Automatic charging off for this client');_pkRerender(cid);}
 // ── her plans: the Rewards screen ──
 let _pkTab='loyalty';
@@ -33641,6 +33727,8 @@ const _PK_IDEAS={
 };
 function renderPerks(){
   setNav('more');document.getElementById('tt').textContent='Loyalty & memberships';
+  try{_pkSyncServerCharges().catch(function(){});}catch(e){}
+  if(_isFounder&&_pkTab==='membership')setTimeout(function(){_pkFounderBillFill();},0);
   const tabs=[['loyalty','Loyalty cards'],['membership','Memberships'],['package','Packages']];
   const list=_pkPlansOf(_pkTab,true);const due=_pkDueList();
   const intro={loyalty:'A digital punch card. You choose how many punches it takes and the reward. Clients see their card in their app.',
@@ -33651,7 +33739,7 @@ function renderPerks(){
   ${due.length?`<div style="margin:8px 16px 12px;background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:12px 14px;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;"><i class="ti ti-calendar-heart" aria-hidden="true"></i> ${due.length} membership payment${due.length===1?'':'s'} due</div>${due.slice(0,12).map(function(x){return '<button onclick="_pkMemPaySheet(\''+_pkA(x.cid)+'\',\''+_pkA(x.j.id)+'\')" style="width:100%;display:flex;justify-content:space-between;gap:8px;background:none;border:none;border-top:1px solid var(--p-line3);padding:8px 0;font-size:16px;color:var(--p-ink);cursor:pointer;font-family:inherit;text-align:left;"><span>'+_fileEsc(x.c.name)+' \u00b7 '+_fileEsc(x.ms.s.name||'')+(_pkAutoFail(x.c,x.j,x.ms)?' <span style="color:var(--p-red);">(automatic charge failed)</span>':'')+'</span><span style="color:var(--p-mut);white-space:nowrap;">$'+_fmtMoney(x.ms.price)+' · '+_pkFmtDate(x.ms.nextDue)+'</span></button>';}).join('')}${due.some(function(x){return x.c.squareId;})?`<button class="btnp" onclick="_pkChargeAllSheet()" style="width:100%;border-radius:12px;margin-top:8px;justify-content:center;"><i class="ti ti-credit-card" aria-hidden="true"></i> Charge all with a card on file</button>`:''}</div>`:''}
   <div role="tablist" style="display:flex;gap:4px;margin:6px 16px 12px;background:var(--p-surf2);border-radius:12px;padding:4px;">${tabs.map(function(t){return '<button role="tab" aria-selected="'+(_pkTab===t[0])+'" onclick="_pkTab=\''+t[0]+'\';renderPerks()" style="flex:1;border:none;border-radius:8px;padding:9px 4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(_pkTab===t[0]?'var(--surf1)':'transparent')+';color:'+(_pkTab===t[0]?'var(--p-ink)':'var(--p-mut)')+';">'+t[1]+'</button>';}).join('')}</div>
   <div style="padding:0 16px 10px;font-size:16px;color:var(--p-mut);line-height:1.5;">${intro}</div>
-  ${_pkTab==='membership'?'<div style="padding:0 16px;">'+_pkSquareNote('tab')+((_pkAutoLast&&_pkAutoLast.blocked)?'<div role="alert" style="margin:0 0 12px;background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-ink);">'+_pkAutoLast.n+' automatic charge'+(_pkAutoLast.n===1?' is':'s are')+' waiting because Square '+(_pkAutoLast.blocked==='expired'?'needs you to sign in again':'is not connected')+'.</div>':'')+'</div>':''}
+  ${_pkTab==='membership'?'<div style="padding:0 16px;">'+(_isFounder?'<div id="pk-founder-bill"></div>':'')+_pkSquareNote('tab')+((_pkAutoLast&&_pkAutoLast.blocked)?'<div role="alert" style="margin:0 0 12px;background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-ink);">'+_pkAutoLast.n+' automatic charge'+(_pkAutoLast.n===1?' is':'s are')+' waiting because Square '+(_pkAutoLast.blocked==='expired'?'needs you to sign in again':'is not connected')+'.</div>':'')+'</div>':''}
   ${list.map(function(pl){const n=_pkClientsOn(pl);return '<button onclick="nav(\'perk-edit\',\''+_pkA(pl.id)+'\')" style="width:calc(100% - 32px);margin:0 16px 8px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;font-family:inherit;text-align:left;'+(pl.active===false?'opacity:.6;':'')+'"><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">'+_fileEsc(pl.name||_PK_KIND[pl.kind])+(pl.active===false?' <span style="font-size:14px;color:var(--p-mut);font-weight:500;">(not offered)</span>':'')+'</div><div style="font-size:14px;color:var(--p-mut);line-height:1.5;">'+_fileEsc(_pkSummary(pl))+'</div>'+(n?'<div style="font-size:14px;color:var(--accent-strong);margin-top:2px;">'+n+' client'+(n===1?'':'s')+'</div>':'')+'</div><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i></button>';}).join('')}
   ${list.length?'':`<div style="margin:0 16px 10px;">${(_PK_IDEAS[_pkTab]||[]).map(function(idea,i){return '<button onclick="nav(\'perk-edit\',{kind:\''+_pkTab+'\',idea:'+i+'})" style="width:100%;margin-bottom:8px;background:var(--accent-tint);border:1px dashed var(--accent-strong);border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:14px;color:var(--accent-strong);font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Start from an idea</div><div style="font-size:16px;color:var(--p-ink);margin-top:2px;">'+_fileEsc(idea.about)+'</div><div style="font-size:14px;color:var(--p-mut);margin-top:2px;">You can change every part before you save.</div></button>';}).join('')}</div>`}
   <div style="padding:2px 16px 24px;"><button onclick="nav('perk-edit',{kind:'${_pkTab}'})" style="width:100%;background:var(--surf1);border:1px dashed var(--p-line-ctl);color:var(--p-ink);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus" aria-hidden="true"></i> New ${{loyalty:'loyalty card',membership:'membership',package:'package'}[_pkTab]}</button></div>`;
@@ -33719,7 +33807,7 @@ function renderPerkEdit(data){
       +f('Minimum months before they can cancel (optional)',inp('pke-term',p.minTerm,'None','numeric'))
       +f('Other perks (optional)',inp('pke-perks',p.perksText,'e.g. Priority booking, a birthday gift'))
       +'<label style="display:flex;align-items:flex-start;gap:9px;margin:0 0 6px;cursor:pointer;"><input type="checkbox" id="pke-auto" '+(p.autoCharge?'checked':'')+' style="width:18px;height:18px;margin-top:3px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-ink);line-height:1.5;">Charge saved cards automatically when a payment is due</span></label>'
-      +'<div style="font-size:14px;color:var(--p-mut);margin:0 0 14px;line-height:1.5;">Needs your Square connected and a card saved for the client in Square. Only clients you tick as having agreed are charged. It runs while SlickChart is open on one of your devices, and you can turn it off any time.</div>';
+      +'<div style="font-size:14px;color:var(--p-mut);margin:0 0 14px;line-height:1.5;">Needs your Square connected and a card saved for the client in Square. Only clients you tick as having agreed are charged. '+(_pkServerLive?'It charges on the due day, even when SlickChart is closed, and you can turn it off any time.':'It runs while SlickChart is open on one of your devices, and you can turn it off any time.')+'</div>';
   }else{
     body+=f('How many sessions',inp('pke-sessions',p.sessions,'6','numeric'))
       +f('What each session is (optional)',inp('pke-service',p.service,'e.g. facial'))

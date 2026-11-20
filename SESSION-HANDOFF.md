@@ -11160,7 +11160,25 @@ punches and the reward (20-50% off or a free service). Her Gmail draft promises 
   charges nothing and says so on the Memberships tab. Payment id `pay_mb_<membership>_<period>` + the Square key make
   two devices produce one charge. A decline is an `autofail` event (`af_<m>_<per>_<day>`), retried next day, shown on
   the profile, due list and Manage. `_pkSquareNote` (Memberships tab, editor, payment and charge-all sheets) explains
-  Square is required and turns into Connect/Reconnect Square. No server cron: nothing charges while every device is closed.
+  Square is required and turns into Connect/Reconnect Square. (20b had no server job; 20c adds it, below.)
+- **Server billing (build 2026-11-20c).** Ashley asked "is there any reason not to do this?" and chose "Yes, with a
+  report-only first night". `api/cron-memberships.js` (hourly at :25, `CRON_SECRET`, `withCronRun`) finds accounts whose
+  `sc_perk_plans` has `"autoCharge":true`, reads ONE account at a time (`readAccount` in `lib/perks-billing.js`: plans,
+  only clients with a `perks` ledger via `jsonb_each`, payments with `perkActs`), and applies the app's own rules
+  (`memState` is a port of `_pkMemState`; `scratchpad/test-membership-billing-pg.mjs` checks the two agree on 15 ledgers).
+  **Founder setting `membership_autobill_live` defaults to 0 = report only:** it charges nobody, writes
+  `membership_billing_reports` (initials, plan, amount, saved card yes/no; never a client name) and sends Ashley ONE
+  alert a day (`claimReminder('founder','mbreport:<LA day>')`). She turns it on from a founder-only card on the Memberships
+  tab (`_pkFounderBillFill`, two taps; `api/admin/membership-billing.js`, founder session only for POST, Monitor key may
+  read). Live: charges only between `membership_autobill_start_hour` (9) and `_end_hour` (20) in the location's own time
+  zone, retries a decline after `_retry_hours` (24) with key `sc-mb-<m>-<per>-a<n>`, and pushes each provider a summary of
+  her own clients only. **One shared record, `membership_charges` (owner, jid, per):** the app's `_pkChargeOne` now goes
+  through `POST /api/membership-charges` (claim, charge with her own token, record), "Mark paid" posts `mark` first (and
+  refuses to add cash for a month already charged to the card), and `_pkSyncServerCharges` turns server-paid rows into
+  `rn_`/`pay_mb_` and failed rows into `af_` with the same derived ids. A stuck claim is taken over after 10 min with the
+  SAME key; attempt 1 uses the exact key the 20b app used, so an old build and the server still dedupe at Square.
+  Not in CI (needs PostgreSQL 16): run `node scratchpad/test-membership-billing-pg.mjs` (37 checks) after any change to
+  `lib/perks-billing.js` or `_pkMemState`, plus `scratchpad/test-perks.mjs` in both engines (79 checks).
 - Money: membership payments go through the existing paths. Charge card on file uses `/api/square/charge-card` with
   idempotency key `sc-mb-<membership>-<period>`, and refuses a period that is not due, already paid, or has an unpaid
   link/QR/invoice out for it (`_pkPendingPay`). "Charge all with a card on file" is an explicit tap with a list and

@@ -341,11 +341,6 @@ saved anywhere", not "does this always call that".
 | `_hcPickerButtonHTML` | `/api/square/orders` | via `_hcFetchBought` |
 | `_hcPickerSheet` | `/api/square/orders` | via `_hcFetchBought` |
 | `_hcStepSheet` | `/api/square/orders` | via `_hcFetchBought` |
-| `_hydrateOffloaded` | `/api/announcements` | via `_checkNews` |
-| `_hydrateOffloaded` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_hydrateOffloaded` | `/api/square/connection` | via `_sqConnState` |
-| `_hydrateOffloaded` | `/api/totp-setup` | via `_beginTotpEnroll` |
-| `_hydrateOffloaded` | `/api/transcribe` | via `_probeWhisper` |
 | `_hydrateVcSubs` | `/api/guide-file` | via `_getGuideFile` |
 | `_impUndo` | `/api/clients` | via `_serverDeleteClients` |
 | `_impUndoGo` | `/api/clients` | via `_serverDeleteClients` |
@@ -405,7 +400,7 @@ saved anywhere", not "does this always call that".
 | `_loadFeedbackInbox` | `/api/feedback` | direct |
 | `_loadIntegGcalStatus` | `/api/google-cal` | via `_gcalStatus` |
 | `_loadIntegSquareStatus` | `/api/square/connection` | via `_sqConnState` |
-| `_loadPerkPlans` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_loadPerkPlans` | `/api/membership-charges` | via `_pkSyncServerCharges` |
 | `_loadPerkPlans` | `/api/square/connection` | via `_sqConnState` |
 | `_loadPersistenceSweep` | `/api/transcribe` | via `_probeWhisper` |
 | `_loadRemovedPhotos` | `/api/guide-file` | via `_getGuideFile` |
@@ -505,100 +500,31 @@ saved anywhere", not "does this always call that".
 | `_photoRmAfter` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_photoRmToast` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_pingChart` | `/api/beta-event` | direct |
-| `_pkAdjust` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkAdjust` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkAdjust` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkAdjust` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkAdjust` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkCancelDo` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkCancelDo` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkCancelDo` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkCancelDo` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkCancelDo` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkChargeAll` | `/api/square/charge-card` | via `_pkChargeOne` |
-| `_pkChargeAllSheet` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkChargeAll` | `/api/admin/membership-billing` | via `_pkFounderBillFill` |
+| `_pkChargeAll` | `/api/membership-charges` | via `_pkChargeOne` |
+| `_pkChargeAllSheet` | `/api/admin/membership-billing` | via `_pkFounderBillFill` |
+| `_pkChargeAllSheet` | `/api/membership-charges` | via `_pkChargeOne` |
 | `_pkChargeAllSheet` | `/api/square/connect` | via `_sqConnect` |
 | `_pkChargeAllSheet` | `/api/square/connection` | via `_sqConnState` |
-| `_pkChargeOne` | `/api/square/charge-card` | direct |
-| `_pkClientCard` | `/api/square/charge-card` | via `_pkChargeOne` |
-| `_pkJoinDo` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkJoinDo` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkJoinDo` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkJoinDo` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkJoinDo` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkMemCharge` | `/api/square/charge-card` | via `_pkChargeOne` |
-| `_pkMemCharge` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkMemCharge` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkMemCharge` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkMemCharge` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkMemEv` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkMemEv` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkMemEv` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkMemEv` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkMemEv` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkMemManage` | `/api/square/charge-card` | via `_pkChargeOne` |
-| `_pkMemMarkPaid` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkMemMarkPaid` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkMemMarkPaid` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkMemMarkPaid` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkMemMarkPaid` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkMemPaySheet` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_pkChargeOne` | `/api/membership-charges` | direct |
+| `_pkClientCard` | `/api/membership-charges` | via `_pkMemMarkPaid` |
+| `_pkDeleteDo` | `/api/membership-charges` | via `_pkSyncServerCharges` |
+| `_pkEditSave` | `/api/membership-charges` | via `_pkSyncServerCharges` |
+| `_pkFounderBillFill` | `/api/admin/membership-billing` | direct |
+| `_pkFounderBillPost` | `/api/admin/membership-billing` | direct |
+| `_pkFounderBillSave` | `/api/admin/membership-billing` | via `_pkFounderBillPost` |
+| `_pkFounderBillSwitch` | `/api/admin/membership-billing` | via `_pkFounderBillPost` |
+| `_pkJoinSheet` | `/api/membership-charges` | via `_pkMemMarkPaid` |
+| `_pkMemManage` | `/api/membership-charges` | via `_pkMemMarkPaid` |
+| `_pkMemMarkPaid` | `/api/membership-charges` | direct |
+| `_pkMemPaySheet` | `/api/membership-charges` | via `_pkMemMarkPaid` |
 | `_pkMemPaySheet` | `/api/square/connect` | via `_sqConnect` |
 | `_pkMemPaySheet` | `/api/square/connection` | via `_sqConnState` |
-| `_pkPunch` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkPunch` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkPunch` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkPunch` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkPunch` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkRedeemDo` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkRedeemDo` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkRedeemDo` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkRedeemDo` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkRedeemDo` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkRemoveDo` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkRemoveDo` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkRemoveDo` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkRemoveDo` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkRemoveDo` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkSellRecord` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkSellRecord` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkSellRecord` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkSellRecord` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkSellRecord` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkSetAutopay` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkSetAutopay` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkSetAutopay` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkSetAutopay` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkSetAutopay` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkSetExp` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkSetExp` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkSetExp` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkSetExp` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkSetExp` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_pkSquareNote` | `/api/square/connect` | via `_sqConnect` |
 | `_pkSquareNote` | `/api/square/connection` | via `_sqConnState` |
 | `_pkSquareNoteFill` | `/api/square/connect` | via `_sqConnect` |
 | `_pkSquareNoteFill` | `/api/square/connection` | via `_sqConnState` |
-| `_pkUndoBar` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkUndoBar` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkUndoBar` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkUndoBar` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkUndoBar` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkUnpunch` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkUnpunch` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkUnpunch` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkUnpunch` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkUnpunch` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkUseCredit` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkUseCredit` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkUseCredit` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkUseCredit` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkUseCredit` | `/api/square/save-card` | via `_addCardOnFile` |
-| `_pkUsePkg` | `/api/square/charge-card` | via `_loadClientCards` |
-| `_pkUsePkg` | `/api/square/loyalty` | via `_loadClientLoyalty` |
-| `_pkUsePkg` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
-| `_pkUsePkg` | `/api/square/pay-config` | via `_addCardOnFile` |
-| `_pkUsePkg` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_pkSyncServerCharges` | `/api/membership-charges` | direct |
 | `_plDocUrl` | `/api/collection-pdf` | direct |
 | `_plRender` | `/api/collection-pdf` | via `_plDocUrl` |
 | `_plSetStyle` | `/api/collection-pdf` | via `_plDocUrl` |
@@ -688,11 +614,6 @@ saved anywhere", not "does this always call that".
 | `_refMoment` | `/api/referral` | via `_refLoad` |
 | `_refNudge` | `/api/referral` | via `_refLoad` |
 | `_refShare` | `/api/referral` | via `_refLoad` |
-| `_reloadAfterHydrate` | `/api/announcements` | via `_checkNews` |
-| `_reloadAfterHydrate` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_reloadAfterHydrate` | `/api/square/connection` | via `_sqConnState` |
-| `_reloadAfterHydrate` | `/api/totp-setup` | via `_beginTotpEnroll` |
-| `_reloadAfterHydrate` | `/api/transcribe` | via `_probeWhisper` |
 | `_reloadTopLevelStores` | `/api/google-cal` | via `_gcalPush` |
 | `_remClearDone` | `/api/provider-push` | via `_pushDisable` |
 | `_remDelete` | `/api/provider-push` | via `_pushDisable` |
@@ -726,11 +647,6 @@ saved anywhere", not "does this always call that".
 | `_requestClientLink` | `/api/client-link` | direct |
 | `_requestEmailChange` | `/api/change-email` | direct |
 | `_restorePhotosFromCloud` | `/api/guide-file` | via `_getGuideFile` |
-| `_resumePull` | `/api/announcements` | via `_checkNews` |
-| `_resumePull` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_resumePull` | `/api/square/connection` | via `_sqConnState` |
-| `_resumePull` | `/api/totp-setup` | via `_beginTotpEnroll` |
-| `_resumePull` | `/api/transcribe` | via `_probeWhisper` |
 | `_retryProviderMsg` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_reviewAckHome` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_revokeOtherSessions` | `/api/sessions` | direct |
@@ -748,13 +664,8 @@ saved anywhere", not "does this always call that".
 | `_saveAndSendNote` | `/api/beta-event` | via `_pingChart` |
 | `_saveEditedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveManualAppts` | `/api/google-cal` | via `_gcalPush` |
-| `_savePerkPlans` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `_savePerkPlans` | `/api/membership-charges` | via `_pkSyncServerCharges` |
 | `_savePerkPlans` | `/api/square/connection` | via `_sqConnState` |
-| `_savePersistenceSweep` | `/api/announcements` | via `_checkNews` |
-| `_savePersistenceSweep` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_savePersistenceSweep` | `/api/square/connection` | via `_sqConnState` |
-| `_savePersistenceSweep` | `/api/totp-setup` | via `_beginTotpEnroll` |
-| `_savePersistenceSweep` | `/api/transcribe` | via `_probeWhisper` |
 | `_saveSummaryDate` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveWriteNote` | `/api/beta-event` | via `_pingChart` |
 | `_saveWriteNote` | `/api/feedback` | via `_sendPulse` |
@@ -1035,11 +946,6 @@ saved anywhere", not "does this always call that".
 | `finishNewClient` | `/api/logout` | via `_doLogout` |
 | `finishNewClient` | `/api/native-push` | via `_doLogout` |
 | `finishNewClient` | `/api/provider-push` | via `_doLogout` |
-| `fmtBookingDate` | `/api/announcements` | via `_checkNews` |
-| `fmtBookingDate` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `fmtBookingDate` | `/api/square/connection` | via `_sqConnState` |
-| `fmtBookingDate` | `/api/totp-setup` | via `_beginTotpEnroll` |
-| `fmtBookingDate` | `/api/transcribe` | via `_probeWhisper` |
 | `freeUpDeviceSpace` | `/api/course-versions` | via `_cvFetchList` |
 | `freeUpDeviceSpace` | `/api/guide-file` | via `_evictableFileCache` |
 | `inviteClientToApp` | `/api/app-launch` | via `_alSend` |
@@ -1185,7 +1091,8 @@ saved anywhere", not "does this always call that".
 | `renderPasswordSecurity` | `/api/totp-verify` | via `_confirmDisableTotp` |
 | `renderPerkEdit` | `/api/square/connect` | via `_sqConnect` |
 | `renderPerkEdit` | `/api/square/connection` | via `_sqConnState` |
-| `renderPerks` | `/api/square/charge-card` | via `_pkChargeOne` |
+| `renderPerks` | `/api/admin/membership-billing` | via `_pkFounderBillFill` |
+| `renderPerks` | `/api/membership-charges` | via `_pkSyncServerCharges` |
 | `renderPerks` | `/api/square/connect` | via `_sqConnect` |
 | `renderPerks` | `/api/square/connection` | via `_sqConnState` |
 | `renderPhotos` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -1332,6 +1239,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/admin/exposure` | POST | founder, provider session | OWNER-ONLY. |
 | `/api/admin/health-sweep` | GET | founder, provider session | GET /api/admin/health-sweep   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/kv-health` | — | founder, provider session | GET /api/admin/kv-health?email=<provider email>  — FOUNDER-ONLY, READ-ONLY, METADATA ONLY. |
+| `/api/admin/membership-billing` | GET, POST | founder, provider session | Ashley's view of the server membership billing job, and its switch |
 | `/api/admin/new-providers` | GET | founder, provider session | GET /api/admin/new-providers?days=14   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/orphans` | GET, POST | founder, provider session | people who PAID but never made their SlickChart account, what the automatic |
 | `/api/admin/provider-lookup` | GET, POST | founder, provider session | FOUNDER-ONLY. Helps the founder support a provider who "can't log in". |
@@ -1388,6 +1296,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/cron-automations` | — | cron | Scheduled automation sender — invoked by Vercel Cron (see vercel.json). Delivers each provider's |
 | `/api/cron-checkins` | — | cron | Scheduled PRE-VISIT CHECK-IN auto-sender — invoked by Vercel Cron (see vercel.json). |
 | `/api/cron-events` | — | cron | Event-based automation sender — invoked by Vercel Cron (see vercel.json). Handles the two |
+| `/api/cron-memberships` | — | cron | Hourly MEMBERSHIP BILLING (2026-11-20), invoked by Vercel Cron (see vercel.json). |
 | `/api/cron-nurture` | — | cron | Scheduled nurture/drip sender — invoked by Vercel Cron (see vercel.json). |
 | `/api/cron-orphan-checkout` | — | founder, cron | Scheduled PAID-BUT-NO-ACCOUNT rescue — invoked by Vercel Cron (see vercel.json). |
 | `/api/cron-provider-reminders` | — | cron | Scheduled sender for PROVIDER reminders — the thing that makes her reminder arrive when the app is |
@@ -1402,6 +1311,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/health` | — | **public** | GET /api/health |
 | `/api/login` | POST | founder | POST /api/login  { email, password, totpCode? }  (email omitted => legacy APP_PASSWORD owner) |
 | `/api/logout` | POST | provider session | POST /api/logout  (provider session Bearer token) |
+| `/api/membership-charges` | GET, POST | provider session | the ONE record of which membership periods were charged, shared by the |
 | `/api/native-push` | DELETE, POST | provider session, client link token | POST/DELETE /api/native-push  — stores (or removes) a native device's push token from the Capacitor |
 | `/api/provider-form` | POST | provider session | Provider-authed: record a form the provider captured IN PERSON (the "Sign on this device" flow) as a |
 | `/api/provider-message` | POST | provider session | Provider-authed: send a message to one specific real client. Stored as a |
@@ -1454,7 +1364,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcement_emails`, `announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `booking_alert_log`, `booking_blind`, `build_purchases`, `cancel_confirmations`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_problems`, `signup_sources`, `square_booking_seen`, `square_connections`, `square_create_log`, `square_webhook_seen`, `subscription_pauses`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
+`announcement_emails`, `announcements`, `app_launch_logs`, `auth_tokens`, `beta_events`, `booking_alert_log`, `booking_blind`, `build_purchases`, `cancel_confirmations`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `cron_runs`, `device_reports`, `feedback`, `files`, `founder_accounts`, `founder_settings`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `membership_billing_reports`, `membership_charges`, `native_push_log`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `referral_codes`, `referral_promos`, `referral_shares`, `referrals`, `reminder_log`, `sessions`, `signup_problems`, `signup_sources`, `square_booking_seen`, `square_connections`, `square_create_log`, `square_webhook_seen`, `subscription_pauses`, `subscriptions`, `sync_requests`, `trial_outcomes`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.
