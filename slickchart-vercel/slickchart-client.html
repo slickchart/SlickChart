@@ -4402,14 +4402,22 @@ function _pickClientAvatar(){
   inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;_downscaleImg(f,src=>{if(src)_setClientAvatar(src);else if(typeof showToast==='function')showToast('Couldn’t read that image, try another',false);},400);};
   inp.click();
 }
+// Remembers WHICH provider link the photo was for: it is only ever re-sent on that same link, never to
+// another provider this client also sees.
+function _avatarUnsent(on){try{if(on)localStorage.setItem('sc_client_avatar_unsent',String(client._token||''));else localStorage.removeItem('sc_client_avatar_unsent');}catch(e){}}
+function _retryUnsentAvatar(){try{var _for=localStorage.getItem('sc_client_avatar_unsent');if(!client._real||!_for||_for!==String(client._token||''))return;var a=localStorage.getItem('sc_client_avatar')||'';if(!/^data:image\//.test(a)){_avatarUnsent(false);return;}
+  _clientSubmit('contact',{avatar:a,_lock:'avatar'}).then(function(res){if(res&&(res.ok||res.duplicate))_avatarUnsent(false);});}catch(e){}}
 function _setClientAvatar(src){
   client.avatar=src;
   try{localStorage.setItem('sc_client_avatar',src);}catch(e){}
   try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}   // survive a fresh device
   if(client._real){
+    // A photo that could not reach the provider (often right after the camera, while the phone's network
+    // is still waking up) is marked and sent again the next time the app opens, so "Saved here" is true.
     _clientSubmit('contact',{avatar:src,_lock:'avatar'}).then(function(res){
+      _avatarUnsent(!(res&&(res.ok||res.duplicate)));
       if(typeof showToast==='function')showToast(res&&res.ok?'Photo updated ✓':(res&&res.duplicate?'':'Saved here, couldn’t reach your provider'));
-    }).catch(function(){if(typeof showToast==='function')showToast('Saved here, couldn’t reach your provider',false);});
+    }).catch(function(){_avatarUnsent(true);if(typeof showToast==='function')showToast('Saved here, couldn’t reach your provider',false);});
   }else if(typeof showToast==='function')showToast('Photo updated ✓');
   if(typeof renderProfile==='function')renderProfile();
 }
@@ -6872,6 +6880,7 @@ function _applyRealClientData(j){
   // The client's last-visit date the provider has on file (drives "have they been in yet" surfaces).
   client.lastVisit=prof.lastVisit||'';
   try{_loadClientContact(prof);}catch(e){}
+  try{setTimeout(_retryUnsentAvatar,3500);}catch(e){}
   p.treatment=prof.treatment||'';
   p.summaryNote=(Array.isArray(d.summaries)&&d.summaries[0]&&d.summaries[0].note)||'';
   // A step is ticked by its key. Two identical lines (a morning and an evening "Cleanse") used to share

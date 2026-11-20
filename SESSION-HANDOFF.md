@@ -9943,6 +9943,15 @@ Ran every `scratchpad/sweep2-*`, `sweep3-*`, `v-*` against today's build (`/tmp/
 - Can't run here (need Postgres or missing stubs): `*-pg`, `sweep2-cron-*`, `sweep2-sec-bookpage-xss`,
   `sweep2-sec-gcal-reflected-xss`, `sweep2-square-slots-tz`.
 
+## 2026-11-19 — build 2026-11-19zzzd: a client's profile photo that could not reach the provider is sent again
+
+Sweep find (background-and-back angle). In the client app, a new profile photo that failed to send (often
+right after the camera, while the phone's network wakes up) said "Saved here, couldn't reach your
+provider" and was never sent again, so the provider's chart kept the old circle. It is now marked with
+the provider link it was for (`sc_client_avatar_unsent` = that token, device-only) and re-sent 3.5 s after
+the next open, ONLY on that same link, never to another provider the client also sees. Test:
+`scratchpad/test-client-avatar-retry.mjs` (Chromium + WebKit).
+
 ## 2026-11-19 — build 2026-11-19zzzc: the public booking page says whose time zone its times are in
 
 Sweep find. The booking page shows times on the provider's clock (correct), but a client in another time
