@@ -73,7 +73,8 @@ export function deviceProblems(row, since) {
     const healed = of('store-413-healed').length;
     add(healed ? 'fix' : 'urgent', 'save-refused', 'saves refused as too large ' + big.length + 'x (' + keys.join(', ') + ', last ' + String(big[big.length - 1].d || '').slice(0, 60) + ')' + (healed ? ', healed ' + healed + 'x' : ''), big.length, big, keys.join(','));
   }
-  const cam = of('camera-fail');
+  // Builds before 2026-11-20j logged her closing the camera herself as camera-fail too.
+  const cam = of('camera-fail').filter(e => !/cancel/i.test(String(e.d || '')));
   if (cam.length) add('fix', 'camera', 'camera did not open ' + cam.length + 'x (' + String(cam[0].d || '').slice(0, 80) + ')', cam.length, cam);
   const off = of('offline-page-shown');
   if (off.length >= 2) add('watch', 'offline', 'offline page shown ' + off.length + 'x', off.length, off);

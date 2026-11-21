@@ -51,7 +51,7 @@ const logs = [
     ev(30, 'toast-err', 'clients: Could not save 3 photos'), ev(29, 'toast-err', 'clients: Could not save 5 photos'), ev(28, 'toast-err', 'clients: Could not save 2 photos'), ev(20, 'token-dropped', '_pullInner')]],
   ['dev_door', null, 'ios', [ev(80, 'launch'), ev(80, 'signin-screen', 'welcome'), ev(79, 'signin-screen', 'login'), ev(79, 'signin-refused', 'Email or password is incorrect.'),
     ev(70, 'signin-refused', 'Email or password is incorrect.'), ev(69, 'signin-screen', 'reset'), ev(68, 'signin-screen', 'sent')]],
-  ['dev_web', 'newbie@gmail.com', 'web-mac', [ev(10, 'error', 'TypeError: x is undefined at renderCal'), ev(9, 'prev-launch-cut-off'), ev(5, 'prev-launch-cut-off'), ev(4, 'camera-fail', 'NotAllowedError')]],
+  ['dev_web', 'newbie@gmail.com', 'web-mac', [ev(10, 'error', 'TypeError: x is undefined at renderCal'), ev(9, 'prev-launch-cut-off'), ev(5, 'prev-launch-cut-off'), ev(4, 'camera-fail', 'NotAllowedError'), ev(3, 'camera-fail', 'User cancelled photos app'), ev(2, 'camera-cancel', 'User cancelled photos app')]],
 ];
 for (const [k, e, plat, events] of logs) await db.query(`INSERT INTO app_launch_logs (device_key, email, platform, build, events, updated_at) VALUES ($1,$2,$3,'2026-11-18f',$4::jsonb, now())`, [k, e, plat, JSON.stringify(events)]);
 await db.query(`INSERT INTO app_launch_logs (device_key, email, platform, build, events, updated_at) VALUES ('dev_stale','happyprovider@gmail.com','ios','x','[{"t":1,"e":"error","d":"ancient"}]'::jsonb, now() - interval '3 days')`);
@@ -81,7 +81,7 @@ const door = find('stuck-at-door', '(not');
 ok(door.length === 1 && door[0].level === 'urgent' && /reset/.test(door[0].detail), 'refused twice + reset asked = urgent stuck at the door');
 ok(find('script-error', 'new')[0]?.level === 'fix', 'script error on a computer flagged');
 ok(find('launch-cut-off', 'new').length === 0, 'a closed browser tab is not a crash');
-ok(find('camera', 'new').length === 1, 'camera failure flagged');
+ok(find('camera', 'new').length === 1 && find('camera', 'new')[0].count === 1, 'camera failure flagged; her closing the camera herself is not counted');
 ok(find('storage', 'ros').length === 1 && find('not-saving', 'ros').length === 1, 'device report: storage broken + 7 unsaved flagged');
 ok(find('not-saving', 'tra').length === 0, '6 changes still going up at launch (none older than 5 min) is not flagged');
 ok(find('not-saving', 'stu').length === 1, '6 changes waiting over 5 minutes is flagged');
