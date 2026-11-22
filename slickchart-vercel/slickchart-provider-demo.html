@@ -665,7 +665,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-21c';
+const APP_BUILD='2026-11-21d';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -7515,6 +7515,7 @@ function applyProfessionConfig(){
     const _savedFmt=(typeof localStorage!=='undefined')?localStorage.getItem('sc_note_fmt'):null;
     if(_savedFmt&&noteTemplates[_savedFmt]){
       activeNoteTemplate=_savedFmt;   // provider's explicit choice, respect it
+      try{if(typeof _nfRealFor==='function')activeNoteTemplate=_nfRealFor(_savedFmt);}catch(e){}   // a one-box placeholder -> the real format of that name
     } else {
       // Profession-specific default (first match wins; ordered so a single-profession provider
       // lands on their trade's record, and multi-profession providers get a sensible primary).
@@ -8302,7 +8303,7 @@ function loadSessionSummaries(){_libLoaded('sc_session_summaries');try{const raw
 // Provider's chosen note format (default: free form). Persisted so it sticks across reloads
 // and syncs across devices, and so applyProfessionConfig doesn't reset it every boot.
 function saveNoteFmt(){try{const v=String(activeNoteTemplate||'freeform');localStorage.setItem('sc_note_fmt',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_note_fmt',v);}catch(e){}}
-function loadNoteFmt(){try{const v=localStorage.getItem('sc_note_fmt');if(v&&noteTemplates[v])activeNoteTemplate=v;}catch(e){}}
+function loadNoteFmt(){try{const v=localStorage.getItem('sc_note_fmt');if(v&&noteTemplates[v])activeNoteTemplate=(typeof _nfRealFor==='function')?_nfRealFor(v):v;}catch(e){}}
 // Minimal IndexedDB key->value store, used for large base64 photo data that would otherwise blow
 // the ~5MB localStorage quota. Promise-based and degrades gracefully (a failed op resolves to
 // undefined/false), so callers treat IndexedDB as best-effort and fall back to localStorage when
@@ -14646,6 +14647,12 @@ function switchNoteTab(id){
 // The tile on each format: SOAP/DAP/BIRP as they are, longer names as initials ("Brow record" -> BR).
 // Full names used to be squeezed into the 42px tile in faint grey and cut off (2026-11-18 sweep).
 function _nfTile(n){n=String(n||'');if(n.length<=4&&!/\s/.test(n))return n;return n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('');}
+// A profession's note names ("Brow record") are added on boot as plain one-box placeholders keyed
+// 'browrecord'; the profession's real structured format arrives later as 'browRecord'. Both stayed in
+// the picker, so it listed Brow record, PMU record and Lash record twice (sweep 2026-11-22). The
+// placeholder stays defined (a note saved with it still opens) but is not offered when the real one is.
+function _nfIsShadowed(t){if(!t||t.ic!=='#aaa'||t.desc!==t.name+' format')return false;const n=String(t.name).toLowerCase();return Object.values(noteTemplates).some(o=>o!==t&&o.ic!=='#aaa'&&String(o.name).toLowerCase()===n);}
+function _nfRealFor(key){const t=noteTemplates[key];if(!_nfIsShadowed(t))return key;const n=String(t.name).toLowerCase();const r=Object.values(noteTemplates).find(o=>o!==t&&o.ic!=='#aaa'&&String(o.name).toLowerCase()===n);return r?r.id:key;}
 function renderNoteFormats(id){
   setNav('clients');
   document.getElementById('tt').textContent='Note Format';
@@ -14653,7 +14660,7 @@ function renderNoteFormats(id){
   
   <div style="padding:10px 16px 6px;font-size:16px;color:var(--p-mut);">Choose a format for your provider notes.</div>
   <div class="sh"><h2>Built-in formats</h2></div>
-  ${Object.values(noteTemplates).map(t=>`
+  ${Object.values(noteTemplates).filter(t=>!_nfIsShadowed(t)).map(t=>`
   <div style="background:var(--surf2);border:1px solid ${activeNoteTemplate===t.id?'var(--accent)':'var(--p-line-ctl)'};border-radius:12px;margin:0 16px 10px;overflow:hidden;cursor:pointer;" onclick="activeNoteTemplate='${t.id}';if(typeof saveNoteFmt==='function')saveNoteFmt();nav('notes','${id}')">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
       <div style="width:42px;height:42px;border-radius:12px;background:${_fileEsc(t.col)};display:flex;align-items:center;justify-content:center;font-size:${_nfTile(t.name).length>3?13:16}px;font-weight:600;color:${/^#(aaa|888|999|bbb|ccc)$/i.test(String(t.ic||''))?'var(--p-mut2)':t.ic};" aria-hidden="true">${_fileEsc(_nfTile(t.name))}</div>
@@ -15888,7 +15895,7 @@ function renderSessionSummary(id){
         <div><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(bizInfo.name)}</div><div style="font-size:14px;color:var(--accent-strong);">${_fileEsc(bizInfo.ownerName)}</div></div>
       </div>
       <div style="font-size:18px;font-weight:500;color:var(--p-ink);margin-bottom:2px;">Your session summary ✨</div>
-      <div style="font-size:16px;color:var(--p-mut);">${(function(){const _dd=(providerNoteDrafts[id]&&providerNoteDrafts[id].date)||(typeof _isoToday==='function'?_isoToday():'');return (_dd&&typeof _fmtNoteDate==='function')?_fmtNoteDate(_dd):new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});})()} · ${_fileEsc(c.treatment)}</div>
+      <div style="font-size:16px;color:var(--p-mut);">${(function(){const _dd=(providerNoteDrafts[id]&&providerNoteDrafts[id].date)||(typeof _isoToday==='function'?_isoToday():'');return (_dd&&typeof _fmtNoteDate==='function')?_fmtNoteDate(_dd):new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});})()}${(function(){const _t=c.treatment||(typeof _todayServiceFor==='function'?_todayServiceFor(id):'');return _t?' · '+_fileEsc(_t):'';})()}</div>
     </div>
 
     ${summaryToggles.note?`<div style="padding:14px 16px;border-bottom:1px solid var(--p-line);">
