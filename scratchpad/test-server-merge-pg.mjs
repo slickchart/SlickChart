@@ -24,6 +24,7 @@ fs.writeFileSync(path.join(lib, 'auth.js'), "export function signToken(){ return
 fs.writeFileSync(path.join(lib, 'kv-history.js'), "export async function snapshotBeforeWrite(){}\nexport async function rescueDeviceCopy(){}\n");
 fs.copyFileSync(path.join(VERCEL, 'lib/clients.js'), path.join(lib, 'clients.js'));
 fs.copyFileSync(path.join(VERCEL, 'api/store.js'), path.join(api, 'store.js'));
+fs.copyFileSync(path.join(VERCEL, 'lib/exact-repeats.js'), path.join(lib, 'exact-repeats.js'));
 fs.copyFileSync(path.join(VERCEL, 'api/clients.js'), path.join(api, 'clients.js'));
 for (const f of fs.readdirSync(path.join(VERCEL, 'lib'))) if (!fs.existsSync(path.join(lib, f))) fs.copyFileSync(path.join(VERCEL, 'lib', f), path.join(lib, f));
 fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');

@@ -13,15 +13,9 @@ import { ensureHistoryTable, itemCount } from './kv-history.js';
 
 // The value with exact repeat rows removed, or null when nothing repeats. Top-level LISTS only: a
 // per-client map (messages, summaries) can legitimately hold two identical entries, and none of those
-// were what grew, so the account copy of a map is never touched here.
-export function dedupeExact(str) {
-  let v; try { v = JSON.parse(str); } catch (e) { return null; }
-  let hit = false;
-  const ex = a => { const seen = new Set(), out = []; for (const r of a) { const k = JSON.stringify(r); if (seen.has(k)) { hit = true; continue; } seen.add(k); out.push(r); } return out; };
-  let out = null;
-  if (Array.isArray(v)) out = ex(v);
-  return hit ? JSON.stringify(out) : null;
-}
+// were what grew, so the account copy of a map is never touched here. Shared with api/store.js.
+import { dedupeExact } from './exact-repeats.js';
+export { dedupeExact };
 
 // minBytes: only look at values at least this big (the repeats that matter are the big ones).
 // apply: false = report only.

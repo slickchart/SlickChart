@@ -41,6 +41,7 @@ export const signToken = () => 'x'; export const isSessionValid = async () => tr
 fs.writeFileSync(path.join(root, 'lib', 'clients.js'), 'export const reconcileDeletedClients = async () => ({});');
 fs.copyFileSync(V + 'lib/kv-history.js', path.join(root, 'lib', 'kv-history.js'));
 fs.copyFileSync(V + 'api/store.js', path.join(root, 'api', 'store.js'));
+fs.copyFileSync(V + 'lib/exact-repeats.js', path.join(root, 'lib', 'exact-repeats.js'));
 process.env.SESSION_SECRET = 'test';
 const D = await import(path.join(root, 'lib', 'db.js')); await D.ensureTable(); const q = D.sql();
 const store = (await import(path.join(root, 'api', 'store.js'))).default;

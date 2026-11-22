@@ -9,6 +9,7 @@ const SRC = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../sl
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'renew-'));
 fs.mkdirSync(path.join(dir, 'api')); fs.mkdirSync(path.join(dir, 'lib'));
 fs.copyFileSync(path.join(SRC, 'api/store.js'), path.join(dir, 'api/store.js'));
+fs.copyFileSync(path.join(SRC, 'lib/exact-repeats.js'), path.join(dir, 'lib/exact-repeats.js'));
 fs.copyFileSync(path.join(SRC, 'lib/auth.js'), path.join(dir, 'lib/auth.js'));
 fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
 fs.writeFileSync(path.join(dir, 'lib/db.js'), `

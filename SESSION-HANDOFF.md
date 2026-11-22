@@ -11258,3 +11258,21 @@ stays upright after taking it."* Device read from `/api/admin/app-launches` (her
 - Tests: `scratchpad/test-upright-android.mjs` 13/13 Chromium (WebKit runs its iPhone part, 2/2),
   `test-upright-photos.mjs` 21/21 in Chromium AND WebKit (3 new: the photo sheet), `sweep3-session-photos`
   6/6, `sweep2-photo-recover-reupload` 4/4, every `scripts/check-*.cjs` green.
+
+### 2026-11-22 — The server stops old builds growing sc_autos / sc_imported_products (server only)
+- Seen in the daily brief's health sweep (kv-size): aur… sc_autos was cleaned to 5-9 rows on 11-18
+  (dedupe-kv), then 9,720 rows on 11-19 and 19,440 on 11-22, all but 5 exact repeats. It DOUBLES, so a
+  device of hers is still on a build from before 2026-11-18a and puts the account copy and its own side
+  by side on every sync (CLAUDE.md §0.9). Her current-build devices shrink their own copy; the account
+  copy kept growing because the old device pushes it back.
+- Fix: `api/store.js` drops byte-for-byte repeat rows of `sc_autos` and `sc_imported_products` before
+  storing (`EXACT_REPEAT_KEYS`, `lib/exact-repeats.js`, the same rule as `lib/kv-dedupe.js`, which now
+  imports it). Exact repeats only, id included; rows that differ in one letter both stay; other keys
+  and non-list values are stored as sent; kv_history still runs first. Same response shape.
+- The existing 19,440-row ACCOUNT copy is NOT touched by this (live data): it shrinks on her next save,
+  or with Admin > dedupe-kv (needs Ashley's yes, as on 11-18).
+- Tests: `scratchpad/test-store-exact-repeats-pg.mjs` 10/10 (real PostgreSQL 16), `test-store-big-pg`
+  19/19, `test-store-stream` 7/7, `test-server-merge-pg` 16/16, `test-session-renew`, `test-kv-dedupe-pg`
+  11/11 (those copy store.js into a temp dir, so they now copy `lib/exact-repeats.js` too),
+  check-tenant-isolation / check-kv-stamps / check-merge-growth / check-generated green.
+  (`test-store-changed-only` and `sweep2-sec-pg` fail the same way before this change: unrelated.)

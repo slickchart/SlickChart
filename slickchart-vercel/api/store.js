@@ -9,6 +9,10 @@ import { sql, ensureTable, ensureProvidersTable, dbEnabled } from '../lib/db.js'
 import { verifyToken, signToken, isSessionValid } from '../lib/auth.js';
 import { snapshotBeforeWrite, rescueDeviceCopy } from '../lib/kv-history.js';
 import { reconcileDeletedClients } from '../lib/clients.js';
+import { dedupeExact } from '../lib/exact-repeats.js';
+
+// Lists that grew by copying themselves on old builds (2026-11-17). See the write loop below.
+const EXACT_REPEAT_KEYS = { sc_autos: 1, sc_imported_products: 1 };
 
 // A whole-account read is ONE response, and Vercel refuses a buffered response over 4.5 MB
 // (FUNCTION_RESPONSE_PAYLOAD_TOO_LARGE); a streamed one is exempt. So a busy account (2026-11-18
@@ -267,6 +271,13 @@ export default async function handler(req, res) {
       for (const [k, v] of entries) {
         let val = v == null ? null : String(v);
         if (k === 'sc_clients' && val) val = await stripRemoved(val);
+        // The "huge list" rule (CLAUDE.md §0.9). A device still running a build from before
+        // 2026-11-18a puts the account's copy and its own side by side on every sync, so these two
+        // lists double each time it saves (aur… went 5 rows -> 9,720 -> 19,440 after the 11-18
+        // clean-up). Drop rows that are byte-for-byte repeats of an earlier row before storing, so an
+        // old device can never grow the ACCOUNT copy again. Only exact repeats go (id included), the
+        // same rule as lib/kv-dedupe.js (lib/exact-repeats.js), and kv_history above already holds the value from before.
+        if (EXACT_REPEAT_KEYS[k] && val) { const d = dedupeExact(val); if (d != null) val = d; }
         // A library is never legitimately the empty string. One code path pushed '' for the consults
         // (their bytes live in IndexedDB, not localStorage) and wiped every consult on the account.
         if ((k === 'sc_pro_vc_subs' || k === 'sc_clients' || k === 'sc_session_summaries') && val === '') continue;

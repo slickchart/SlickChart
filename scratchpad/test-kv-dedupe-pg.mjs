@@ -20,7 +20,7 @@ started = true;
 const stub = src.slice(src.indexOf('const DBSTUB = `') + 16, src.indexOf('`;\nconst AUTHSTUB')).replace(/\$\{PGBIN\}/g, PGBIN).replace(/\$\{sock\}/g, sock).replace(/\$\{PORT\}/g, PORT).replace(/\$\{USER\}/g, USER).replace(/\\`/g, '`').replace(/\\\$/g, '$').replace(/\\\\/g, '\\');
 const lib = path.join(root, 'lib'); fs.mkdirSync(lib);
 fs.writeFileSync(path.join(lib, 'db.js'), stub);
-for (const f of ['kv-dedupe.js', 'kv-history.js']) fs.copyFileSync(new URL('../slickchart-vercel/lib/' + f, import.meta.url), path.join(lib, f));
+for (const f of ['kv-dedupe.js', 'kv-history.js', 'exact-repeats.js']) fs.copyFileSync(new URL('../slickchart-vercel/lib/' + f, import.meta.url), path.join(lib, f));
 const D = await import(path.join(lib, 'db.js')), K = await import(path.join(lib, 'kv-dedupe.js'));
 const q = D.sql(); await D.ensureTable();
 let pass = 0, fail = 0; const check = (n, ok, d) => { console.log((ok ? 'PASS ' : 'FAIL ') + n + (d !== undefined ? '  — ' + JSON.stringify(d) : '')); ok ? pass++ : fail++; };
