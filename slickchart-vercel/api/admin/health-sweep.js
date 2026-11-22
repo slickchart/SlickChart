@@ -291,15 +291,18 @@ export async function runSweep(q) {
     return { items, level: rows.some(r => Number(r.bytes) > 4300000) ? 'warn' : (rows.length ? 'warn' : 'ok') };
   });
 
-  // A new device (or one whose saved copy is stale) reads the WHOLE account in one response, and
-  // Vercel refuses a response over 4.5 MB. Measured as JSON-escaped, the form the response carries.
-  // 2026-11-18 capacity review: the busiest account's client list alone was 2.9 MB.
+  // A new device (or one whose saved copy is stale) reads the WHOLE account in one response.
+  // Vercel refuses a BUFFERED response over 4.5 MB, but not a streamed one ("The response body size
+  // limit is 4.5 MB, except for streamed responses", Vercel Functions Limits), and since 2026-11-18c
+  // api/store.js streams any read over 3.5 MB (sendJson). So a big account still opens; this lists
+  // the big ones for capacity only and never alerts on size alone (it alerted on a 5.3 MB account that
+  // was opening fine, 2026-11-22). Measured as JSON-escaped, the form the response carries.
   await check('first-read', 'Every account fits in one first read on a new device', async () => {
     const rows = await q`SELECT owner, sum(octet_length(to_json(v)::text))::bigint AS bytes FROM kv
       GROUP BY owner HAVING sum(octet_length(to_json(v)::text)) > 3000000 ORDER BY 2 DESC LIMIT 20`;
     const items = rows.map(r => who(r.owner) + ': whole account is ' + (Number(r.bytes) / 1e6).toFixed(1) + ' MB'
-      + (Number(r.bytes) > 4500000 ? ' (over the 4.5 MB limit: a new device cannot open it)' : ' of the 4.5 MB a new device can read at once'));
-    return { items, level: rows.some(r => Number(r.bytes) > 4500000) ? 'alert' : (rows.length ? 'warn' : 'ok') };
+      + (Number(r.bytes) > 3500000 ? ' (a new device reads it in pieces)' : ''));
+    return { items, level: rows.length ? 'warn' : 'ok' };
   });
 
   await check('events-size', 'Client submissions fit in one download', async () => {

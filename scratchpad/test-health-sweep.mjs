@@ -80,6 +80,9 @@ INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead
   const oldM = JSON.stringify([S('cs1'), mine, S('cs2')]);
   await db.query("INSERT INTO providers (id,email,created_at) VALUES ('samp','sample@new.com', now()-interval '1 day'),('mix','mixed@x.com', now()-interval '9 days')");
   await db.query("INSERT INTO kv VALUES ('samp','sc_courses','[]'),('mix','sc_courses',$1)", [JSON.stringify([S('cs2')])]);
+  // first-read (2026-11-22): a 5 MB account opens on a new device, because reads past 3.5 MB are streamed
+  // (api/store.js sendJson; Vercel: "The response body size limit is 4.5 MB, except for streamed responses").
+  await db.query("INSERT INTO kv VALUES ('huge','sc_clients',$1)", ['["' + 'x'.repeat(5200000) + '"]']);
   await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('samp','sc_courses',$1,$2,3,'shrink',now()-interval '1 hour'),('mix','sc_courses',$3,$4,3,'shrink',now()-interval '1 hour')", [oldS, oldS.length, oldM, oldM.length]); }
 // Note drafts (2026-11-05: three accounts read as alerts because the expiry record is "nd:<id>").
 { const pad = 'z'.repeat(700);
@@ -175,6 +178,7 @@ ok(res.code === 200 && j.checks.length === NCHECKS, 'all ' + NCHECKS + ' checks 
 ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every check ran against real SQL', JSON.stringify(j.checks.filter(c => (c.items[0] || '').startsWith('could not run')).map(c => c.id + ': ' + c.items[0])));
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
 ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only|mix…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only|mix…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
+ok(by['first-read'] && by['first-read'].level !== 'alert' && by['first-read'].items.some(i => /whole account is 5\.\d MB/.test(i) && /in pieces/.test(i) && !/cannot open/.test(i)), 'a 5 MB account is not an alert: its first read is streamed', JSON.stringify(by['first-read']));
 ok(by['settings-empty'].items.length === 1 && /sc_availability/.test(by['settings-empty'].items[0]), 'hours saved as null are flagged; hours never set ({}) are not');
 ok(by['founder-alerts'].level === 'alert' && by['founder-alerts'].items.some(i => /feedback alert/.test(i)) && !by['founder-alerts'].items.some(i => /paid-signup|provider-signup/.test(i)), 'the skipped feedback alert is flagged; a good one and a deliberate de-dup are not', JSON.stringify(by['founder-alerts'].items));
 ok(by['events-size'].level === 'warn' && by['events-size'].items.length === 1 && /tro…@x.com: newest 10 events weigh 5.0 MB \(over the 4.5 MB limit/.test(by['events-size'].items[0]), 'an account whose submissions are too big for one download is flagged; the small one is not', JSON.stringify(by['events-size'].items));
