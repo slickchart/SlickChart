@@ -561,6 +561,7 @@ saved anywhere", not "does this always call that".
 | `_quoteAsk` | `/api/feedback` | via `_quoteSend` |
 | `_quoteAskMaybe` | `/api/feedback` | via `_quoteSend` |
 | `_quoteSend` | `/api/feedback` | direct |
+| `_rcSet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_rebookPicked` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_rebookPicked` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_recSearch` | `/api/admin/client-recover` | via `_recoverConsolidateAll` |

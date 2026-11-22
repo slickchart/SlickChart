@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-21b';
+const APP_BUILD='2026-11-21c';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -15070,6 +15070,39 @@ function toggleSharePhotos(id){
   if(typeof proToast==='function')proToast(c.sharePhotos?'Progress photos now visible in their app':'Progress photos hidden from their app');
   try{_renderPhotosView(id,c);}catch(e){try{nav('photos',id);}catch(_){}}
 }
+// Side-by-side of a real client's own before and after photos: this angle's if there are two, else any.
+// Defaults to her earliest before and her latest after; both are pickable. Nothing drawn under two photos.
+var _rcPick={};
+function _rcKey(p,i){return (p&&p.pid)||('i'+i);}
+function _rcSet(id,side,key){(_rcPick[id]=_rcPick[id]||{})[side]=key;try{_renderPhotosView(id,CL[id]);}catch(e){}}
+function _realCompareHTML(id){
+  const all=(capturedPhotos[id]||[]).map((p,i)=>[p,i]).filter(([p])=>p&&p.url&&(p.phase==='before'||p.phase==='after'));
+  const ang=String(activeAngle||'').toLowerCase();
+  const atAng=all.filter(([p])=>String(p.angle||'').toLowerCase().startsWith(ang));
+  const list=(atAng.length>=2?atAng:all).slice().sort((a,b)=>(a[0].ts||0)-(b[0].ts||0));
+  if(list.length<2)return '';
+  const pick=_rcPick[id]||{};
+  const find=k=>list.find(([p,i])=>_rcKey(p,i)===k);
+  let L=find(pick.l)||list.find(([p])=>p.phase==='before')||list[0];
+  let R=find(pick.r)||list.slice().reverse().find(([p])=>p.phase==='after'&&p!==L[0])||list.slice().reverse().find(x=>x!==L);
+  if(!R)R=list[list.length-1];
+  const lbl=([p])=>{const d=new Date(p.ts||0);const o={month:'short',day:'numeric'};if(d.getFullYear()!==new Date().getFullYear())o.year='numeric';return d.toLocaleDateString('en-US',o)+' · '+(p.phase==='before'?'Before':'After')+(p.angle&&list.some(x=>x[0].angle!==p.angle)?' · '+p.angle:'');};
+  const sel=(side,cur,aria)=>`<select aria-label="${aria}" onchange="_rcSet('${id}','${side}',this.value)" style="width:100%;min-width:0;max-width:100%;text-overflow:ellipsis;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:8px;padding:8px;font-size:16px;color:var(--p-ink);font-family:inherit;">${list.map(x=>`<option value="${_fileEsc(_rcKey(x[0],x[1]))}" ${x===cur?'selected':''}>${_fileEsc(lbl(x))}</option>`).join('')}</select>`;
+  const pane=(x,tag)=>`<div onclick="_viewClientPhoto('${id}',${x[1]})" title="View / save photo" style="cursor:zoom-in;border-radius:12px;overflow:hidden;position:relative;background:#000;aspect-ratio:3/4;">
+      <img src="${_imgSrc(x[0].url)}" alt="${tag} photo, ${_fileEsc(lbl(x))}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
+      <div style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);border-radius:4px;padding:3px 8px;font-size:14px;color:#fff;font-weight:600;">${tag}</div>
+      <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.8));padding:14px 8px 7px;font-size:14px;color:#fff;font-weight:500;">${_fileEsc(new Date(x[0].ts||0).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}</div>
+    </div>`;
+  return `<div class="sh"><h2>Compare</h2></div>
+  <div style="padding:0 16px;margin-bottom:10px;">
+    <div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;">
+      <div style="flex:1;min-width:0;"><div style="font-size:12px;color:var(--p-mut);margin-bottom:4px;">Left</div>${sel('l',L,'Choose left photo')}</div>
+      <div style="color:var(--p-mut2);font-size:16px;flex-shrink:0;padding-top:16px;">→</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:12px;color:var(--p-mut);margin-bottom:4px;">Right</div>${sel('r',R,'Choose right photo')}</div>
+    </div>
+  </div>
+  <div style="padding:0 16px;margin-bottom:14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">${pane(L,L[0].phase==='before'?'Before':'After')}${pane(R,R[0].phase==='before'?'Before':'After')}</div>`;
+}
 function renderPhotos(id){
   setNav('clients');
   const c=CL[id];
@@ -15088,6 +15121,10 @@ function _renderPhotosView(id,c,_passed){
   const left=sessions[compareLeft]||sessions[0];
   const right=sessions[compareRight]||sessions[sessions.length-1];
   const sameSession=compareLeft===compareRight;
+  // Only the sample clients have made-up sessions. A real client's compare and session count come from
+  // her own photos (sweep 2026-11-22: two empty silhouettes and "1 session" under three real photos).
+  const _demo=!!photoSessions[id];
+  const _nSess=_demo?sessions.length:new Set((capturedPhotos[id]||[]).filter(p=>p&&p.phase!=='paperform'&&p.ts).map(p=>new Date(p.ts).toDateString())).size;
 
   // Hair inspiration photos (mock)
   const inspirationPhotos=[
@@ -15113,7 +15150,7 @@ function _renderPhotosView(id,c,_passed){
 
   <div style="padding:10px 16px 4px;display:flex;align-items:center;justify-content:space-between;">
     <div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_clientNameLink(id,c.name,{color:'var(--p-ink)'})}</div>
-    <span class="bdg ba" style="font-size:16px;">${sessions.length} session${sessions.length!==1?'s':''}</span>
+    <span class="bdg ba" style="font-size:16px;">${_nSess} session${_nSess!==1?'s':''}</span>
   </div>
 
   <!-- Angle pills, profession-aware -->
@@ -15132,8 +15169,8 @@ function _renderPhotosView(id,c,_passed){
       <div onclick="_viewClientPhoto('${id}',${i})" title="View / save photo" style="cursor:zoom-in;">${_capturedThumb(p,84)}</div>
       <div style="display:flex;gap:3px;margin-top:4px;">
         <button onclick="_setPhotoCategory('${id}',${i},'reference')" style="flex:1;font-size:12px;padding:3px 2px;border-radius:4px;border:1px solid ${p.phase==='reference'?'var(--p-blue)':'var(--p-line-ctl)'};background:${p.phase==='reference'?'var(--p-blue-bg)':'var(--p-surf)'};color:${p.phase==='reference'?'var(--p-blue)':'var(--p-mut)'};cursor:pointer;">Ref</button>
-        <button onclick="_setPhotoCategory('${id}',${i},'before')" style="flex:1;font-size:12px;padding:3px 2px;border-radius:4px;border:1px solid ${p.phase==='before'?'#888':'var(--p-line-ctl)'};background:${p.phase==='before'?'var(--p-chip)':'var(--p-surf)'};color:${p.phase==='before'?'#fff':'var(--p-mut)'};cursor:pointer;">Before</button>
-        <button onclick="_setPhotoCategory('${id}',${i},'after')" style="flex:1;font-size:12px;padding:3px 2px;border-radius:4px;border:1px solid ${p.phase==='after'?'var(--accent)':'var(--p-line-ctl)'};background:${p.phase==='after'?'var(--accent-a08)':'var(--p-surf)'};color:${p.phase==='after'?'var(--accent)':'var(--p-mut)'};cursor:pointer;">After</button>
+        <button onclick="_setPhotoCategory('${id}',${i},'before')" style="flex:1;font-size:12px;padding:3px 2px;border-radius:4px;border:1px solid ${p.phase==='before'?'#2b2b2b':'var(--p-line-ctl)'};background:${p.phase==='before'?'#2b2b2b':'var(--p-surf)'};color:${p.phase==='before'?'#fff':'var(--p-mut)'};font-weight:${p.phase==='before'?700:400};cursor:pointer;">Before</button>
+        <button onclick="_setPhotoCategory('${id}',${i},'after')" style="flex:1;font-size:12px;padding:3px 2px;border-radius:4px;border:1px solid ${p.phase==='after'?'var(--accent-strong,var(--accent))':'var(--p-line-ctl)'};background:${p.phase==='after'?'var(--accent)':'var(--p-surf)'};color:${p.phase==='after'?'var(--accent-ink)':'var(--p-mut)'};font-weight:${p.phase==='after'?700:400};cursor:pointer;">After</button>
       </div>
       <div style="display:flex;gap:3px;margin-top:3px;">
         <button onclick="_rotatePhoto('${id}',${i})" title="Rotate 90°" aria-label="Rotate photo" style="flex:1;padding:3px 2px;border-radius:4px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-mut);cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-rotate-clockwise" style="font-size:16px;"></i></button>
@@ -15196,7 +15233,7 @@ function _renderPhotosView(id,c,_passed){
     </div>
   </div>`:`
 
-  <!-- Comparison selector -->
+  ${_demo?`<!-- Comparison selector -->
   <div style="padding:0 16px;margin-bottom:10px;">
     <div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:10px 12px;">
       <div style="font-size:14px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;font-weight:500;">Compare sessions</div>
@@ -15254,8 +15291,9 @@ function _renderPhotosView(id,c,_passed){
     </div>`:''}
   </div>
 
+  `:_realCompareHTML(id)}
   <!-- Captured photos (auto date-stamped) -->
-  ${(capturedPhotos[id]&&capturedPhotos[id].length)?`
+  ${_demo&&(capturedPhotos[id]&&capturedPhotos[id].length)?`
   <div class="sh"><h2>Captured this session</h2></div>
   <div style="padding:0 16px 6px;">
     <div style="display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;">
@@ -15285,7 +15323,7 @@ function _renderPhotosView(id,c,_passed){
     </div>
   </div>`})()}
 
-  <!-- Session timeline -->
+  ${_demo?`<!-- Session timeline -->
   <div class="sh"><h2>Session timeline</h2></div>
   ${sessions.map((s,i)=>`
   <div onclick="compareLeft=${Math.max(0,i-1)};compareRight=${i};_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="background:var(--surf2);border:1px solid ${i===compareRight?'var(--accent)':'var(--p-line-ctl)'};border-radius:12px;margin:0 16px 8px;overflow:hidden;cursor:pointer;">
@@ -15309,7 +15347,7 @@ function _renderPhotosView(id,c,_passed){
   <div style="margin:4px 16px 20px;background:var(--surf2);border:1.5px dashed var(--p-line-ctl);border-radius:12px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;" onclick="openPhotoUpload('${id}')">
     <i aria-hidden="true" class="ti ti-camera-plus" style="font-size:22px;color:var(--p-mut);"></i>
     <span style="font-size:16px;color:var(--p-mut);">Add photos for a new session</span>
-  </div>`}`;
+  </div>`:''}`}`;
 }
 
 function buildSummaryCustomPanel(id){
