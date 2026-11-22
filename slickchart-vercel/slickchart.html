@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-21d';
+const APP_BUILD='2026-11-22a';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -7061,7 +7061,13 @@ const _AUTH_5XX='Something went wrong on our side. Please try again in a minute.
 async function _authFetch(u,o){try{return await fetch(u,o);}catch(e){throw new Error(_AUTH_NET);}}
 // One tap, one request: a second tap while the first is still on its way does nothing.
 let _authBusy=false;
-function _authOnce(p){if(_authBusy)return null;_authBusy=true;const b=document.querySelector('#login-screen button[onclick^="doLogin"],#login-screen button[onclick^="doSignup"]');if(b)b.disabled=true;const done=()=>{_authBusy=false;if(b)b.disabled=false;};return p().then(v=>{done();return v;},e=>{done();throw e;});}
+function _authOnce(p){if(_authBusy)return null;_authBusy=true;const b=document.querySelector('#login-screen button[onclick^="doLogin"],#login-screen button[onclick^="doSignup"]');if(b)b.disabled=true;const done=()=>{_authBusy=false;if(b)b.disabled=false;};
+  // On SUCCESS stay busy until the sign-in screen is gone: the work after it (reading or saving the
+  // account) takes seconds with the button live again, and a second tap made a second account request
+  // ("An account with that email already exists" to a provider who had just made it, 2026-11-22) or
+  // a second sign-in. Released when the screen closes, or after 30 s whatever happens.
+  const doneOk=()=>{const t0=Date.now();const w=()=>{if(!document.getElementById('login-screen')||Date.now()-t0>30000)done();else setTimeout(w,250);};setTimeout(w,250);};
+  return p().then(v=>{doneOk();return v;},e=>{done();throw e;});}
 function doLogin(){
   const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';
   const er=document.getElementById('login-err');if(er)er.textContent='';
