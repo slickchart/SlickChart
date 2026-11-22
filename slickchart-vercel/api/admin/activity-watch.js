@@ -150,10 +150,15 @@ export async function runWatch(q, since) {
   try {
     const t = await q`SELECT to_regclass('public.signup_problems') AS t`;
     if (t && t[0] && t[0].t) {
-      const rows = await q`SELECT lower(email) AS email, kind, max(detail) AS detail, count(*)::int AS n, max(at) AS last FROM signup_problems
-        WHERE at > ${sinceTs} GROUP BY lower(email), kind ORDER BY last DESC LIMIT 30`;
-      for (const r of rows) problems.push({ level: r.kind === 'moved' ? 'watch' : 'urgent', kind: 'signup:' + r.kind, account: maskEmail(r.email) || '(no email)', where: 'create account / sign in',
-        detail: String(r.kind) + ': ' + String(r.detail || '').slice(0, 140) + (r.n > 1 ? ' (' + r.n + 'x)' : ''), count: r.n,
+      // Got in afterwards (an account with this email signed in after the last problem): not stuck, so a
+      // watch line, not an urgent one (2026-11-22: a new provider's unpaid-looking first try and a double
+      // tap on Create account read as urgent though she was in and set up two minutes later).
+      const rows = await q`SELECT lower(sp.email) AS email, sp.kind, max(sp.detail) AS detail, count(*)::int AS n, max(sp.at) AS last,
+          bool_or(EXISTS (SELECT 1 FROM providers p JOIN sessions s ON s.provider_id = p.id
+            WHERE lower(p.email) = lower(sp.email) AND s.created_at >= sp.at)) AS got_in
+        FROM signup_problems sp WHERE sp.at > ${sinceTs} GROUP BY lower(sp.email), sp.kind ORDER BY last DESC LIMIT 30`;
+      for (const r of rows) problems.push({ level: (r.kind === 'moved' || r.got_in) ? 'watch' : 'urgent', kind: 'signup:' + r.kind, account: maskEmail(r.email) || '(no email)', where: 'create account / sign in',
+        detail: String(r.kind) + ': ' + String(r.detail || '').slice(0, 140) + (r.n > 1 ? ' (' + r.n + 'x)' : '') + (r.got_in ? ' (signed in since: not stuck)' : ''), count: r.n,
         last: new Date(r.last).getTime(), key: 'signup:' + r.kind + '|' + maskEmail(r.email) });
     }
   } catch (e) { errors.push('sign-ups: ' + e.message); }

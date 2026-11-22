@@ -41,6 +41,8 @@ await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['longago@gmail.com'
 for (let i = 0; i < 3; i++) await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['fresh@gmail.com', new Date(now - 0.5 * H).toISOString()]);
 await db.query("INSERT INTO sessions VALUES ('s4','p_fresh', $1)", [new Date(now - 0.3 * H).toISOString()]);
 await db.query('INSERT INTO login_attempts VALUES ($1,$2)', ['longago@gmail.com', new Date(now - 21 * H).toISOString()]);
+// 2026-11-22: an unpaid-looking sign-up, then she made the account and signed in: watch, not urgent. One with no account since stays urgent.
+await db.query("INSERT INTO signup_problems (email, kind, detail, at) VALUES ('fresh@gmail.com','signup-unpaid','', $1), ('nopay@gmail.com','signup-unpaid','', $1)", [new Date(now - 0.5 * H).toISOString()]);
 
 const { ensureAppLaunchTable } = await import(pathToFileURL(path.join(dir, 'lib/app-launch-log.js')));
 await ensureAppLaunchTable();
@@ -92,6 +94,8 @@ ok(find('setup-stuck', 'new')[0]?.level === 'fix', 'account 4h old, setup never 
 ok(find('setup-stuck', 'fre').length === 0, 'account 20 minutes old is given time');
 ok(find('signup:checkout-typo').length === 1 && find('signup:signup-refused').length === 0, 'sign-up problems inside the window only');
 ok(find('signup:moved')[0]?.level === 'watch', 'a payment Ashley moved herself is not urgent');
+ok(find('signup:signup-unpaid').find(x => /^fre/.test(x.account))?.level === 'watch' && /not stuck/.test(find('signup:signup-unpaid').find(x => /^fre/.test(x.account))?.detail), 'a sign-up problem followed by a sign-in on that email is a watch line', JSON.stringify(find('signup:signup-unpaid')));
+ok(find('signup:signup-unpaid').find(x => /^nop/.test(x.account))?.level === 'urgent', 'a sign-up problem with no sign-in since stays urgent');
 ok(Math.abs(find('save-refused', 'ros')[0].last - (now - 38 * 60000)) < 1000, 'last = when the trouble happened, not the device\'s newest event');
 ok(r.problems[0].level === 'urgent', 'worst first');
 const keys = r.problems.map(p => p.key); ok(new Set(keys).size === keys.length, 'every key is unique');
