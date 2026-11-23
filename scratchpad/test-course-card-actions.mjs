@@ -1,5 +1,7 @@
 // Courses tab: Edit / Preview / Delete / Send to client never overlap or squash on a phone
-// (2026-11-23 sweep: on an iPhone-width screen "Preview" ran into the Delete icon).
+// (2026-11-23 sweep: on an iPhone-width screen "Preview" ran into the Delete icon). Also: the card's
+// lesson count matches what Preview shows (a starter said "6 modules" and opened to "0 lessons"), and
+// Preview's edit button has a word on it, not a lone pencil.
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 const E=process.env.PW_ENGINE||'chromium';const PORT=process.env.PORT||8900;
 const b=E==='webkit'?await pw.webkit.launch():await pw.chromium.launch();
@@ -20,5 +22,15 @@ for (const [n,vp] of [['small phone',{width:360,height:740}],['phone',{width:390
   return {cards:rows.length,n,bad:[...new Set(bad)]};});
  ok(r.cards>0&&r.n>=r.cards*4,`${n}: ${r.cards} course cards, ${r.n} action buttons`);
  ok(!r.bad.length,`${n}: no button overlaps, squashes or runs past the card${r.bad.length?' ('+r.bad.join(', ')+')':''}`);
+ if(n==='phone'){
+  const m=await p.evaluate(async()=>{const out=[];for(const c of courses){_fgTab='courses';nav('forms');await new Promise(r=>setTimeout(r,200));
+   const card=[...document.querySelectorAll('.course-card')].find(x=>x.innerText.includes(c.title));const meta=card&&card.querySelector('.course-meta')?card.querySelector('.course-meta').innerText:'';
+   nav('course-detail',c.id);await new Promise(r=>setTimeout(r,200));const S=document.getElementById('S').innerText;const n=(S.match(/(\d+) lessons?/)||[])[1]||'0';
+   const eb=[...document.querySelectorAll('#S button')].find(x=>/course-builder/.test(x.getAttribute('onclick')||'')&&x.closest('.btng,button.btng'));
+   out.push({t:c.title,meta,n,edit:eb?eb.innerText.trim():'(none)'});}return out;});
+  for(const x of m){ok(x.n==='0'?/No lessons yet/.test(x.meta):new RegExp('^'+x.n+' lesson').test(x.meta),`card "${x.meta}" matches Preview's ${x.n} lessons (${x.t})`);ok(/Edit/.test(x.edit),`Preview's edit button says "${x.edit}" (${x.t})`);}
+  // a course with real lessons
+  const r2=await p.evaluate(async()=>{courses.push({id:'ct_real',title:'Real One',icon:'ti-book',bg:'',ic:'',bdg:'bg',status:'Draft',price:'Free',lessons:[{title:'A'},{title:'B'}],modules:2,duration:'2 lessons'});_fgTab='courses';nav('forms');await new Promise(r=>setTimeout(r,200));const card=[...document.querySelectorAll('.course-card')].find(x=>x.innerText.includes('Real One'));return card.querySelector('.course-meta').innerText;});
+  ok(/^2 lessons · Free$/.test(r2),`a course with 2 lessons reads "${r2}"`);}
  await ctx.close();}
 await b.close();console.log(`${E} test-course-card-actions: ${pass}/${pass+fail} passed`);process.exit(fail?1:0);
