@@ -34,7 +34,8 @@ committed to anything, the later ones are for people mid-build.
 - [x] **Moving your clients onto your own app without losing anyone.** Drafted 2026-11-16
       (`moving-clients-to-your-own-app.md`). Respectful, no competitor
       claims; what to export, what to tell clients.
-- [ ] **Your board changed a rule. How fast can your software follow?** Owning the change, with the
+- [x] **Your board changed a rule. How fast can your software follow?** Drafted 2026-11-23
+      (`when-your-board-changes-a-rule.md`). Owning the change, with the
       honest trade-off that you are the one who checks it.
 
 - [ ] **The four safety mistakes that cover most of the risk.** Written for someone who is about to
