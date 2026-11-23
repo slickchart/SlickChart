@@ -570,23 +570,15 @@ itself). Run anything touching storage, sync, boot or the native app in BOTH eng
 
 ## 4. The weekly blog drafts — RE-POINT THESE IN A NEW SESSION
 
-**There are TWO blogs and TWO Routines.** Each writes one draft every Monday and reports it in the
-conversation for Ashley to review. Neither publishes: new posts carry `draft: true`, which produces no
-page and no sitemap entry, so nothing reaches the live site until she says so.
-
-| Blog | Source | Served at | Routine | Cron |
-|---|---|---|---|---|
-| SlickChart (solo estheticians) | `blog-src/` | `/blog` | "Weekly SlickChart blog draft" `trig_0152LFs5EUR87Ttbzz3s5nHQ` | `0 14 * * 1` |
-| Build Your Own App | `build-blog-src/` | `/build/blog` | "Weekly Build blog draft" `trig_01QsyEtdmZEJrshukvQTgzi3` | `0 15 * * 1` |
-
-**Both Routines are BOUND TO ONE SESSION.** As of 2026-10-13 that is
-`session_015D4BCM2NAMaZ9JsmQJm88r` for both (re-pointed from `session_01A4GwJis96cYnvN4yMbpBtt`,
-whose ids were `trig_01Kpq3HtFnWqgea1bUozHbbM` / `trig_01JeGumaZUvUoy6aBCSxJS38`, now deleted).
-The two one-shot reminders moved with them: Google Calendar review `trig_014SLMEWSaQD8PHh8WSdSBji`
-(2026-11-09) and Square-owns-services `trig_019TAeznU5wedybsvaoPovUY` (2026-11-12).
-(The SlickChart one was re-pointed 2026-09-15 from `trig_01GLnvYt3jrAhjPPCQZFY9Uw` /
-`cse_014uZePRTjnrVD5MwGzq6Tde`, which fired on 2026-09-14 into a session Ashley was not reading. That
-old trigger is deleted. The Build one was created 2026-09-16.)
+**ONE Routine now does both blogs, and more (2026-11-23).** "Weekly SEO content + What's new"
+`trig_01GN5iBCRCLfFHwjx3jcF1mc`, Mondays 5:43am Pacific, bound to the "Weekly SEO content" thread's
+session `session_018kjEUQyJdHYnctcSnJ6aj9`. It writes both blog drafts (`blog-src/` -> `/blog`,
+`build-blog-src/` -> `/build/blog`), asks Ashley 1-2 questions per post, sends the demo reel feature
+list and the in-app What's new draft for her OK, and after her answers publishes, writes the Google
+Business posts and images, and gives the button links. The old per-blog Routines
+(`trig_0152LFs5EUR87Ttbzz3s5nHQ`, `trig_01QsyEtdmZEJrshukvQTgzi3`) and the old What's new Routine
+(`trig_019TVPhxbwtqUa7cprDjde1x`) are deleted: the blog ones were still bound to an October session,
+so on 2026-11-23 they fired into a conversation Ashley never saw and she noticed nothing had run.
 
 **If you are a new session, check this early and fix it — for BOTH.** A Routine bound to a retired
 session delivers nowhere, and the weekly post stops without any error Ashley would ever see. Run
