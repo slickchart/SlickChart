@@ -4,7 +4,7 @@ h1: Your board changed a rule. How fast can your software follow?
 description: When your state board or insurer changes what you must ask or record, rented software makes you wait. Your own app changes when you decide it should.
 date: 2026-11-23
 keywords: state board rule change, update intake form, consent form change, own booking app, build an app without coding, beauty business compliance, change your own app
-draft: true
+draft: false
 ---
 
 Sooner or later, something you have to ask, record or wait for will change. Your state board updates a rule. Your insurer asks for a new line on your consent form. A product you use comes with new instructions for patch testing. None of it is dramatic, but all of it has to show up in how you book and check in your clients.
