@@ -11347,3 +11347,11 @@ gives them an account and that the "get set up" email goes right away.
   one should be cancelled/refunded once she says which (Stripe connector here is read-only).
 - `/api/admin/orphans` now also shows `getSetupAt` (the one-tap Get set up catch-up, seq setup-v2) and
   `accountWaiting` per person, so whether it went can be read instead of guessed.
+- 2026-11-23 5:05pm PT (Ashley approved on the decision card, signed in to Stripe in the browser pane):
+  all 3 live payment links (`plink_1UYaTl…` $17/mo trial, `plink_1UYaL4…`, `plink_1URy6X…` no trial)
+  now `after_completion: redirect` to `https://slickchart.app/slickchart?paid={CHECKOUT_SESSION_ID}`,
+  verified by reading each link back from the API (nothing else on them changed). The old
+  `plink_1TpL8Q…` already redirected to `/slickchart` and was left alone. Patience's typo-address
+  trial `sub_1UeeMmCHH3zgAIZeKEO7YC8g` (patiencemaasey722@, $0 paid) canceled immediately; her real
+  massey722 subscription is untouched. The Stripe connector here is READ-ONLY: Stripe writes go
+  through the dashboard in the browser pane.
