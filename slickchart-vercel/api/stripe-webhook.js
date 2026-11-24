@@ -24,6 +24,7 @@ import { liveSubForEmail } from '../lib/stripe-subs.js';
 import { recordReferralFromCheckout, markReferralCanceled, rewardOnInvoice, getReferralSettings, recordSignupSource, sourceLine } from '../lib/referral.js';
 import { notifySharer } from '../lib/referral-notify.js';
 import { sendSetupEmailNow } from '../lib/setup-email.js';
+import { ensurePaidAccount } from '../lib/account-setup.js';
 import { emailTypoSuggestion, recordSignupProblem } from '../lib/signup-rescue.js';
 import { recordTrialFromSubscription, recordTrialPayment, claimTrialConversion } from '../lib/trial-outcomes.js';
 import { sendCancelConfirmation, cancelState } from '../lib/cancellations.js';
@@ -289,13 +290,18 @@ export default async function handler(req, res) {
             stripe_customer_id=EXCLUDED.stripe_customer_id,
             stripe_subscription_id=EXCLUDED.stripe_subscription_id,
             status='active', updated_at=now()`;
+        // Paying MAKES the account (lib/account-setup.js, 2026-11-23): a provider row waiting for her to
+        // pick a password, so the "Get set up" email below can sign her straight in. Never throws.
+        const payerName = String((session.customer_details && (session.customer_details.individual_name || session.customer_details.name)) || '').trim();
+        const acct = await ensurePaidAccount(q, email, payerName);
+        console.log('[stripe-webhook] account for new checkout: ' + (acct ? (acct.created ? 'made, waiting for a password' : (acct.needsSetup ? 'already waiting' : 'already has one')) : 'not made'));
         // Founder ping (email + native push), deduped once-per-provider. Fires here AND from the
         // subscription-activated branch below, so whichever event Stripe delivers first wins and the
         // push can't be lost to event ordering. Never blocks the webhook's 200.
         await notifyFounderPaid(q, email);
         // The new provider's own "create your account" email, right away (lib/setup-email.js). Only
         // when she has no account yet, once ever. Never throws, so Stripe still gets its 200.
-        const setup = await sendSetupEmailNow(q, email);
+        const setup = await sendSetupEmailNow(q, email, payerName);
         console.log('[stripe-webhook] setup email for new checkout: ' + setup);
         // A mistyped email at checkout ("tahoo.com", 2026-11-18) means that setup email can never
         // arrive and the address she owns has no payment under it. Tell Ashley now, with the address

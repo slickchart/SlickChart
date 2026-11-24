@@ -169,7 +169,9 @@ saved anywhere", not "does this always call that".
 | `_clientIdByName` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_clientIdByName` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_clientIdByName` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_clientSendCode` | `/api/account-setup` | via `doSetupAccount` |
 | `_clientSendCode` | `/api/client-code` | direct |
+| `_clientVerifyCode` | `/api/account-setup` | via `doSetupAccount` |
 | `_clientVerifyCode` | `/api/client-code` | direct |
 | `_clientsNotInSquare` | `/api/square/customers` | via `_fetchSquareDirectory` |
 | `_coCharge` | `/api/square/charge-card` | direct |
@@ -324,6 +326,7 @@ saved anywhere", not "does this always call that".
 | `_growPause` | `/api/create-portal-session` | direct |
 | `_growUnpause` | `/api/billing-status` | via `_loadBillingStatus` |
 | `_growUnpause` | `/api/create-portal-session` | direct |
+| `_handleAuthParams` | `/api/account-setup` | via `_setupLoad` |
 | `_handleAuthParams` | `/api/app-launch` | via `_alSend` |
 | `_handleAuthParams` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_handleAuthParams` | `/api/change-email` | via `_confirmEmailChange` |
@@ -483,6 +486,10 @@ saved anywhere", not "does this always call that".
 | `_openSquarePurge` | `/api/square/customer-map` | direct |
 | `_openSquarePurge` | `/api/square/customers` | direct |
 | `_openSquarePurge` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_paidClaim` | `/api/account-setup` | direct |
+| `_paidClaim` | `/api/app-launch` | via `_alSend` |
+| `_paidClaim` | `/api/billing-status` | via `_checkBillingBanner` |
+| `_paidClaim` | `/api/client-code` | via `_clientSendCode` |
 | `_payDelete` | `/api/square/giftcard` | via `_checkGiftCard` |
 | `_payDelete` | `/api/square/invoices` | via `_paySyncSquare` |
 | `_payOpen` | `/api/square/giftcard` | via `_checkGiftCard` |
@@ -543,11 +550,6 @@ saved anywhere", not "does this always call that".
 | `_previewGuideFileInFrameP` | `/api/guide-file` | via `_getGuideFile` |
 | `_probeWhisper` | `/api/transcribe` | direct |
 | `_prodPickerRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_promptReSignIn` | `/api/app-launch` | via `_alSend` |
-| `_promptReSignIn` | `/api/client-code` | via `_clientSendCode` |
-| `_promptReSignIn` | `/api/logout` | via `_doLogout` |
-| `_promptReSignIn` | `/api/native-push` | via `_doLogout` |
-| `_promptReSignIn` | `/api/provider-push` | via `_doLogout` |
 | `_pushClientNow` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_pushClientToSquare` | `/api/square/connection` | via `_sqConnState` |
 | `_pushClientToSquare` | `/api/square/customers` | direct |
@@ -715,9 +717,11 @@ saved anywhere", not "does this always call that".
 | `_setDepositMode` | `/api/square/connect` | via `_sqConnect` |
 | `_setDepositMode` | `/api/square/connection` | via `_sqCheckStatus` |
 | `_setDepositMode` | `/api/square/customers` | via `_sqLoadCustomers` |
+| `_setLang` | `/api/account-setup` | via `doSetupAccount` |
 | `_setLang` | `/api/app-launch` | via `_alSend` |
 | `_setLang` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_setLang` | `/api/client-code` | via `_clientSendCode` |
+| `_setLoginMode` | `/api/account-setup` | via `doSetupAccount` |
 | `_setLoginMode` | `/api/app-launch` | via `_alSend` |
 | `_setLoginMode` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_setLoginMode` | `/api/client-code` | via `_clientSendCode` |
@@ -727,6 +731,10 @@ saved anywhere", not "does this always call that".
 | `_setupGetApp` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_setupGetApp` | `/api/square/connect` | via `_sqConnect` |
 | `_setupGetApp` | `/api/square/connection` | via `_sqConnState` |
+| `_setupLoad` | `/api/account-setup` | direct |
+| `_setupLoad` | `/api/app-launch` | via `_alSend` |
+| `_setupLoad` | `/api/billing-status` | via `_checkBillingBanner` |
+| `_setupLoad` | `/api/client-code` | via `_clientSendCode` |
 | `_setupPayCard` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_setupPayCard` | `/api/square/connect` | via `_sqConnect` |
 | `_setupPayCard` | `/api/square/connection` | via `_sqConnState` |
@@ -745,7 +753,9 @@ saved anywhere", not "does this always call that".
 | `_shareGuideLink` | `/api/native-push` | via `_doLogout` |
 | `_shareGuideLink` | `/api/provider-push` | via `_doLogout` |
 | `_showPhotoViewer` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_signedOutBannerHTML` | `/api/account-setup` | via `doSetupAccount` |
 | `_signedOutBannerHTML` | `/api/client-code` | via `_clientSendCode` |
+| `_signinRefusedHint` | `/api/account-setup` | via `doSetupAccount` |
 | `_signinRefusedHint` | `/api/client-code` | via `_clientSendCode` |
 | `_sqApptsErrHTML` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_sqApptsErrHTML` | `/api/square/connect` | via `_sqConnect` |
@@ -942,12 +952,18 @@ saved anywhere", not "does this always call that".
 | `dismissFlag` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `dismissFlag` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `dismissFlag` | `/api/square/save-card` | via `_addCardOnFile` |
+| `doRequestReset` | `/api/account-setup` | via `doSetupAccount` |
 | `doRequestReset` | `/api/app-launch` | via `_alSend` |
 | `doRequestReset` | `/api/billing-status` | via `_checkBillingBanner` |
 | `doRequestReset` | `/api/client-code` | via `_clientSendCode` |
+| `doResetPw` | `/api/account-setup` | via `doSetupAccount` |
 | `doResetPw` | `/api/app-launch` | via `_alSend` |
 | `doResetPw` | `/api/billing-status` | via `_checkBillingBanner` |
 | `doResetPw` | `/api/client-code` | via `_clientSendCode` |
+| `doSetupAccount` | `/api/account-setup` | direct |
+| `doSetupAccount` | `/api/app-launch` | via `_alSend` |
+| `doSetupAccount` | `/api/billing-status` | via `_checkBillingBanner` |
+| `doSetupAccount` | `/api/client-code` | via `_clientSendCode` |
 | `doSignup` | `/api/app-launch` | via `_alSend` |
 | `editSavedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `editSentRoutine` | `/api/square/catalog` | via `_autoSyncCatalog` |
@@ -1075,6 +1091,7 @@ saved anywhere", not "does this always call that".
 | `renderDeleteAccount` | `/api/guide-file` | via `_getGuideFile` |
 | `renderDeleteAccount` | `/api/store` | via `_confirmDeleteAccount` |
 | `renderEditResource` | `/api/ai` | via `_aiComplete` |
+| `renderEntry` | `/api/account-setup` | via `doSetupAccount` |
 | `renderEntry` | `/api/app-launch` | via `_alSend` |
 | `renderEntry` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderEntry` | `/api/client-code` | via `_clientSendCode` |
@@ -1093,6 +1110,7 @@ saved anywhere", not "does this always call that".
 | `renderInviteClients` | `/api/native-push` | via `_doLogout` |
 | `renderInviteClients` | `/api/provider-push` | via `_doLogout` |
 | `renderLearn` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
+| `renderLogin` | `/api/account-setup` | via `doSetupAccount` |
 | `renderLogin` | `/api/app-launch` | via `_alSend` |
 | `renderLogin` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderLogin` | `/api/client-code` | via `_clientSendCode` |
@@ -1255,6 +1273,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 | Endpoint | Methods | Gated by | Purpose |
 |---|---|---|---|
+| `/api/account-setup` | GET, POST | **public** | the "Get set up" screen for a provider who just paid (lib/account-setup.js). |
 | `/api/admin-stats` | GET | provider session | GET /api/admin-stats  → owner-only: privacy-safe aggregate adoption metrics. |
 | `/api/admin/activity-watch` | GET | founder, provider session | GET /api/admin/activity-watch?since=<ms>   Authorization: Monitor <key>  (or a founder session) |
 | `/api/admin/app-launches` | GET | founder, provider session | GET /api/admin/app-launches   Authorization: Monitor <key>  (or a founder session) |

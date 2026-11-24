@@ -174,6 +174,9 @@ export async function ensureProvidersTable() {
   await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS totp_enabled boolean DEFAULT false`;
   // A secret being set up, kept apart from the live one until /api/totp-verify proves it works.
   await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS totp_pending text`;
+  // Made by the Stripe webhook the moment she pays, still waiting for her to pick a password
+  // (lib/account-setup.js, 2026-11-23). Never signed in to, holds no data.
+  await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS needs_setup boolean DEFAULT false`;
   // One-time tokens for email verification and password resets.
   await q`CREATE TABLE IF NOT EXISTS auth_tokens (
     token text PRIMARY KEY,

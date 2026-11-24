@@ -40,7 +40,7 @@ export default async function handler(req, res) {
         res.status(429).json({ error: 'Too many attempts. Please wait a few minutes and try again.' });
         return;
       }
-      const rows = await q`SELECT id, name, email, pass_hash, verified, totp_enabled, totp_secret FROM providers WHERE email = ${email}`;
+      const rows = await q`SELECT id, name, email, pass_hash, verified, totp_enabled, totp_secret, coalesce(needs_setup, false) AS needs_setup FROM providers WHERE email = ${email}`;
       // Run scrypt in BOTH branches (real hash vs decoy) so response latency doesn't reveal whether the
       // email is registered — the decoy result is discarded.
       const passOk = rows.length ? verifyPassword(password, rows[0].pass_hash)
@@ -128,7 +128,9 @@ export default async function handler(req, res) {
       // never got in had tried Sign in, up to 6 times, and the phone apps showed them nothing else).
       // Email HER the create-your-account link again (only ever to the address typed, at most once an
       // hour, lib/setup-email.js) and tell Ashley. The answer to the caller does not change.
-      if (!rows.length) {
+      // Since 2026-11-23 paying makes the account but she has not picked a password yet (needs_setup):
+      // the same case, and the same help.
+      if (!rows.length || rows[0].needs_setup) {
         try {
           if (await hasActiveSubscription(email)) {
             const r = await resendSetupEmail(q, email);

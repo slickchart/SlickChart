@@ -11276,3 +11276,51 @@ stays upright after taking it."* Device read from `/api/admin/app-launches` (her
   11/11 (those copy store.js into a temp dir, so they now copy `lib/exact-repeats.js` too),
   check-tenant-isolation / check-kv-stamps / check-merge-growth / check-generated green.
   (`test-store-changed-only` and `sweep2-sec-pg` fail the same way before this change: unrelated.)
+
+## 2026-11-23 — Build 2026-11-23b: paying MAKES the account; "Get set up" signs her straight in
+
+**Observed (Ashley, 2026-11-23 3:43 PM PT):** "with all new providers the last few days im getting
+notifications that they sign up but then cant get in or something". She asked that paying instantly
+gives them an account and that the "get set up" email goes right away.
+
+**What the records showed (read, nobody asked):**
+- Stripe: the $17 monthly (`plink_1UYaTl…`, buy.stripe.com/4gM8wO…), $170 yearly (`plink_1UYaL4…`) and
+  $100 yearly (`plink_1URy6X…`) payment links end on Stripe's own "hosted confirmation" page. Only the
+  old $10 link redirected back to /slickchart. So since the 2026-11-07 price change every new payer
+  finished on a Stripe page with no way into SlickChart, and still had to make the account by hand.
+- `/api/admin/orphans` (Monitor key): 5 paid, no account: pat… (11-22), izz… (11-10), hal… (11-10,
+  2 failed sign-ins, Stripe `active`, already paying), jil… (11-03, 6 failed sign-ins), bel… (11-03).
+- pat… is Patience: paid at 9:15am PT 11-22 as `…maasey722@gmail.com` (typo), was told "no payment
+  under that email" at Create account, then PAID AGAIN at 9:22 as `…massey722@gmail.com` and made her
+  account. **Two trialing subscriptions** (sub_1UeeMm… typo, sub_1UeeU1… real), both bill $17 on
+  2026-12-06. Cancelling the typo one is Ashley's call (asked on the thread card).
+- wah…@gmail.com tried Create account at 3:35pm PT 11-23 with no payment under any near address.
+
+**What changed:**
+- `lib/account-setup.js`: the Stripe webhook makes the provider row at checkout, `needs_setup = true`
+  (random password nobody has). `providers.needs_setup` column added in `ensureProvidersTable`.
+- "Get set up" email (`lib/setup-email.js`, subject "Get set up: your SlickChart account is ready"):
+  one button, `/slickchart?setup=<token>` (auth_tokens kind `setup`, 14 days, `data` = email|stripe).
+- `api/account-setup.js`: GET token -> email/name; POST {token,password,name} -> password set,
+  `needs_setup` off, verified when the link came by email, welcome email, signed in. POST {sessionId}
+  -> checks the checkout session WITH STRIPE (complete, subscription, not Build, <72 h) and hands back
+  a set-up token for a waiting account, or `hasAccount` for a real one. Never touches an account
+  that has a password.
+- App: `?setup=` opens "Your account is ready 🎉" (email shown, name prefilled, pick a password,
+  "Start using SlickChart" -> Home). `?paid=<cs_…>` shows "Thank you for joining! Getting your account
+  ready…" then the same screen; existing account -> Sign in with email filled; Stripe slow -> "we
+  emailed you a Get set up button". A browser holding another account is wiped before the new
+  account is used (never pushAllLocal into it). Signed in already + ?paid: just a thank-you toast.
+- A waiting account counts as "paid but no account" everywhere (orphans, rescue, health sweep,
+  signup-rescue). Sign in on one re-sends Get set up; Create account claims it; Forgot password
+  finishes it; Move payment moves it (and kills links sent to the wrong address).
+- `cron-orphan-checkout`: the reminder carries the one-tap link; ONE catch-up email (`nurture_sends`
+  seq `setup-v2`) to everyone stranded before this, skipped when a near-identical address already
+  has a real account (Patience's typo address is never emailed).
+- **Not done, needs Ashley's yes (auto mode refused the live Stripe change):** set the three payment
+  links' after-completion to redirect `https://slickchart.app/slickchart?paid={CHECKOUT_SESSION_ID}`.
+  Until then payers still land on Stripe's page, but the Get set up email reaches them in seconds.
+- Tests: `scratchpad/test-paid-account-pg.mjs` (real Postgres, 52 checks, CONTROL=1 fails),
+  `scratchpad/test-paid-account-ui.mjs` (30, Chromium AND WebKit). Updated: `founder-push/setup-email.mjs`,
+  `test-signup-rescue-pg.mjs` (new subject/link). Still green: test-signup-rescue-ui, setup-checklist,
+  onboard tests, founder-push set, tenant-isolation/merge/reload checks.

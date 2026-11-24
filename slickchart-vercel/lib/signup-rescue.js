@@ -92,7 +92,7 @@ export async function nearPaidEmails(q, email) {
     const rows = await q`SELECT lower(s.email) AS email FROM subscriptions s
       WHERE s.status IN ('active', 'trialing') AND coalesce(s.stripe_subscription_id, '') <> ''
         AND s.updated_at > now() - interval '30 days'
-        AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
+        AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email) AND NOT coalesce(p.needs_setup, false))
       ORDER BY s.updated_at DESC LIMIT 60`;
     return rows.map(r => r.email).filter(e => looksLikeSamePerson(e, email)).slice(0, 3);
   } catch (e) { return []; }
@@ -188,7 +188,7 @@ export async function recentSignupProblems(q, days = 14) {
     await ensureSignupProblemsTable(q);
     const d = Math.max(1, Math.min(60, Number(days) || 14));
     const rows = await q`SELECT email, kind, max(match) AS match, count(*)::int AS n, min(at) AS first_at, max(at) AS last_at,
-        EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = sp.email) AS has_account
+        EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = sp.email AND NOT coalesce(p.needs_setup, false)) AS has_account
       FROM signup_problems sp WHERE at > now() - make_interval(days => ${d})
       GROUP BY email, kind ORDER BY max(at) DESC LIMIT 40`;
     return rows.map(r => ({ email: r.email, kind: r.kind, what: KIND_WORDS[r.kind] || r.kind, match: r.match || null, times: r.n,

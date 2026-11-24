@@ -36,7 +36,7 @@ const lib = root + '/lib', api = root + '/api';
 fs.mkdirSync(lib, { recursive: true }); fs.mkdirSync(api + '/admin', { recursive: true });
 fs.writeFileSync(root + '/package.json', '{"type":"module"}');
 fs.writeFileSync(lib + '/db.js', DBSTUB);
-for (const f of ['auth.js', 'totp.js', 'stripe-subs.js', 'pricing.js', 'setup-email.js', 'signup-rescue.js', 'founder-settings.js', 'notify-log.js', 'app-launch-log.js']) fs.copyFileSync(VERCEL + '/lib/' + f, lib + '/' + f);
+for (const f of ['auth.js', 'totp.js', 'stripe-subs.js', 'pricing.js', 'setup-email.js', 'account-setup.js', 'signup-rescue.js', 'founder-settings.js', 'notify-log.js', 'app-launch-log.js']) fs.copyFileSync(VERCEL + '/lib/' + f, lib + '/' + f);
 fs.writeFileSync(lib + '/email.js', `export async function sendEmail(m){ globalThis.__MAIL.push(m); return {}; } export function trustedOrigin(){ return 'https://slickchart.app'; } export async function addToAudience(){} export function welcomeEmailHtml(){return 'w';} export function welcomeEmailText(){return 'w';}`);
 fs.writeFileSync(lib + '/fcm.js', `export function founderPushConfigured(){ return true; } export async function pushFoundersReport(p){ globalThis.__PUSH.push(p); return { devices: 2, sent: 2, providerIds: ['p_f'], results: [] }; }`);
 fs.writeFileSync(lib + '/nurture.js', `import { sql } from './db.js'; export async function ensureNurtureTables(q){ q=q||sql(); await q\`CREATE TABLE IF NOT EXISTS nurture_sends (email text NOT NULL, seq text NOT NULL, step int NOT NULL, sent_at timestamptz DEFAULT now(), UNIQUE(email, seq, step))\`; await q\`CREATE TABLE IF NOT EXISTS nurture_optout (email text PRIMARY KEY, ts timestamptz DEFAULT now())\`; }`);
@@ -92,7 +92,7 @@ check('other refusals (409) recorded as signup-refused without an alert', (await
 __MAIL.length = 0; __PUSH.length = 0;
 r = await call(LOGIN, 'POST', { body: { email: 'jill@stuck.com', password: 'guess1234' } });
 check('sign-in still says only "incorrect"', r.code === 401 && r.body.error === 'Email or password is incorrect.', r.body);
-check('her create-your-account email went to her (and only her)', __MAIL.some(m => m.to === 'jill@stuck.com' && /create your account/i.test(m.subject) && /signup=1&email=jill%40stuck\.com/.test(m.html)), __MAIL.map(m => [m.to, m.subject]));
+check('her create-your-account email went to her (and only her)', __MAIL.some(m => m.to === 'jill@stuck.com' && /Get set up/i.test(m.subject) && /slickchart\?setup=/.test(m.html)), __MAIL.map(m => [m.to, m.subject]));
 check('Ashley told: paid but tried to sign in', __MAIL.some(m => /could not get in: jill@stuck\.com/.test(m.subject) && /SIGN IN/.test(m.text)));
 const n1 = __MAIL.length;
 r = await call(LOGIN, 'POST', { body: { email: 'random@x.com', password: 'guess1234' } });
@@ -103,7 +103,7 @@ __MAIL.length = 0;
 const rr = await call(RESET, 'POST', { body: { email: 'cm_b@tahoo.com' } });
 const rr2 = await call(RESET, 'POST', { body: { email: 'random@x.com' } });
 check('reset answers the same 200', rr.code === 200 && rr2.code === 200 && JSON.stringify(rr.body) === JSON.stringify(rr2.body));
-check('reset for a paid, no-account address sends the setup email', __MAIL.some(m => m.to === 'cm_b@tahoo.com' && /create your account/i.test(m.subject)), __MAIL.map(m => [m.to, m.subject]));
+check('reset for a paid, no-account address sends the setup email', __MAIL.some(m => m.to === 'cm_b@tahoo.com' && /Get set up/i.test(m.subject)), __MAIL.map(m => [m.to, m.subject]));
 
 // 4. Founder screen
 r = await call(ORPH, 'GET', { headers: { authorization: 'Bearer ' + founderTok } });
@@ -127,7 +127,7 @@ __MAIL.length = 0;
 mv = await call(ORPH, 'POST', { headers: { authorization: 'Bearer ' + founderTok }, body: { move: { from: 'cm_b@tahoo.com', to: ' CM_B@yahoo.com ' } } });
 check('founder move works', mv.code === 200 && mv.body.setup === 'sent' && mv.body.to === 'cm_b@yahoo.com', mv.body);
 check('subscription row and Stripe customer moved', (await q`SELECT email FROM subscriptions WHERE stripe_customer_id='cus_T'`)[0].email === 'cm_b@yahoo.com' && STRIPE.cus_T.email === 'cm_b@yahoo.com');
-check('setup email went to the right address', __MAIL.some(m => m.to === 'cm_b@yahoo.com' && /signup=1&email=cm_b%40yahoo\.com/.test(m.html)));
+check('setup email went to the right address', __MAIL.some(m => m.to === 'cm_b@yahoo.com' && /slickchart\?setup=/.test(m.html)));
 r = await call(SIGNUP, 'POST', { body: { email: 'cm_b@yahoo.com', password: 'whatever123', name: 'C' } });
 check('she can now create her account with the email she owns', r.code === 200 && !!r.body.token, r.body);
 r = await call(ORPH, 'GET', { headers: { authorization: 'Bearer ' + founderTok } });

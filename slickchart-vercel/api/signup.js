@@ -65,11 +65,23 @@ export default async function handler(req, res) {
   try {
     await ensureProvidersTable();
     const q = sql();
-    const existing = await q`SELECT id FROM providers WHERE email = ${email}`;
-    if (existing.length) { await noteRefusal(email, 409, 'already has an account'); res.status(409).json({ error: 'An account with that email already exists — try logging in.' }); return; }
+    const existing = await q`SELECT id, coalesce(needs_setup, false) AS needs_setup FROM providers WHERE email = ${email}`;
+    // Paying made her account already (lib/account-setup.js), still waiting for a password. Making it
+    // here instead of from the emailed link is fine: such an account has never been signed in to and
+    // holds nothing, which is exactly what Create account was before this existed.
+    let id = '';
+    if (existing.length && existing[0].needs_setup) {
+      const claimed = await q`UPDATE providers SET pass_hash = ${hashPassword(password)}, needs_setup = false,
+          name = CASE WHEN ${name} <> '' THEN ${name} ELSE name END, marketing_opt_in = ${!!b.optIn}
+        WHERE id = ${existing[0].id} AND coalesce(needs_setup, false) RETURNING id`;
+      if (claimed.length) { id = claimed[0].id; try { await q`DELETE FROM auth_tokens WHERE provider_id = ${id} AND kind = 'setup'`; } catch (e) {} }
+    }
+    if (!id && existing.length) { await noteRefusal(email, 409, 'already has an account'); res.status(409).json({ error: 'An account with that email already exists — try logging in.' }); return; }
 
-    const id = 'p_' + crypto.randomBytes(8).toString('hex');
-    await q`INSERT INTO providers (id, email, name, pass_hash, verified, marketing_opt_in) VALUES (${id}, ${email}, ${name}, ${hashPassword(password)}, false, ${!!b.optIn})`;
+    if (!id) {
+      id = 'p_' + crypto.randomBytes(8).toString('hex');
+      await q`INSERT INTO providers (id, email, name, pass_hash, verified, marketing_opt_in) VALUES (${id}, ${email}, ${name}, ${hashPassword(password)}, false, ${!!b.optIn})`;
+    }
     if (b.optIn) { try { await addToAudience(email, name); } catch (e) { /* non-fatal */ } }
 
     // Email verification link (valid 24h)

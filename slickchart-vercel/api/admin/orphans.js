@@ -67,7 +67,7 @@ export default async function handler(req, res) {
       const list = await q`SELECT s.email FROM subscriptions s
         WHERE s.status IN ('active', 'trialing') AND coalesce(s.stripe_subscription_id, '') <> ''
           AND s.updated_at > now() - interval '60 days'
-          AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
+          AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email) AND NOT coalesce(p.needs_setup, false))
         ORDER BY s.updated_at DESC LIMIT 50`;
       const results = [];
       for (const r of list) results.push({ email: String(r.email || '').toLowerCase(), result: await resendSetupEmail(q, r.email) });
@@ -90,11 +90,17 @@ export default async function handler(req, res) {
       await ensureNurtureTables(q);
       const row = await q`SELECT s.email, s.stripe_customer_id FROM subscriptions s
         WHERE lower(s.email) = ${from} AND s.status IN ('active', 'trialing') AND coalesce(s.stripe_subscription_id, '') <> ''
-          AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))`;
+          AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email) AND NOT coalesce(p.needs_setup, false))`;
       if (!row.length) { res.status(404).json({ error: 'That payment is not on the list any more (she may have made her account already).' }); return; }
       if ((await q`SELECT 1 FROM providers WHERE lower(email) = ${to}`).length) { res.status(409).json({ error: to + ' already has an account. Nothing was moved.' }); return; }
       if ((await q`SELECT 1 FROM subscriptions WHERE lower(email) = ${to}`).length) { res.status(409).json({ error: to + ' already has a subscription of its own. Nothing was moved.' }); return; }
       await q`UPDATE subscriptions SET email = ${to}, updated_at = now() WHERE lower(email) = ${from}`;
+      // Paying made an account under the mistyped address (lib/account-setup.js). It has never been signed
+      // in to, so it moves with the payment; any set-up link already sent went to the wrong inbox and dies.
+      try {
+        const moved = await q`UPDATE providers SET email = ${to} WHERE lower(email) = ${from} AND coalesce(needs_setup, false) RETURNING id`;
+        for (const m of moved) await q`DELETE FROM auth_tokens WHERE provider_id = ${m.id} AND kind = 'setup'`;
+      } catch (e) { console.error('[admin/orphans] waiting account not moved:', (e && e.message) || e); }
       const notes = [];
       const ids = [row[0].stripe_customer_id].filter(Boolean);
       try {
@@ -131,7 +137,7 @@ export default async function handler(req, res) {
       FROM subscriptions s
       WHERE s.status IN ('active', 'trialing') AND coalesce(s.stripe_subscription_id, '') <> ''
         AND s.updated_at > now() - interval '60 days'
-        AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
+        AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email) AND NOT coalesce(p.needs_setup, false))
       ORDER BY s.updated_at DESC LIMIT 50`;
     let fails = {};
     try { (await q`SELECT lower(email) AS e, count(*)::int AS n FROM login_attempts WHERE ts > now() - interval '30 days' GROUP BY lower(email)`).forEach(r => { fails[r.e] = r.n; }); } catch (e) {}

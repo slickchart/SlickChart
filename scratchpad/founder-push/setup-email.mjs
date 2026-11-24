@@ -16,10 +16,13 @@ globalThis.fetch = async (url, init) => {
   }
   return { ok: true, json: async () => ({}), text: async () => '' };
 };
-const claims = new Set(); const accounts = new Set(['has@acct.com', 'ashley@x.com']); const optout = new Set(['no@thanks.com']);
+const claims = new Set(); const accounts = new Set(['has@acct.com', 'ashley@x.com']); const made = new Set(); const optout = new Set(['no@thanks.com']);
 globalThis.__sqlHandler = (t, v) => {
   if (/UPDATE subscriptions SET paid_notified_at/.test(t)) return [{ email: v[0] }];
   if (/SELECT 1 FROM providers WHERE lower\(email\)/.test(t)) return accounts.has(v[0]) ? [{ '?column?': 1 }] : [];
+  // Since 2026-11-23 the webhook makes the account (lib/account-setup.js): a waiting row per payer.
+  if (/SELECT id, email, name, coalesce\(needs_setup/.test(t) || /SELECT id, email, coalesce\(needs_setup/.test(t)) return accounts.has(v[0]) ? [{ id: 'p_has', email: v[0], name: '', needs_setup: false }] : (made.has(v[0]) ? [{ id: 'p_' + v[0], email: v[0], name: '', needs_setup: true }] : []);
+  if (/INSERT INTO providers/.test(t)) { made.add(v[1]); return [{ id: v[0] }]; }
   if (/SELECT 1 FROM nurture_optout/.test(t)) return optout.has(v[0]) ? [{}] : [];
   if (/INSERT INTO nurture_sends/.test(t) && /'setup'/.test(t)) { const k = v[0]; if (claims.has(k)) return []; claims.add(k); return [{ email: k }]; }
   if (/DELETE FROM nurture_sends/.test(t) && /'setup'/.test(t)) { claims.delete(v[0]); return []; }
@@ -42,13 +45,14 @@ let s = await checkout('Jenna.New@Gmail.com');
 const m = toHer('jenna.new@gmail.com');
 ok(s === 200, 'webhook answers 200');
 ok(m.length === 1, 'the new provider gets exactly one email right away (' + m.length + ')');
-ok(m[0] && /create your account/i.test(m[0].subject), 'subject says create your account (' + (m[0] && m[0].subject) + ')');
-ok(m[0] && m[0].html.includes('https://slickchart.app/slickchart?signup=1&email=jenna.new%40gmail.com') && m[0].text.includes('signup=1&email=jenna.new%40gmail.com'), 'link opens Create account with her email filled in');
+ok(m[0] && /Get set up/i.test(m[0].subject), 'subject says Get set up (' + (m[0] && m[0].subject) + ')');
+ok(made.has('jenna.new@gmail.com'), 'paying made her account (waiting for a password)');
+ok(m[0] && /https:\/\/slickchart\.app\/slickchart\?setup=[A-Za-z0-9_-]{20,}/.test(m[0].html) && /slickchart\?setup=/.test(m[0].text) && !/signup=1/.test(m[0].html), 'its button is the one-tap set-up link');
 ok(m[0] && !/That is on me|never made/.test(m[0].text), 'the right-away email does not apologise as if something went wrong');
 s = await checkout('jenna.new@gmail.com');
 ok(s === 200 && toHer('jenna.new@gmail.com').length === 1, 'a repeat event (retry/renewal) does not email her again');
 await checkout('has@acct.com'); ok(toHer('has@acct.com').length === 0, 'someone who already has an account is not emailed');
-await checkout('ashley@x.com'); ok(!mails.some(x => /create your account/i.test(x.subject) && JSON.stringify(x.to).includes('ashley@x.com')), 'a founder address is not sent a setup email');
+await checkout('ashley@x.com'); ok(!mails.some(x => /Get set up|create your account/i.test(x.subject) && JSON.stringify(x.to).includes('ashley@x.com')), 'a founder address is not sent a setup email');
 await checkout('no@thanks.com'); ok(toHer('no@thanks.com').length === 0, 'an unsubscribed address is not emailed');
 failMail = true; s = await checkout('flaky@mail.com'); failMail = false;
 ok(s === 200 && toHer('flaky@mail.com').length === 0 && !claims.has('flaky@mail.com'), 'a failed send still answers 200 and releases the claim so it can go later');

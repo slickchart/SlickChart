@@ -405,11 +405,11 @@ export async function runSweep(q) {
           (SELECT to_char(sent_at AT TIME ZONE 'UTC', 'Mon DD HH24:MI') FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'orphan' AND n.step = 1) AS alerted,
           EXISTS (SELECT 1 FROM nurture_optout o WHERE o.email = lower(s.email)) AS unsub
         FROM subscriptions s WHERE s.status = 'active' AND s.updated_at < now() - interval '3 hours'
-        AND s.updated_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
+        AND s.updated_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email) AND NOT coalesce(p.needs_setup, false))
         AND coalesce(s.stripe_subscription_id, '') <> ''`;
     } catch (e) {
       orphan = await q`SELECT s.email FROM subscriptions s WHERE s.status = 'active' AND s.updated_at < now() - interval '3 hours'
-        AND s.updated_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
+        AND s.updated_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email) AND NOT coalesce(p.needs_setup, false))
         AND coalesce(s.stripe_subscription_id, '') <> ''`;
     }
     // Ashley 2026-11-11: "i dont need to know that in my health screens". Paid-but-no-account is not

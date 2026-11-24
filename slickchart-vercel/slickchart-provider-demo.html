@@ -665,7 +665,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-23a';
+const APP_BUILD='2026-11-23b';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -7069,6 +7069,69 @@ function _signinRefusedHint(email){
 // paid with is already in the box. Deliberately NOT written to localStorage: it is a convenience for
 // this one render, not a claim that this browser belongs to a returning provider.
 let _signupEmail='';
+// "Get set up" (2026-11-23): paying makes the account (lib/account-setup.js), so the email's button
+// (?setup=<token>) and the way back from Stripe (?paid=<checkout session id>) both land here: her email
+// is shown, she picks a password, and she is signed in. No "use the same email" step to get wrong.
+let _setupToken='',_setupInfo=null,_setupMsg='';
+function _setupLoad(){
+  const tok=_setupToken;
+  fetch('/api/account-setup?token='+encodeURIComponent(tok)).then(r=>r.json().catch(()=>({})).then(j=>({ok:r.ok,j}))).then(({ok,j})=>{
+    if(tok!==_setupToken)return;
+    if(ok&&j&&j.email){_setupInfo={email:j.email,name:j.name||''};}
+    else{_setupInfo={bad:true,email:(j&&j.email)||'',error:(j&&j.error)||'This set-up link has expired or was already used.',ready:!!(j&&j.ready)};}
+    if(_loginMode==='setup')renderLogin();
+  }).catch(()=>{_setupInfo={bad:true,net:true,error:_AUTH_NET};if(_loginMode==='setup')renderLogin();});
+}
+// Back from Stripe. The payment can take a few seconds to be final, so ask a few times before
+// falling back to "check your email".
+function _paidClaim(sid,tries){
+  fetch('/api/account-setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sid})})
+    .then(r=>r.json().catch(()=>({})).then(j=>({st:r.status,j})))
+    .then(({st,j})=>{
+      if(_loginMode!=='paid')return;
+      if(st===200&&j&&j.setupToken){_setupToken=j.setupToken;_setupInfo={email:j.email,name:j.name||''};_loginMode='setup';renderLogin();return;}
+      if(st===200&&j&&j.hasAccount){_signupEmail=j.email||'';_loginMode='login';renderLogin();const e2=document.getElementById('login-err');if(e2){e2.style.color='var(--p-green)';e2.textContent='Thank you! You already have an account. Sign in to carry on.';}return;}
+      if(tries<6){setTimeout(()=>_paidClaim(sid,tries+1),2500);return;}
+      _setupMsg='slow';renderLogin();
+    }).catch(()=>{if(_loginMode!=='paid')return;if(tries<6){setTimeout(()=>_paidClaim(sid,tries+1),2500);return;}_setupMsg='slow';renderLogin();});
+}
+function _hadOtherAccount(){try{return !!(localStorage.getItem('sc_token')||localStorage.getItem('sc_prev_owner')||localStorage.getItem('sc_cloud_seeded'));}catch(e){return false;}}
+function doSetupAccount(){
+  const pw=(document.getElementById('login-pw')||{}).value||'';const name=_loginVal('login-name');
+  const er=document.getElementById('login-err');if(er){er.style.color='';er.textContent='';}
+  if(pw.length<8){if(er)er.textContent=t('min8');return;}
+  if(_authBusy)return;_authBusy=true;
+  const b=document.getElementById('setup-go');if(b)b.disabled=true;
+  const release=()=>{_authBusy=false;if(b)b.disabled=false;};
+  try{_alAdd('setup-tap');}catch(e){}
+  _authFetch('/api/account-setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:_setupToken,password:pw,name})})
+    .then(r=>r.json().catch(()=>({})).then(j=>({st:r.status,j})))
+    .then(async({st,j})=>{
+      if(st!==200||!j||!j.token){
+        release();
+        if(st===409){_signupEmail=(j&&j.email)||'';_setupToken='';_loginMode='login';renderLogin();const e3=document.getElementById('login-err');if(e3)e3.textContent=(j&&j.error)||'Your account is already set up. Sign in.';return;}
+        const e2=document.getElementById('login-err');if(e2)e2.textContent=(j&&j.error)||(st>=500?_AUTH_5XX:'Could not finish set-up. Please try again.');
+        try{_alAdd('setup-refused',String(st));_alSend(true);}catch(e){}
+        return;
+      }
+      try{_alAdd('setup-ok');_alSend(true);}catch(e){}
+      _setupToken='';_setupInfo=null;
+      // A browser that held another account: never let its data meet the new one. Clear it and start clean.
+      if(_hadOtherAccount()){
+        try{_lsAllKeys().filter(k=>k&&k.indexOf('sc_')===0).forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});}catch(e){}
+        try{await Promise.race([_purgeOffloaded(),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
+        try{localStorage.setItem('sc_token',j.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}
+        try{location.replace('/slickchart');}catch(e){location.reload();}
+        return;
+      }
+      Cloud.token=j.token;Cloud._pulledOnce=true;/* a brand-new account has nothing to read */
+      try{localStorage.setItem('sc_token',j.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}
+      try{await Cloud.pushAllLocal();}catch(e){}
+      const nm=j.name||name;
+      try{if(nm&&typeof bizInfo!=='undefined'){if(!bizInfo.ownerName||bizInfo.ownerName===_LEGACY_DEMO_OWNER)bizInfo.ownerName=nm;if(typeof saveBizInfo==='function')saveBizInfo();if(typeof _syncProviderAvatar==='function')_syncProviderAvatar();}}catch(e){}
+      const ov=document.getElementById('login-screen');if(ov)ov.remove();_authBusy=false;nav('home');
+    }).catch(e=>{release();const e2=document.getElementById('login-err');if(e2)e2.textContent=(e&&e.message)||_AUTH_NET;});
+}
 function _prefillEmail(){try{return _signupEmail||localStorage.getItem('sc_login_email')||'';}catch(e){return _signupEmail||'';}}
 function _handleAuthParams(){
   try{
@@ -7076,6 +7139,11 @@ function _handleAuthParams(){
     const v=p.get('verify'), r=p.get('reset'), ec=p.get('emailchange');
     if(ec){setTimeout(function(){_confirmEmailChange(ec);},300);try{const u=new URL(location.href);u.searchParams.delete('emailchange');history.replaceState({},'',u);}catch(e){}}
     if(v){Cloud.verifyEmail(v).then(ok=>{if(typeof proToast==='function')proToast(ok?'Email verified \u2713':'That verification link has expired');});try{const u=new URL(location.href);u.searchParams.delete('verify');history.replaceState({},'',u);}catch(e){}}
+    const st=p.get('setup'), pd=p.get('paid');
+    if(st){_setupToken=st;_setupInfo=null;_loginMode='setup';try{const u=new URL(location.href);u.searchParams.delete('setup');history.replaceState({},'',u);}catch(e){}renderLogin();_setupLoad();return true;}
+    // Already signed in on this browser (a renewal, or paying from inside the app): carry on as normal.
+    if(pd&&Cloud.token){try{const u=new URL(location.href);u.searchParams.delete('paid');history.replaceState({},'',u);}catch(e){}setTimeout(()=>{if(typeof proToast==='function')proToast('Thank you! Your payment went through \u2713');},600);}
+    else if(pd){_setupMsg='';_loginMode='paid';try{const u=new URL(location.href);u.searchParams.delete('paid');history.replaceState({},'',u);}catch(e){}renderLogin();_paidClaim(pd,0);return true;}
     if(r){_resetToken=r;_loginMode='newpw';try{const u=new URL(location.href);u.searchParams.delete('reset');history.replaceState({},'',u);}catch(e){}renderLogin();return true;}
     // ?signup=1[&email=] — the link in the paid-but-no-account rescue email. Someone has already
     // paid and simply never created the account, so drop them straight on the Create-account form
@@ -7224,6 +7292,25 @@ function renderLogin(err){
       <div id="login-err" role="alert" style="font-size:16px;color:var(--p-red);min-height:16px;margin-bottom:10px;">${err||''}</div>
       <button onclick="doLoginTotp()" style="${btn}">Verify &amp; log in</button>
       <div style="text-align:center;margin-top:16px;font-size:16px;color:var(--p-mut);"><button onclick="_setLoginMode('login')" style="background:none;border:none;color:var(--accent-strong);font-weight:600;cursor:pointer;font-family:inherit;font-size:16px;">${t('back_login')}</button></div>`;
+  } else if(mode==='paid'){
+    inner=_setupMsg==='slow'
+      ?`<div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Thank you for joining!</div><div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:20px;">Your payment went through. We just emailed you a <b style="color:var(--p-ink);">Get set up</b> button. Tap it to pick your password and you are in.</div><button onclick="_setLoginMode('login')" style="${btn}">${t('back_login')}</button>`
+      :`<div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Thank you for joining!</div><div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:20px;">Getting your account ready&hellip;</div>`;
+  } else if(mode==='setup'){
+    const si=_setupInfo;
+    if(!si){inner=`<div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Welcome to SlickChart!</div><div style="font-size:16px;color:var(--p-mut);">Opening your account&hellip;</div>`;}
+    else if(si.bad){inner=`<div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">${si.ready?'You are already set up':'This link has expired'}</div><div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:20px;">${si.ready?'Your account is ready. Sign in with your email and password.':_fileEsc(si.error||'')}</div>
+      <button onclick="_signupEmail=${_fileEsc(JSON.stringify(String(si.email||'')))};_setupToken='';_setLoginMode('login')" style="${btn};margin-bottom:10px;">${t('log_in')}</button>
+      ${si.ready?'':`<button onclick="_signupEmail=${_fileEsc(JSON.stringify(String(si.email||'')))};_setupToken='';_setLoginMode('reset')" style="width:100%;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:12px;padding:13px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Email me a new link</button>`}`;}
+    else{inner=`<div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Your account is ready 🎉</div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:18px;">Pick a password and you are in. You will sign in with <b id="setup-email" style="color:var(--p-ink);word-break:break-all;">${_fileEsc(si.email||'')}</b>.</div>
+      <label class="fl-lbl" for="login-name">${t('name')}</label><input id="login-name" autocomplete="name" placeholder="${t('name_ph')}" value="${_fileEsc(si.name||'')}" style="${ic}">
+      <label class="fl-lbl" for="login-pw">Pick a password</label>
+      <div style="position:relative;margin-bottom:6px;"><input id="login-pw" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doSetupAccount()" style="${ic};padding-right:44px;margin-bottom:0;"><button type="button" onclick="_togglePw('login-pw',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
+      <div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">${t('min8')}</div>
+      <input type="email" autocomplete="username" value="${_fileEsc(si.email||'')}" style="display:none" aria-hidden="true" tabindex="-1">
+      <div id="login-err" role="alert" style="font-size:16px;color:var(--p-red);min-height:16px;margin-bottom:10px;">${err||''}</div>
+      <button id="setup-go" onclick="doSetupAccount()" style="${btn}">Start using SlickChart</button>`;}
   } else if(mode==='welcome'){
     // Unified front door: one app, routes to the right experience for who you are.
     const hasClient=(function(){try{return !!localStorage.getItem('sc_client_token');}catch(e){return false;}})();
@@ -7269,7 +7356,7 @@ function renderLogin(err){
     ${langPicker}
   </div>`;
   document.body.appendChild(ov);
-  setTimeout(()=>{const f=mode==='totp'?'login-totp':mode==='newpw'?'login-pw':(mode==='signup'?'login-name':((_prefillEmail()&&mode==='login')?'login-pw':'login-email'));const i=document.getElementById(f);if(i&&i.focus)try{i.focus();}catch(e){}},40);
+  setTimeout(()=>{const f=mode==='totp'?'login-totp':(mode==='newpw'||mode==='setup')?'login-pw':(mode==='signup'?'login-name':((_prefillEmail()&&mode==='login')?'login-pw':'login-email'));const i=document.getElementById(f);if(i&&i.focus)try{i.focus();}catch(e){}},40);
 }
 function _loginVal(id){const el=document.getElementById(id);return el?el.value.trim():'';}
 // A 402 from /api/login carries a checkoutUrl so someone whose card failed can pay and get back in.

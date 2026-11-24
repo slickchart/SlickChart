@@ -15,7 +15,10 @@ export default async function handler(req, res) {
     const q = sql();
     const rows = await q`SELECT provider_id FROM auth_tokens WHERE token = ${token} AND kind = 'reset' AND expires_at > now()`;
     if (!rows.length) { res.status(400).json({ error: 'This reset link is invalid or has expired.' }); return; }
-    await q`UPDATE providers SET pass_hash = ${hashPassword(password)} WHERE id = ${rows[0].provider_id}`;
+    // A reset link went to her inbox, so it also finishes an account that paying made and that was
+    // still waiting for its first password (lib/account-setup.js): it becomes a normal account.
+    await q`UPDATE providers SET pass_hash = ${hashPassword(password)}, needs_setup = false,
+      verified = CASE WHEN coalesce(needs_setup, false) THEN true ELSE verified END WHERE id = ${rows[0].provider_id}`;
     await q`DELETE FROM auth_tokens WHERE token = ${token}`;
     // A reset means the owner lost access / suspects compromise — sign out every existing session so
     // a stolen 30-day token can't outlive the reset (store.js checks isSessionValid on each request).

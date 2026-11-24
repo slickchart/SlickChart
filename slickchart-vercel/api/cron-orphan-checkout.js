@@ -23,6 +23,8 @@ import { ensureNurtureTables } from '../lib/nurture.js';
 import { pushFounders } from '../lib/fcm.js';
 import { withCronRun } from '../lib/cron-runs.js';
 import { getFounderSettings } from '../lib/founder-settings.js';
+import { setupEmailLink, setupEmailHtml, setupEmailText } from '../lib/setup-email.js';
+import { looksLikeSamePerson } from '../lib/signup-rescue.js';
 
 // How long to wait before the email, and before telling Ashley, are HER settings (Admin tools ->
 // Paid but no account; lib/founder-settings.js). Defaults 3 h (long enough that nobody mid-signup is
@@ -94,7 +96,7 @@ async function handler(req, res) {
        WHERE s.status IN ('active','trialing')
          AND s.stripe_subscription_id IS NOT NULL
          AND s.updated_at < now() - (${GRACE_HOURS} * interval '1 hour')
-         AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email))
+         AND NOT EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email) AND NOT coalesce(p.needs_setup, false))
        ORDER BY s.updated_at ASC
        LIMIT 50`;
 
@@ -113,16 +115,57 @@ async function handler(req, res) {
         const claimed = (await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, 'orphan', 0)
           ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`).length > 0;
         if (claimed) {
-          const link = trustedOrigin() + '/slickchart?signup=1&email=' + encodeURIComponent(email);
+          // Since 2026-11-23 the reminder carries the same one-tap "Get set up" link as the first email
+          // (lib/account-setup.js); the old Create-account wording only if that link could not be made.
+          const L = await setupEmailLink(q, email);
+          const link = L.link || (trustedOrigin() + '/slickchart?signup=1&email=' + encodeURIComponent(email));
           try {
-            await sendEmail({ to: email, subject: 'Your SlickChart account is one step from ready',
-              html: rescueHtml(link), text: rescueText(link) });
+            if (L.direct) {
+              await sendEmail({ to: email, subject: 'Reminder: get set up in SlickChart',
+                html: setupEmailHtml(email, link, true), text: setupEmailText(email, link, true) });
+              try { await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, 'setup-v2', 0) ON CONFLICT (email, seq, step) DO NOTHING`; } catch (e2) {}
+            } else {
+              await sendEmail({ to: email, subject: 'Your SlickChart account is one step from ready',
+                html: rescueHtml(link), text: rescueText(link) });
+            }
             out.emailed++;
           } catch (e) {
             // Release the claim so the next run retries rather than leaving them stranded silently.
             try { await q`DELETE FROM nurture_sends WHERE email = ${email} AND seq = 'orphan' AND step = 0`; } catch (e2) {}
             console.error('[orphan-checkout] rescue email failed for ' + email + ':', (e && e.message) || e);
           }
+        }
+      }
+
+      // 1b) One-time catch-up (2026-11-23) for people who paid BEFORE paying made the account: their
+      //     emails said "create your account", which is where they got stuck. Each gets the new one-tap
+      //     "Get set up" email once (seq 'setup-v2'; new payers have it claimed when their first email
+      //     goes). Never when an account under a near-identical address is already in use: that is her
+      //     real one, and this address is a typo that may belong to a stranger.
+      if (mayEmail) {
+        let had = [];
+        try { had = await q`SELECT 1 FROM nurture_sends WHERE email = ${email} AND seq = 'setup-v2' LIMIT 1`; } catch (e) { had = [{}]; }
+        if (!had.length) {
+          let twin = false;
+          try {
+            const ready = await q`SELECT lower(email) AS e FROM providers WHERE NOT coalesce(needs_setup, false)
+              AND split_part(lower(email), '@', 2) IN (${email.split('@')[1] || ''}) OR (NOT coalesce(needs_setup, false) AND split_part(lower(email), '@', 1) = ${email.split('@')[0] || ''})`;
+            twin = ready.some(x => looksLikeSamePerson(x.e, email));
+          } catch (e) { twin = true; }
+          const claimedV2 = !twin && (await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, 'setup-v2', 0)
+            ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`).length > 0;
+          if (claimedV2) {
+            const L = await setupEmailLink(q, email);
+            if (L.direct && L.link) {
+              try {
+                await sendEmail({ to: email, subject: 'Your SlickChart account is ready: get set up in one tap',
+                  html: setupEmailHtml(email, L.link, true), text: setupEmailText(email, L.link, true) });
+                out.caughtUp = (out.caughtUp || 0) + 1;
+              } catch (e) {
+                try { await q`DELETE FROM nurture_sends WHERE email = ${email} AND seq = 'setup-v2' AND step = 0`; } catch (e2) {}
+              }
+            } else { try { await q`DELETE FROM nurture_sends WHERE email = ${email} AND seq = 'setup-v2' AND step = 0`; } catch (e2) {} }
+          } else if (twin) out.skippedTwin = (out.skippedTwin || 0) + 1;
         }
       }
 
