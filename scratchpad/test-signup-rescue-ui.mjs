@@ -67,7 +67,7 @@ const txt = async (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).
   await p.fill('#login-name', 'X'); await p.fill('#login-pw', 'whatever123');
   await p.evaluate(() => doSignup()); await p.waitForTimeout(800);
   const e = await txt(p, '#login-err'); const hrefs = await p.$$eval('#login-err a', as => as.map(a => a.href));
-  res.push(['web 402: message plus Subscribe link', /check the email for a typo/.test(e) && hrefs.some(h => /buy\.stripe\.com\/test/.test(h)), e]);
+  res.push(['web 402: pick-your-plan panel with the typo hint and a Stripe link (2026-11-23)', /pick your plan/.test(e) && /Check this email for a typo/.test(e) && hrefs.some(h => /buy\.stripe\.com\/test/.test(h)), e]);
   res.push(['web: no page errors', !p._errs.length, p._errs.join('|')]);
   await p.context().close();
 }

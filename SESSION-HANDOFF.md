@@ -11324,3 +11324,14 @@ gives them an account and that the "get set up" email goes right away.
   `scratchpad/test-paid-account-ui.mjs` (30, Chromium AND WebKit). Updated: `founder-push/setup-email.mjs`,
   `test-signup-rescue-pg.mjs` (new subject/link). Still green: test-signup-rescue-ui, setup-checklist,
   onboard tests, founder-push set, tenant-isolation/merge/reload checks.
+- Build `2026-11-23c`: Create account with NO payment under the email (web) now shows "One step first:
+  pick your plan" with Start free trial ($/month) and Pay yearly buttons, both Stripe links carrying
+  `prefilled_email=<what she typed>`, plus the typo hint for anyone who did pay. Store apps unchanged
+  (payment-silent, never reach Create account). The 11-23 3:35pm "iPhone app" case: launch log device
+  `moeikr` (iOS app, not signed in) opened welcome -> Sign in at 3:34pm and left; the 402 at 3:35:58pm
+  came from the web (no signup screen exists in the store app). Test: `scratchpad/test-signup-plan-ui.mjs`
+  (Chromium + WebKit). `test-signup-rescue-ui` updated for the new panel.
+- Ashley 2026-11-23 4:08pm PT: "push the updates early as soon as youre done please" (this release).
+- Stripe connector here is READ-ONLY: changing the payment links' after-completion and cancelling
+  Patience's typo trial `sub_1UeeMmCHH3zgAIZeKEO7YC8g` (both approved by Ashley on the thread cards)
+  need either a write-enabled Stripe connection or her signing in to Stripe in the browser pane.

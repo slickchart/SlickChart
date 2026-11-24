@@ -665,7 +665,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-23b';
+const APP_BUILD='2026-11-23c';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -4838,7 +4838,7 @@ const Cloud={
     return this.enabled;
   },
   async login(email,pw,totpCode){const r=await _authFetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':(r.status>=500?_AUTH_5XX:'Login failed')));err.requiresTotp=!!(j&&j.requiresTotp);err.status=r.status;err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
-  async signup(email,pw,name,optIn){const r=await _authFetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||(r.status>=500?_AUTH_5XX:'Sign up failed'));err.status=r.status;err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;throw err;}this.token=j.token;this._pulledOnce=true;/* a brand-new account has nothing to read */try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async signup(email,pw,name,optIn){const r=await _authFetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||(r.status>=500?_AUTH_5XX:'Sign up failed'));err.status=r.status;err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;err.priceYear=j&&j.priceYear;err.priceMonth=j&&j.priceMonth;throw err;}this.token=j.token;this._pulledOnce=true;/* a brand-new account has nothing to read */try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){await _authFetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});return true;},
   async resetPw(token,pw){const r=await _authFetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
@@ -7470,10 +7470,32 @@ function doSignup(){
     try{_alAdd('signup-refused',String((e&&e.status)||'')+' '+String((e&&e.message)||'').slice(0,100));_alSend(true);}catch(_){}
     const er=document.getElementById('login-err');
     if(er){
-      if(e&&e.checkoutUrl&&!_isNativeApp()){const _u=(typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';const _m=String(e.message||'Sign up failed').replace(/</g,'&lt;').replace(/>/g,'&gt;');er.innerHTML=_m+(_u?(' <a href="'+_urlAttr(_u)+'" style="color:var(--accent-strong);text-decoration:underline;">Subscribe now &rarr;</a>'+_yearLinkHTML(e)):'');}
+      // No payment under this email (2026-11-23): most people here simply have not picked a plan yet
+      // (they downloaded the app first). Send them straight to checkout with the email they typed
+      // already filled in, and since paying now makes the account and emails "Get set up", that is
+      // the whole sign-up. The typo hint stays for anyone who did pay. Web only (store apps stay
+      // payment-silent and never reach Create account).
+      if(e&&e.status===402&&e.checkoutUrl&&!_isNativeApp()){_signupPlanPanel(er,e,email);}
+      else if(e&&e.checkoutUrl&&!_isNativeApp()){const _u=(typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';const _m=String(e.message||'Sign up failed').replace(/</g,'&lt;').replace(/>/g,'&gt;');er.innerHTML=_m+(_u?(' <a href="'+_urlAttr(_u)+'" style="color:var(--accent-strong);text-decoration:underline;">Subscribe now &rarr;</a>'+_yearLinkHTML(e)):'');}
       else{er.textContent=(e&&e.message)||'Sign up failed';}
     }
   });
+}
+// Stripe payment links take ?prefilled_email=, so the address she typed here is the one she pays with.
+function _withPrefill(u,email){try{const x=new URL(u);if(/(^|\.)stripe\.com$/.test(x.hostname)&&email&&/.+@.+\..+/.test(email))x.searchParams.set('prefilled_email',email);return x.toString();}catch(e){return u;}}
+function _signupPlanPanel(er,e,email){
+  const m=(typeof _safeUrl==='function')?_safeUrl(_withPrefill(e.checkoutUrl,email)):'';
+  const y=(e.checkoutUrlYear&&typeof _safeUrl==='function')?_safeUrl(_withPrefill(e.checkoutUrlYear,email)):'';
+  const pm=(Number.isFinite(+e.priceMonth)&&+e.priceMonth>0)?Math.round(+e.priceMonth):0;
+  const py=(Number.isFinite(+e.priceYear)&&+e.priceYear>0)?Math.round(+e.priceYear):0;
+  if(!m){er.textContent=(e&&e.message)||'Sign up failed';return;}
+  er.style.color='var(--p-ink)';
+  er.innerHTML='<div id="signup-plan" style="background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:14px;margin-top:4px;text-align:left;">'
+    +'<div style="font-size:17px;font-weight:700;margin-bottom:6px;">One step first: pick your plan</div>'
+    +'<div style="font-size:15px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">Start your free trial with <b style="color:var(--p-ink);word-break:break-all;">'+_fileEsc(email)+'</b>. As soon as it goes through, your account is made and we email you a <b style="color:var(--p-ink);">Get set up</b> button.</div>'
+    +'<a id="signup-plan-month" href="'+_urlAttr(m)+'" style="display:block;text-align:center;background:var(--accent);color:var(--accent-ink);border-radius:12px;padding:13px;font-size:16px;font-weight:600;text-decoration:none;margin-bottom:8px;">Start free trial'+(pm?' ($'+pm+'/month after)':'')+'</a>'
+    +(y?'<a id="signup-plan-year" href="'+_urlAttr(y)+'" style="display:block;text-align:center;background:none;border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:12px;padding:12px;font-size:16px;font-weight:600;text-decoration:none;margin-bottom:10px;">Pay yearly'+(py?', $'+py+' (2 months free)':' (2 months free)')+'</a>':'')
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;">Already paid? Check this email for a typo and use the exact one you typed at checkout. We have let Ashley know too.</div></div>';
 }
 function doRequestReset(){
   const email=_loginVal('login-email');const er=document.getElementById('login-err');if(er)er.textContent='';
