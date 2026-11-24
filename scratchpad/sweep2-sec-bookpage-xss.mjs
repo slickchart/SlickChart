@@ -1,7 +1,7 @@
 // sweep2-sec: does a provider-controlled service name break out of /book/<slug>'s inline <script>?
 // Runs the REAL api/book-page.js + lib/booking.js + lib/public-brand.js with db/square/gcal/consult stubbed.
 import fs from 'fs'; import os from 'os'; import path from 'path';
-const V='/home/user/SlickChart/slickchart-vercel';
+const V=new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const t=fs.mkdtempSync(path.join(os.tmpdir(),'s2bp-')); fs.mkdirSync(t+'/api'); fs.mkdirSync(t+'/lib');
 fs.copyFileSync(V+'/api/book-page.js',t+'/api/book-page.js');
 for (const f of ['booking.js','public-brand.js']) fs.copyFileSync(V+'/lib/'+f,t+'/lib/'+f);

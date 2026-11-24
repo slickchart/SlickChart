@@ -1,7 +1,7 @@
 // sweep2-sec: unauthenticated POST /api/client-link with {email, origin} — where does the emailed
 // token-bearing link point? Runs the REAL api/client-link.js with db/email stubbed.
 import fs from 'fs'; import os from 'os'; import path from 'path';
-const V='/home/user/SlickChart/slickchart-vercel';
+const V=new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const t=fs.mkdtempSync(path.join(os.tmpdir(),'s2cl-')); fs.mkdirSync(t+'/api'); fs.mkdirSync(t+'/lib');
 fs.copyFileSync(V+'/api/client-link.js',t+'/api/client-link.js');
 fs.writeFileSync(t+'/package.json','{"type":"module"}');

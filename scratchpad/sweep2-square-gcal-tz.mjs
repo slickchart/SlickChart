@@ -26,7 +26,7 @@ check('app: the calendar itself places it at 17:00Z (sanity)', inApp === '2026-1
 check('app: _gcalAppts sends the day she picked (2026-10-20)', appts[0] && appts[0].dateISO === '2026-10-20', JSON.stringify(appts[0]));
 
 // Server side, UTC, the shipped eventBody.
-const src = fs.readFileSync('/home/user/SlickChart/slickchart-vercel/lib/google-cal.js', 'utf8');
+const src = fs.readFileSync(new URL('../slickchart-vercel', import.meta.url).pathname+'/lib/google-cal.js', 'utf8');
 const i = src.indexOf('function eventBody'); let d = 0, j = src.indexOf('{', i);
 for (; j < src.length; j++) { if (src[j] === '{') d++; else if (src[j] === '}' && --d === 0) break; }
 const fn = src.slice(i, j + 1);

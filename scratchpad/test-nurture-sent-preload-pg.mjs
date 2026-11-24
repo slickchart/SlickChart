@@ -2,7 +2,7 @@
 // (2026-11-18) against REAL PostgreSQL 16. Proves: same emails as before, far fewer queries, and the
 // overlap guard (a step claimed minutes ago stops the contact) still holds.
 import { execFileSync } from 'child_process'; import fs from 'fs'; import os from 'os'; import path from 'path'; import { pathToFileURL } from 'url';
-const VERCEL = '/home/user/SlickChart/slickchart-vercel', PGBIN = '/usr/lib/postgresql/16/bin';
+const VERCEL = new URL('../slickchart-vercel', import.meta.url).pathname+'', PGBIN = '/usr/lib/postgresql/16/bin';
 if (!fs.existsSync(PGBIN)) { console.log('SKIP'); process.exit(0); }
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nur-')), sock = fs.mkdtempSync(path.join(os.tmpdir(), 'nursock-')), PORT = '55512';
 const sh = c => execFileSync('/bin/sh', ['-c', c], { encoding: 'utf8' });

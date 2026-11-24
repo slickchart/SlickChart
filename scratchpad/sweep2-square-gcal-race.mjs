@@ -8,7 +8,7 @@
 // starts from the same old map, POSTs the same new appointment again, and whichever finishes last
 // overwrites the map. The other Google event is in nobody's map: never patched, never deleted.
 import fs from 'fs'; import os from 'os'; import path from 'path';
-const V = '/home/user/SlickChart/slickchart-vercel';
+const V = new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sw2gr-'));
 fs.mkdirSync(path.join(root, 'lib'));
 fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');

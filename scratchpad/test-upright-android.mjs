@@ -8,7 +8,7 @@
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 import fs from 'fs';
 import { mk, BASE } from './sweep3-session-lib.mjs';
-const D = '/home/user/SlickChart/scratchpad/upright/';
+const D = new URL('./', import.meta.url).pathname+'upright/';
 const RAW = 'data:image/jpeg;base64,' + fs.readFileSync(D + 'noexif.jpg').toString('base64');
 const BAKED = 'data:image/jpeg;base64,' + fs.readFileSync(D + 'baked-portrait.jpg').toString('base64');
 const T = mk();

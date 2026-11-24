@@ -9,14 +9,14 @@
 import fs from 'fs';
 import { execFileSync } from 'child_process';
 
-const html = fs.readFileSync('/home/user/SlickChart/slickchart-vercel/slickchart.html', 'utf8');
+const html = fs.readFileSync(new URL('../slickchart-vercel', import.meta.url).pathname+'/slickchart.html', 'utf8');
 const _s0 = html.indexOf('function _autoWall('); const _s1 = html.indexOf('function _autoNextOcc(a){');
 const src = html.slice(_s1);
 const body = html.slice(_s0, _s1) + src.slice(0, src.indexOf('\n}\n') + 2);
 const _autoNextOcc = new Function(body + '\nreturn _autoNextOcc;')();
 
 // The server's function, lifted verbatim from api/cron-automations.js (importing it pulls in the Neon driver).
-const cronSrc = fs.readFileSync('/home/user/SlickChart/slickchart-vercel/api/cron-automations.js', 'utf8');
+const cronSrc = fs.readFileSync(new URL('../slickchart-vercel', import.meta.url).pathname+'/api/cron-automations.js', 'utf8');
 const SERVER_SRC = 'const HOUR = 3600 * 1000;\nconst GRACE = 48 * HOUR;\n' + cronSrc.slice(cronSrc.indexOf('function _autoWall('), cronSrc.indexOf('export default async function handler'));
 function serverOcc(auto, now) {
   const out = execFileSync(process.execPath, ['--input-type=module', '-e',

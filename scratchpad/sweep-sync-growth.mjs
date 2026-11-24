@@ -35,7 +35,7 @@ import http from 'http'; import fs from 'fs'; import path from 'path'; import { 
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = [path.resolve(HERE, '..', 'slickchart-vercel'), path.resolve(HERE, '..', '..', 'slickchart-vercel'), '/home/user/SlickChart/slickchart-vercel']
+const ROOT = [path.resolve(HERE, '..', 'slickchart-vercel'), path.resolve(HERE, '..', '..', 'slickchart-vercel'), new URL('../slickchart-vercel', import.meta.url).pathname+'']
   .find(d => fs.existsSync(path.join(d, 'slickchart.html')));
 const CONTROL = process.env.CONTROL === '1';
 const VERBOSE = process.env.VERBOSE === '1';

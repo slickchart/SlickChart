@@ -4,7 +4,7 @@
 // Run: (cd slickchart-vercel && python3 -m http.server 8899) & node scratchpad/test-before-persists.mjs
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 import { mk, BASE } from './sweep3-session-lib.mjs';
-const D = '/home/user/SlickChart/scratchpad/upright/';
+const D = new URL('./', import.meta.url).pathname+'upright/';
 const T = mk();
 const b = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });

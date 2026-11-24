@@ -57,7 +57,7 @@ const ov = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth
 const wide = await page.evaluate(() => { const s=document.querySelector('#buy-sheet > div'); if(!s) return []; const W=s.getBoundingClientRect().right; return Array.from(s.querySelectorAll('*')).filter(e=>e.getBoundingClientRect().right>W+1).slice(0,6).map(e=>e.tagName+'.'+(e.getAttribute('style')||'').slice(0,120)+' | '+(e.textContent||'').slice(0,60)); });
 console.log('WIDE', JSON.stringify(wide,null,1));
 check('F: 390px horizontal overflow on Shop all / buy sheet with a long name + code', ov.sw > ov.cw || ov.sheet > 2, ov);
-await page.screenshot({ path: '/home/user/SlickChart/scratchpad/sweep3-recs-client-shop.png' });
+await page.screenshot({ path: new URL('./', import.meta.url).pathname+'sweep3-recs-client-shop.png' });
 check('no page errors', errs.length > 0, errs);
 await browser.close();
 finish();

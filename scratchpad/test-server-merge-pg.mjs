@@ -4,10 +4,10 @@
 // Reuses the db stub from sweep-dup-server-pg.mjs.  node scratchpad/test-server-merge-pg.mjs
 import { execFileSync } from 'child_process';
 import fs from 'fs'; import os from 'os'; import path from 'path';
-const VERCEL = '/home/user/SlickChart/slickchart-vercel';
+const VERCEL = new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const PGBIN = '/usr/lib/postgresql/16/bin';
 if (!fs.existsSync(PGBIN)) { console.log('SKIP: no PostgreSQL 16'); process.exit(0); }
-const src = fs.readFileSync('/home/user/SlickChart/scratchpad/sweep-dup-server-pg.mjs', 'utf8');
+const src = fs.readFileSync(new URL('./', import.meta.url).pathname+'sweep-dup-server-pg.mjs', 'utf8');
 const DBSTUB_RAW = src.slice(src.indexOf('const DBSTUB = `') + 16, src.indexOf('`;\nconst AUTHSTUB'));
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'smpg-')), sock = fs.mkdtempSync(path.join(os.tmpdir(), 'smsock-'));
 const PORT = '55493', asRoot = process.getuid() === 0, USER = asRoot ? 'pgtest' : os.userInfo().username;

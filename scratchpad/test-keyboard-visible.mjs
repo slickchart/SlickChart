@@ -34,7 +34,7 @@ await page.addInitScript(([KB, H]) => {
 }, [KB, H]);
 await page.route('**/api/**', r => { const u = r.request().url(); if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":false}' }); return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{},"clients":[],"events":[]}' }); });
 let url = 'http://localhost:8899/' + PAGE;
-if (process.env.CONTROL) { const old = 'control-' + PAGE; fs.writeFileSync('/home/user/SlickChart/slickchart-vercel/' + old, fs.readFileSync('/home/user/SlickChart/scratchpad/.control.html')); url = 'http://localhost:8899/' + old; }
+if (process.env.CONTROL) { const old = 'control-' + PAGE; fs.writeFileSync(new URL('../slickchart-vercel', import.meta.url).pathname+'/' + old, fs.readFileSync(new URL('./', import.meta.url).pathname+'.control.html')); url = 'http://localhost:8899/' + old; }
 await page.goto(url, { waitUntil: 'load' });
 await page.waitForTimeout(2500);
 
@@ -102,7 +102,7 @@ const longNote = CLIENT ? { ok: true, skipped: 'client app' } : await page.evalu
   const vv = window.visualViewport, r = el.getBoundingClientRect();
   return { rTop: Math.round(r.top), rBot: Math.round(r.bottom), band: [vv.offsetTop, vv.offsetTop + vv.height], ok: r.bottom <= vv.offsetTop + vv.height + 1 && r.bottom > vv.offsetTop + 30 }; }, CID);
 console.log('long note: ' + JSON.stringify(longNote));
-if (process.env.CONTROL) fs.unlinkSync('/home/user/SlickChart/slickchart-vercel/control-' + PAGE);
+if (process.env.CONTROL) fs.unlinkSync(new URL('../slickchart-vercel', import.meta.url).pathname+'/control-' + PAGE);
 await browser.close();
 let bad = 0;
 for (const r of results) { if (r.ok === false) bad++; console.log((r.ok === null ? 'skip ' : r.ok ? 'ok   ' : 'HIDDEN') + ' ' + r.label.padEnd(36) + ' ' + String(r.name || r.field).padEnd(50) + (r.ok === false ? ' [' + r.why + ']' : '') + (r.rTop != null ? ` field ${r.rTop}..${r.rBot} visible ${r.band[0]}..${r.band[1]}` : '')); }

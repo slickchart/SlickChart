@@ -8,7 +8,7 @@ await boot(P.p);
 await P.p.evaluate(() => nav('room', 'c1'));
 for (const phase of ['BEFORE', 'AFTER']) {
   const [fc] = await Promise.all([P.p.waitForEvent('filechooser'), P.p.locator('#room-photos button', { hasText: 'Take ' + phase }).click()]);
-  await fc.setFiles('/home/user/SlickChart/scratchpad/sweep3-test-photo.png'); await P.p.waitForTimeout(1500);
+  await fc.setFiles(new URL('./', import.meta.url).pathname+'sweep3-test-photo.png'); await P.p.waitForTimeout(1500);
 }
 const s1 = await P.p.evaluate(() => ({ n: (capturedPhotos.c1 || []).length, room: document.getElementById('room-photos').innerText, c2: (capturedPhotos.c2 || []).length }));
 T.check('both photos captured and the room shows both', s1.n === 2 && /Both captured/.test(s1.room), JSON.stringify(s1));

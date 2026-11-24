@@ -61,7 +61,7 @@ async function boot(browserPlugin,path){
 await b.close();
 // The server half: app-started callbacks answer with the slickchart:// page; web ones still redirect.
 process.env.SESSION_SECRET='t';
-const {appReturnPage}=await import('/home/user/SlickChart/slickchart-vercel/api/square/callback.js');
+const {appReturnPage}=await import(new URL('../slickchart-vercel', import.meta.url).pathname+'/api/square/callback.js');
 let out={};const fake={setHeader(k,v){out[k]=v;},status(c){out.code=c;return this;},end(b){out.body=b;}};
 appReturnPage(fake,'slickchart://oauth?sq=connected','Square connected');
 check('server: the return page links and redirects to slickchart://oauth',out.code===200&&/href="slickchart:\/\/oauth\?sq=connected"/.test(out.body)&&/location\.href="slickchart:\/\/oauth\?sq=connected"/.test(out.body),out.body.slice(-200));

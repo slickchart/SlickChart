@@ -3,7 +3,7 @@
 // Before: api/book-request.js answered "Booked" and only logged an event; nothing reached Square, and
 // the app's instant branch never called _reqSyncOut either. CONTROL=1 strips the new call and must fail.
 import fs from 'fs'; import os from 'os'; import path from 'path';
-const V = '/home/user/SlickChart/slickchart-vercel';
+const V = new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ibsq-'));
 fs.mkdirSync(path.join(root, 'lib')); fs.mkdirSync(path.join(root, 'api'));
 fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');

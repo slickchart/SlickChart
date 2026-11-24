@@ -1,6 +1,6 @@
 // sweep2-sec: reflected XSS in /api/google-cal-callback?error=... (runs the REAL handler, deps stubbed).
 import fs from 'fs'; import os from 'os'; import path from 'path';
-const V='/home/user/SlickChart/slickchart-vercel';
+const V=new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const t=fs.mkdtempSync(path.join(os.tmpdir(),'s2gc-')); fs.mkdirSync(t+'/api'); fs.mkdirSync(t+'/lib');
 fs.copyFileSync(V+'/api/google-cal-callback.js',t+'/api/google-cal-callback.js');
 fs.writeFileSync(t+'/package.json','{"type":"module"}');

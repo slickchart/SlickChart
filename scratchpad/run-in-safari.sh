@@ -8,10 +8,12 @@
 # the test's mocked routes would never see those requests (Chromium's runs never hit this).
 set -e
 here="$(cd "$(dirname "$0")" && pwd)"
-export PLAYWRIGHT_BROWSERS_PATH="${SC_WEBKIT:-/tmp/claude-0/-home-user-SlickChart/be0fe3b4-54df-5d41-bda7-89dbec145231/scratchpad/pw-webkit}"
+export PLAYWRIGHT_BROWSERS_PATH="${SC_WEBKIT:-${PLAYWRIGHT_BROWSERS_PATH:-/tmp/claude-0/-home-user-SlickChart/be0fe3b4-54df-5d41-bda7-89dbec145231/scratchpad/pw-webkit}}"
 src="$1"; shift
 tmpdir="$here/.safari-run"; mkdir -p "$tmpdir"
 for f in "$src" "$here"/*.mjs; do
-  sed -E "s#newContext\(\{#newContext({serviceWorkers:'block',#g; s#newContext\(\)#newContext({serviceWorkers:'block'})#g; s#\.newPage\(\{#.newPage({serviceWorkers:'block',#g; s#pw\.chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g; s#chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g; s#pw\.chromium\.launch\(exe \? \{ executablePath: exe \} : \{\}\)#pw.webkit.launch()#g" "$f" > "$tmpdir/$(basename "$f")"
+  # import.meta.url in the copy still means the ORIGINAL file, so paths relative to the script
+  # (../slickchart-vercel, ./hs/hs-data.js) resolve the same as in a Chromium run.
+  sed -E "s#import\.meta\.url#'file://$here/$(basename "$f")'#g; s#newContext\(\{#newContext({serviceWorkers:'block',#g; s#newContext\(\)#newContext({serviceWorkers:'block'})#g; s#\.newPage\(\{#.newPage({serviceWorkers:'block',#g; s#pw\.chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g; s#chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g; s#pw\.chromium\.launch\(exe \? \{ executablePath: exe \} : \{\}\)#pw.webkit.launch()#g" "$f" > "$tmpdir/$(basename "$f")"
 done
 node "$tmpdir/$(basename "$src")" "$@"

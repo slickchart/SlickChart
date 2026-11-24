@@ -3,7 +3,7 @@
 import { BASE, launch, clientRecord, mockApi } from './sweep2-client-lib.mjs';
 import fs from 'fs';
 // The generated source of 2026-10-16 lived in a scratchpad that is gone: read the bundled copy from the app itself.
-const _html=fs.readFileSync('/home/user/SlickChart/slickchart-vercel/slickchart.html','utf8');
+const _html=fs.readFileSync(new URL('../slickchart-vercel', import.meta.url).pathname+'/slickchart.html','utf8');
 const _i=_html.indexOf('const EC_FORMS={');
 const src=_html.slice(_i, _html.indexOf('\n};', _i)+3);
 const F=new Function(src+';return EC_FORMS')();

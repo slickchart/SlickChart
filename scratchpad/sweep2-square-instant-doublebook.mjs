@@ -8,7 +8,7 @@
 // (syncClientEvents ignores autoConfirmed), so until Ashley opens the app AND confirms it, the slot
 // stays free and the next stranger is auto-confirmed into it too.
 import fs from 'fs'; import os from 'os'; import path from 'path';
-const V = '/home/user/SlickChart/slickchart-vercel';
+const V = new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sw2ib-'));
 fs.mkdirSync(path.join(root, 'lib')); fs.mkdirSync(path.join(root, 'api'));
 fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');

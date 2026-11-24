@@ -11,7 +11,7 @@
 // D) /api/square/invoices ignores `cursor` (first 100 only).
 // E) sqContext never checks isSessionValid: a revoked (signed-out) session token still drives her Square.
 import fs from 'fs'; import os from 'os'; import path from 'path';
-const V = '/home/user/SlickChart/slickchart-vercel';
+const V = new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sw2sq-'));
 fs.mkdirSync(path.join(root, 'lib')); fs.mkdirSync(path.join(root, 'api', 'square'), { recursive: true });
 fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');

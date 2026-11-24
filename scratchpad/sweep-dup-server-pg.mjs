@@ -12,7 +12,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-const VERCEL = '/home/user/SlickChart/slickchart-vercel';
+const VERCEL = new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const PGBIN = '/usr/lib/postgresql/16/bin';
 if (!fs.existsSync(PGBIN)) { console.log('SKIP: no PostgreSQL 16'); process.exit(0); }
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dupsv-'));

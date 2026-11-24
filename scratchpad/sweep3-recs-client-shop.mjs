@@ -55,7 +55,7 @@ await page.evaluate(() => { closeBuySheet(); shopView = 'all'; renderShop(); ope
 await page.waitForTimeout(200);
 const ov = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, sheet: (() => { const s = document.querySelector('#buy-sheet > div'); return s ? s.scrollWidth - s.clientWidth : -1; })() }));
 check('F: 390px horizontal overflow on Shop all / buy sheet with a long name + code', ov.sw > ov.cw || ov.sheet > 2, ov);
-await page.screenshot({ path: '/home/user/SlickChart/scratchpad/sweep3-recs-client-shop.png' });
+await page.screenshot({ path: new URL('./', import.meta.url).pathname+'sweep3-recs-client-shop.png' });
 check('no page errors', errs.length > 0, errs);
 await browser.close();
 finish();

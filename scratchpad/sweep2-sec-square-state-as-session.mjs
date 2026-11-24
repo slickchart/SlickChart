@@ -2,7 +2,7 @@
 // SESSION secret and NO `k` scope claim. lib/auth.verifyToken only rejects tokens that carry `k`, so the
 // state (which travels in URLs: Square's authorize page, the callback query string, history, logs) is a
 // full 10-minute provider session. store.js's isSessionValid(undefined sid) returns true.
-const A = await import('/home/user/SlickChart/slickchart-vercel/lib/auth.js');
+const A = await import(new URL('../slickchart-vercel', import.meta.url).pathname+'/lib/auth.js');
 const secret = 'sess';
 const state = A.signToken({ u: 'p_victim', p: 'sq', k: 'sq' }, secret, 600); // exactly what connect.js mints (scoped since the fix)
 const asSession = A.verifyToken(state, secret);                               // what store.js / clients.js / sqContext call

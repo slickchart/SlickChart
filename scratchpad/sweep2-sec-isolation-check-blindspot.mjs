@@ -2,7 +2,7 @@
 // Copies the script + api/ into a temp tree, plants one obviously unscoped query written the way EVERY
 // endpoint in this repo writes SQL (the tag is `q`), and runs the check.
 import fs from 'fs'; import os from 'os'; import path from 'path'; import { execFileSync } from 'child_process';
-const V='/home/user/SlickChart/slickchart-vercel';
+const V=new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const t=fs.mkdtempSync(path.join(os.tmpdir(),'s2iso-'));
 fs.mkdirSync(t+'/scripts'); fs.cpSync(V+'/api',t+'/api',{recursive:true});
 fs.copyFileSync(V+'/scripts/check-tenant-isolation.cjs',t+'/scripts/check-tenant-isolation.cjs');

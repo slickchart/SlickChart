@@ -6,7 +6,7 @@
 //   node scratchpad/test-chat-compose-above-nav.mjs     (serves slickchart-vercel itself)
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 import http from 'http'; import fs from 'fs'; import path from 'path';
-const ROOT = '/home/user/SlickChart/slickchart-vercel';
+const ROOT = new URL('../slickchart-vercel', import.meta.url).pathname+'';
 const srv = http.createServer((q, r) => { const f = path.join(ROOT, decodeURIComponent(q.url.split('?')[0])); fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': f.endsWith('.html') ? 'text/html' : f.endsWith('.js') ? 'text/javascript' : 'application/octet-stream' }); r.end(b); }); }).listen(0);
 const PORT = srv.address().port;
 const ENGINE = process.env.ENGINE === 'webkit' ? pw.webkit : pw.chromium;
