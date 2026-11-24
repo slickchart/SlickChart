@@ -6,6 +6,18 @@ break quietly if nobody touches it.
 
 ---
 
+## 2026-11-24 — Health sweep: a per-client map of EMPTY slots cleared is not "data shrank" (server only)
+
+The 11-24 brief's sweep raised an ALERT: tif…'s `sc_client_homecare` went 4767 -> 2 bytes, 231
+entries -> 0 (earlier copy kept in kv_history). 4767 / 231 is about 20 bytes an entry, which is a
+client id and `[]`: the size of empty slots, not homecare lines. `explainShrink` now adds
+"(N of the M gone held nothing)" for an object map, and the data-shrink check skips the row when
+every gone entry was empty and nothing that stayed got shorter. A map whose gone entries held
+products still alerts and says "0 of the M gone held nothing". `test-health-sweep` 57/57 (two new
+cases; its providers table also gained the `needs_setup` column the billing check now reads, which
+had failed 2 asserts at baseline). If tif…'s alert still shows tomorrow on the new build, her slots
+were NOT empty: read the recovery screen numbers before saying anything (§1c, §4c).
+
 ## 1. READ THIS FIRST — the Monday blog Routines are bound to a session
 
 `CLAUDE.md` §4 explains the mechanism. **There are TWO of them now**, one per blog:

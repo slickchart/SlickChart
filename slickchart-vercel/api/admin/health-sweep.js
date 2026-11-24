@@ -57,6 +57,15 @@ const entries = x => Array.isArray(x) ? x.length : (x && typeof x === 'object' ?
 // tidying 3 clients, 2 courses and a finished note draft read as an ALERT).
 export const DELETE_KEYS = { sc_clients: ['sc_deleted_clients', 'sc_merged_ids'], sc_courses: ['sc_hidden_courses'],
   sc_guides: ['sc_hidden_guides'], sc_appts: ['sc_deleted_appts'], sc_note_drafts: ['sc_deleted_note_drafts'], sc_forms: ['sc_hidden_forms'] };
+// Same count as lib/kv-history.js contentWeight: entries, plus what each entry holds.
+function _weight(str) {
+  let v; try { v = JSON.parse(String(str == null ? '' : str)); } catch (e) { return 0; }
+  if (Array.isArray(v)) return v.length;
+  if (!v || typeof v !== 'object') return 0;
+  let n = 0;
+  for (const k of Object.keys(v)) { n++; const i = v[k]; if (Array.isArray(i)) n += i.length; else if (i && typeof i === 'object') n += Object.keys(i).length; }
+  return n;
+}
 // Ids of a library: an object keyed by id, or a list of {id}. null when the shape is neither.
 function idsOf(x) {
   if (Array.isArray(x)) { const ids = x.map(e => e && typeof e === 'object' && e.id != null ? String(e.id) : null); return ids.every(Boolean) ? ids : null; }
@@ -149,6 +158,16 @@ export function explainShrink(k, oldV, nowV, hiddenV) {
       const gone = ia.filter(id => !now.has(id));
       if (gone.length) out += ' (' + gone.filter(id => id in hid).length + ' of the ' + gone.length + ' gone were deleted by her)';
     }
+    // A per-client map ({clientId: [...]}) can hold a slot for a client with nothing in it. On
+    // 2026-11-24 tif…'s sc_client_homecare went 231 entries -> 0 at ~20 bytes an entry: an id and
+    // []. Say how many of the gone entries held nothing, so a cleared set of empty slots is not
+    // read as a provider's homecare lost.
+    if (!Array.isArray(a)) {
+      const nowK = new Set((b && typeof b === 'object' && !Array.isArray(b)) ? Object.keys(b) : []);
+      const gone = Object.keys(a).filter(id => !nowK.has(id));
+      const isEmpty = v => v == null || v === '' || (Array.isArray(v) ? v.length === 0 : (typeof v === 'object' && Object.keys(v).length === 0));
+      if (gone.length && !DELETE_KEYS[k]) out += ' (' + gone.filter(id => isEmpty(a[id])).length + ' of the ' + gone.length + ' gone held nothing)';
+    }
     return out;
   }
   const bb = (b && typeof b === 'object') ? b : {};
@@ -235,6 +254,9 @@ export async function runSweep(q) {
       // A note draft that left because its visit was saved is the app working (2026-11-19: every new
       // provider's first visit raised this warn). Listed only when something unsaved went with it.
       if (r.k === 'sc_note_drafts' && allHers && / 0 UNSAVED /.test(why)) continue;
+      // Every entry that went was an empty slot and nothing that stayed got shorter: no work lost.
+      const em = / \((\d+) of the (\d+) gone held nothing\)/.exec(why);
+      if (em && em[1] === em[2] && _weight(r.now_v) >= _weight(r.old_v) - Number(em[2])) continue;
       if ((r.old_bytes || 0) > 2000 && !allHers) big = true;
       items.push(who(r.owner) + ': ' + r.k + ' went from ' + r.old_bytes + ' to ' + (r.now_bytes || 0) + ' bytes (' + (r.old_items != null ? r.old_items + ' items before; ' : '') + 'earlier copy kept)' + why);
     }

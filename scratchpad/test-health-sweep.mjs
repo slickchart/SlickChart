@@ -26,7 +26,7 @@ globalThis.__db = db;
 const H = 3600 * 1000, now = Date.now();
 const CUR = (fs.readFileSync(path.join(SRC, 'lib/app-build.js'), 'utf8').match(/APP_BUILD = '([^']+)'/) || [])[1];
 await db.exec(`
-CREATE TABLE providers (id text PRIMARY KEY, email text UNIQUE NOT NULL, name text, pass_hash text, verified boolean, created_at timestamptz DEFAULT now());
+CREATE TABLE providers (id text PRIMARY KEY, email text UNIQUE NOT NULL, name text, pass_hash text, verified boolean, needs_setup boolean DEFAULT false, created_at timestamptz DEFAULT now());
 CREATE TABLE sessions (id text PRIMARY KEY, provider_id text NOT NULL, device text, location text, ip text, created_at timestamptz DEFAULT now(), last_seen_at timestamptz DEFAULT now(), revoked boolean DEFAULT false);
 CREATE TABLE kv (owner text, k text, v text, PRIMARY KEY(owner,k));
 CREATE TABLE kv_history (id bigserial PRIMARY KEY, owner text NOT NULL, k text NOT NULL, v text, bytes integer, items integer, reason text, saved_at timestamptz DEFAULT now());
@@ -93,6 +93,14 @@ INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead
   const allExp = { e1: { sections: { a: pad }, committed: true }, e2: { sections: { a: pad }, committed: true }, e3: { sections: { a: pad + pad }, committed: true } };
   await db.query("INSERT INTO kv VALUES ('ndonly','sc_note_drafts','{}'),('ndonly','sc_deleted_note_drafts',$1)", [JSON.stringify({ 'nd:e1': now, 'nd:e2': now, 'nd:e3': now })]);
   await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('other','sc_note_drafts',$1,$2,5,'shrink',now()-interval '1 hour'),('ndonly','sc_note_drafts',$3,$4,3,'shrink',now()-interval '1 hour')", [JSON.stringify(old), JSON.stringify(old).length, JSON.stringify(allExp), JSON.stringify(allExp).length]); }
+// 2026-11-24 tif… case: a homecare map of EMPTY slots ({clientId: []}) cleared to {} is no work lost,
+// so it is not listed; one where the gone entries held products still is, and says so.
+{ const empty = {}, real = {};
+  for (let i = 0; i < 231; i++) empty['c' + String(i).padStart(12, '0')] = [];
+  for (let i = 0; i < 40; i++) real['c' + String(i).padStart(12, '0')] = ['Cleanser AM and PM', 'SPF daily'];
+  await db.query("INSERT INTO providers (id,email,created_at) VALUES ('hcempty','hcempty@x.com', now()-interval '60 days'),('hcreal','hcreal@x.com', now()-interval '60 days')");
+  await db.query("INSERT INTO kv VALUES ('hcempty','sc_client_homecare','{}'),('hcreal','sc_client_homecare','{}')");
+  await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('hcempty','sc_client_homecare',$1,$2,231,'shrink',now()-interval '1 hour'),('hcreal','sc_client_homecare',$3,$4,40,'shrink',now()-interval '1 hour')", [JSON.stringify(empty), JSON.stringify(empty).length, JSON.stringify(real), JSON.stringify(real).length]); }
 // 'dupe' has 26 same-name pairs: 10 old ones she sees twice in her list, 16 made this week where her
 // list holds only one of the two (merged in the app, still a row on the server).
 await db.query("INSERT INTO providers (id,email,created_at) VALUES ('dupe','dupes@x.com', now()-interval '60 days')");
@@ -177,7 +185,7 @@ const NCHECKS = (fs.readFileSync(path.join(SRC, 'api/admin/health-sweep.js'), 'u
 ok(res.code === 200 && j.checks.length === NCHECKS, 'all ' + NCHECKS + ' checks reported', res.code + ' ' + (j.checks || []).length);
 ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every check ran against real SQL', JSON.stringify(j.checks.filter(c => (c.items[0] || '').startsWith('could not run')).map(c => c.id + ': ' + c.items[0])));
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
-ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only|mix…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only|mix…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
+ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only|mix…|hcr…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only|mix…|hcr…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
 ok(by['first-read'] && by['first-read'].level !== 'alert' && by['first-read'].items.some(i => /whole account is 5\.\d MB/.test(i) && /in pieces/.test(i) && !/cannot open/.test(i)), 'a 5 MB account is not an alert: its first read is streamed', JSON.stringify(by['first-read']));
 ok(by['settings-empty'].items.length === 1 && /sc_availability/.test(by['settings-empty'].items[0]), 'hours saved as null are flagged; hours never set ({}) are not');
 ok(by['founder-alerts'].level === 'alert' && by['founder-alerts'].items.some(i => /feedback alert/.test(i)) && !by['founder-alerts'].items.some(i => /paid-signup|provider-signup/.test(i)), 'the skipped feedback alert is flagged; a good one and a deliberate de-dup are not', JSON.stringify(by['founder-alerts'].items));
@@ -202,6 +210,9 @@ ok(by['stale-builds'].items.length === 1 && /2026-10-10a/.test(by['stale-builds'
 ok(by['phone-push'].items.length === 1 && /send failed: UNREGISTERED/.test(by['phone-push'].items[0]), 'a refused phone push is flagged, a link is not');
 ok(/\(last [A-Z][a-z]{2} \d\d \d\d:\d\d UTC\)$/.test(by['phone-push'].items[0] || ''), 'a phone push failure says when it last happened', by['phone-push'].items[0]);
 ok(by['new-setup'].items.length === 1 && /fre…@new.com/.test(by['new-setup'].items[0]), 'the new provider who never finished setup is flagged');
+ok(!by['data-shrink'].items.some(i => /hce…@x.com/.test(i)), 'a homecare map of empty slots cleared to {} is not listed (no work lost)', JSON.stringify(by['data-shrink'].items));
+{ const f = by['data-shrink'].items.find(i => /hcr…@x.com: sc_client_homecare/.test(i)) || '';
+  ok(/0 of the 40 gone held nothing/.test(f) && !/Cleanser/.test(f), 'a homecare map that held products is still flagged, says none of the gone were empty, and shows no content', f); }
 { const f = by['data-shrink'].items.find(i => /oth…@x.com: sc_forms/.test(i)) || '';
   ok(/Shrank: tmpls 3\u21921 entries/.test(f) && /Forms: 2 gone \(1 deleted by her\), 1 edited much shorter/.test(f) && !/f_long|f_del|qqq/.test(f), 'a forms shrink says which part shrank and how many forms she deleted, with no ids or content', f); }
 ok(by['duplicates'].items.length === 1 && /tro…@x.com: 6 emails newly on more than one client today \(6 with the same name\)/.test(by['duplicates'].items[0]) && /oth…@x.com 30 \(0 same name/.test(by['duplicates'].note || ''), 'shared emails warn only when new today; the standing family ones are a note, not a warning', JSON.stringify(by['duplicates']));
