@@ -62,8 +62,11 @@ globalThis.fetch = async (url) => {
   const u = new URL(url); const ok = j => ({ ok: true, json: async () => j, text: async () => '' });
   const m = u.pathname.match(/^\/v1\/checkout\/sessions\/(.+)$/);
   if (m) return SESSIONS[m[1]] ? ok(SESSIONS[m[1]]) : { ok: false, json: async () => ({}) };
-  if (u.pathname === '/v1/customers') return ok({ data: [] });
-  if (u.pathname === '/v1/subscriptions') return ok({ data: [] });
+  // Stripe's view for the "truly still stuck" check in the hourly job (Ashley 2026-11-23)
+  const LIVE = { 'stuck@old.com': ['cus_S', 'Sam Stuck', 'trialing'], 'fresh@pro.com': ['cus_Q', 'Fay Fresh', 'active'], 'gone@old.com': ['cus_G', 'Gina Gone', 'canceled'], 'other@addr.com': ['cus_O', 'Rae Ready', 'active'], 'patience.maasey@gmail.com': ['cus_P', 'Pat', 'trialing'] };
+  if (u.pathname === '/v1/customers') { const e = u.searchParams.get('email'); return ok({ data: LIVE[e] ? [{ id: LIVE[e][0] }] : [] }); }
+  if (u.pathname === '/v1/subscriptions') { const c = u.searchParams.get('customer'); const hit = Object.values(LIVE).find(x => x[0] === c); return ok({ data: hit ? [{ id: 'sub_' + c, status: hit[2], customer: c }] : [] }); }
+  const cm = u.pathname.match(/^\/v1\/customers\/(.+)$/); if (cm) { const hit = Object.values(LIVE).find(x => x[0] === cm[1]); return hit ? ok({ id: cm[1], name: hit[1] }) : { ok: false, json: async () => ({}) }; }
   return { ok: false, json: async () => ({}), text: async () => '' };
 };
 const D = await import(lib + '/db.js'); const A = await import(lib + '/auth.js');
@@ -185,7 +188,10 @@ check('...and the set-up email goes to the right address', __MAIL.some(m => m.to
 await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, updated_at) VALUES
   ('stuck@old.com','cus_S','sub_S','active', now() - interval '10 days'),
   ('patience.maasey@gmail.com','cus_P','sub_P','active', now() - interval '1 day'),
-  ('fresh@pro.com','cus_Q','sub_Q','active', now() - interval '5 hours')`;
+  ('fresh@pro.com','cus_Q','sub_Q','active', now() - interval '5 hours'),
+  ('gone@old.com','cus_G','sub_G','active', now() - interval '10 days'),
+  ('other@addr.com','cus_O','sub_O','active', now() - interval '10 days')`;
+await q`UPDATE providers SET name = 'Rae Ready' WHERE id = 'p_r'`;
 await D.ensureProvidersTable();
 const N = (await import(lib + '/nurture.js')); await N.ensureNurtureTables(q);
 await q`INSERT INTO nurture_sends (email, seq, step, sent_at) VALUES ('stuck@old.com','orphan',0, now() - interval '9 days'),('patience.maasey@gmail.com','orphan',0, now() - interval '20 hours'),('patience.maasey@gmail.com','setup',0, now() - interval '1 day')`;
@@ -195,6 +201,8 @@ const to = e => __MAIL.filter(m => m.to === e);
 check('stuck before today: one catch-up email with the one-tap link', to('stuck@old.com').length === 1 && !!linkIn(to('stuck@old.com')[0]), [r.body, __MAIL.map(m => [m.to, m.subject])]);
 check('...and that made her account so the link works', (await q`SELECT needs_setup FROM providers WHERE email='stuck@old.com'`)[0].needs_setup === true);
 check('a typo twin of a real account is never emailed', to('patience.maasey@gmail.com').length === 0);
+check('cancelled in Stripe (our row not updated yet): not emailed', to('gone@old.com').length === 0);
+check('paid under one address, already in under another with the same name: not emailed', to('other@addr.com').length === 0);
 check('the reminder after the wait carries the one-tap link, once', to('fresh@pro.com').length === 1 && !!linkIn(to('fresh@pro.com')[0]) && /Reminder/.test(to('fresh@pro.com')[0].subject), to('fresh@pro.com').map(m => m.subject));
 __MAIL.length = 0;
 await call(CRON, 'GET', { headers: { authorization: 'Bearer cron' } });

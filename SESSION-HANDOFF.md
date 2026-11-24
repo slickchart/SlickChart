@@ -11335,3 +11335,8 @@ gives them an account and that the "get set up" email goes right away.
 - Stripe connector here is READ-ONLY: changing the payment links' after-completion and cancelling
   Patience's typo trial `sub_1UeeMmCHH3zgAIZeKEO7YC8g` (both approved by Ashley on the thread cards)
   need either a write-enabled Stripe connection or her signing in to Stripe in the browser pane.
+- Ashley 2026-11-23 4:31pm PT: "only send that email if they truly are still stuck. i dont want them
+  getting an email they dont need if they already got in". `cron-orphan-checkout` `trulyStuck()`:
+  before the reminder or the catch-up, Stripe must show a LIVE subscription for that address, and no
+  working account may carry the payer's Stripe name under another address. Doubt or no answer = no
+  email. Logged as "not emailing <addr>: <why>", counted as `notStuck`. Tests in test-paid-account-pg.

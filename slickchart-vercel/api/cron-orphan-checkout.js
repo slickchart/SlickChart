@@ -25,6 +25,33 @@ import { withCronRun } from '../lib/cron-runs.js';
 import { getFounderSettings } from '../lib/founder-settings.js';
 import { setupEmailLink, setupEmailHtml, setupEmailText } from '../lib/setup-email.js';
 import { looksLikeSamePerson } from '../lib/signup-rescue.js';
+import { liveSubForEmail } from '../lib/stripe-subs.js';
+
+// Ashley 2026-11-23: "only send that email if they truly are still stuck. i dont want them getting an
+// email they dont need if they already got in". So before a reminder or the catch-up goes, ask Stripe
+// itself: the subscription must still be live (not cancelled), and nobody with the same name as the
+// payer may already have a working account (paid under one address, signed up under another). Any
+// doubt, or Stripe not answering, means no email.
+async function trulyStuck(q, email) {
+  try {
+    const sub = await liveSubForEmail(email);
+    if (!sub) return { stuck: false, why: 'no live subscription in Stripe' };
+    const key = process.env.STRIPE_SECRET_KEY || '';
+    let name = '';
+    if (key && sub.customer) {
+      const r = await fetch('https://api.stripe.com/v1/customers/' + encodeURIComponent(typeof sub.customer === 'string' ? sub.customer : sub.customer.id), { headers: { Authorization: 'Bearer ' + key } });
+      if (!r.ok) return { stuck: false, why: 'Stripe did not answer' };
+      const c = await r.json();
+      name = String((c && (c.individual_name || c.name)) || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    }
+    if (name.length >= 3) {
+      const same = await q`SELECT 1 FROM providers WHERE NOT coalesce(needs_setup, false) AND lower(email) <> ${email}
+        AND regexp_replace(lower(trim(coalesce(name, ''))), '[[:space:]]+', ' ', 'g') = ${name} LIMIT 1`;
+      if (same.length) return { stuck: false, why: 'an account with the same name is already in use' };
+    }
+    return { stuck: true };
+  } catch (e) { return { stuck: false, why: 'check failed' }; }
+}
 
 // How long to wait before the email, and before telling Ashley, are HER settings (Admin tools ->
 // Paid but no account; lib/founder-settings.js). Defaults 3 h (long enough that nobody mid-signup is
@@ -111,6 +138,17 @@ async function handler(req, res) {
       const mayEmail = !opted.length;
 
       // 1) Nudge them. Claimed once ever, so a later run can't re-send.
+      // Only someone truly still stuck is emailed (her rule, above). Checked once per person per run,
+      // and only when an email is actually due.
+      let _stuck = null;
+      const stuckNow = async () => (_stuck || (_stuck = await trulyStuck(q, email)));
+      const dueRescue = mayEmail && !(await q`SELECT 1 FROM nurture_sends WHERE email = ${email} AND seq = 'orphan' AND step = 0`).length;
+      const dueV2 = mayEmail && !(await q`SELECT 1 FROM nurture_sends WHERE email = ${email} AND seq = 'setup-v2' LIMIT 1`).length;
+      if ((dueRescue || dueV2) && !(await stuckNow()).stuck) {
+        out.notStuck = (out.notStuck || 0) + 1;
+        console.log('[orphan-checkout] not emailing ' + email + ': ' + _stuck.why);
+        continue;
+      }
       if (mayEmail) {
         const claimed = (await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, 'orphan', 0)
           ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`).length > 0;
