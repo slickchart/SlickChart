@@ -133,6 +133,8 @@ export default async function handler(req, res) {
         (SELECT sent_at FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'orphan' AND n.step = 1) AS alerted_at,
         (SELECT sent_at FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'setup' AND n.step = 0) AS setup_at,
         (SELECT max(sent_at) FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'setup-resend') AS resent_at,
+        (SELECT sent_at FROM nurture_sends n WHERE n.email = lower(s.email) AND n.seq = 'setup-v2' AND n.step = 0) AS getsetup_at,
+        EXISTS (SELECT 1 FROM providers p WHERE lower(p.email) = lower(s.email) AND coalesce(p.needs_setup, false)) AS waiting_account,
         EXISTS (SELECT 1 FROM nurture_optout o WHERE o.email = lower(s.email)) AS unsubscribed
       FROM subscriptions s
       WHERE s.status IN ('active', 'trialing') AND coalesce(s.stripe_subscription_id, '') <> ''
@@ -156,7 +158,7 @@ export default async function handler(req, res) {
       let suggest = emailTypoSuggestion(em);
       const tried = problems.find(p => p.match === em && p.email !== em);
       if (tried) suggest = tried.email;
-      return { email: founder ? em : maskEmail(em), suggest: suggest ? (founder ? suggest : maskEmail(suggest)) : null, paidAt: iso(r.updated_at), hoursSincePaid: hours, emailedAt: emailed, setupEmailAt: iso(r.setup_at), resentAt: iso(r.resent_at), alertedAt: iso(r.alerted_at), status, failedSignIns: fails[em] || 0 };
+      return { email: founder ? em : maskEmail(em), suggest: suggest ? (founder ? suggest : maskEmail(suggest)) : null, paidAt: iso(r.updated_at), hoursSincePaid: hours, emailedAt: emailed, setupEmailAt: iso(r.setup_at), getSetupAt: iso(r.getsetup_at), accountWaiting: !!r.waiting_account, resentAt: iso(r.resent_at), alertedAt: iso(r.alerted_at), status, failedSignIns: fails[em] || 0 };
     });
     const labels = {}; for (const k of Object.keys(FOUNDER_SETTINGS)) labels[k] = { label: FOUNDER_SETTINGS[k].label, min: FOUNDER_SETTINGS[k].min, max: FOUNDER_SETTINGS[k].max, def: FOUNDER_SETTINGS[k].def };
     const signupProblems = problems.filter(p => p.kind !== 'moved').map(p => Object.assign({}, p, founder ? {} : { email: maskEmail(p.email), match: p.match ? maskEmail(p.match) : null }));

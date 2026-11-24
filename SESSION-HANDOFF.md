@@ -11340,3 +11340,10 @@ gives them an account and that the "get set up" email goes right away.
   before the reminder or the catch-up, Stripe must show a LIVE subscription for that address, and no
   working account may carry the payer's Stripe name under another address. Doubt or no answer = no
   email. Logged as "not emailing <addr>: <why>", counted as `notStuck`. Tests in test-paid-account-pg.
+- Stripe (read 2026-11-24 00:50 UTC): all 4 stuck payers still have LIVE subscriptions and no account:
+  Halli Bean (hal…, $17, active since 11-10), Esmeralda Quijano Ruiz (izz…, $10, since Sept),
+  and **Jill Colon twice**: jil…@gmail.com AND bel…@icloud.com (name "Skincuress Jill Colon"), both
+  $10/month active since 11-03 — she has been paying two subscriptions with no way in. Told Ashley;
+  one should be cancelled/refunded once she says which (Stripe connector here is read-only).
+- `/api/admin/orphans` now also shows `getSetupAt` (the one-tap Get set up catch-up, seq setup-v2) and
+  `accountWaiting` per person, so whether it went can be read instead of guessed.
