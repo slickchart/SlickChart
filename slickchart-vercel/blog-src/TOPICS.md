@@ -43,6 +43,8 @@ rates that weren't obvious up front; and fear of migration.
 
 ### High-intent — people comparing or shopping right now
 
+- [ ] Esthetician intake form: what to include, with a free template (SEO audit 2026-11-24: Search Console shows ~130 impressions in 3 months for "esthetician intake form", "esthetician client intake form" and "client intake form esthetician" at position 26-28, and no page targets it. Link /esthetician-forms.)
+- [ ] Esthetician consent form: what it must cover for facials, peels and extractions (SEO audit 2026-11-24: "esthetician consent form" gets impressions at position 17 with no page built for it. Link /esthetician-forms and the per-treatment consent posts.)
 - [x] What to look for in waxing studio software when you're a one-person shop — drafted 2026-10-19 (`waxing-software-one-person-studio.md`)
 - [x] PMU software: booking, consent forms, and healed-result photos without three subscriptions (2026-11-02, `pmu-software-one-place.md`, draft)
 - [x] Makeup artist client records: what to track for bridal trials, parties and repeat clients (2026-11-09, `makeup-artist-client-records.md`, draft)
