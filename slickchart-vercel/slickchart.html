@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-26a';
+const APP_BUILD='2026-11-26b';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -21992,6 +21992,7 @@ function loadForms(){
     const raw=localStorage.getItem('sc_forms');if(!raw)return;
     const d=JSON.parse(raw)||{};
     if(d.tmpls)Object.assign(formTmpls,d.tmpls);
+    try{Object.keys(formTmpls).forEach(function(k){const t=formTmpls[k];if(t&&Array.isArray(t.qs))_uniqQIds(t.qs);});}catch(e){}
     if(d.guides&&typeof d.guides==='object'){Object.keys(formGuides).forEach(k=>delete formGuides[k]);Object.assign(formGuides,d.guides);}
     if(d.emojis&&typeof d.emojis==='object'){formEmojis={};Object.assign(formEmojis,d.emojis);}
     if(Array.isArray(d.custom)){customForms.length=0;d.custom.forEach(c=>customForms.push(c));
@@ -23634,6 +23635,34 @@ const typeIcons={'Short text':'ti-text-size','Long text':'ti-align-left','Yes / 
 // created before the rename keep working.
 function _isPhotoType(t){return t==='Photo upload'||t==='File upload';}
 let nextQIdLocal=20;
+// A new question's id must be one no question already has. The counter used to start again at 20 on
+// every launch, so a question added today could take the id of one added to the same form on an
+// earlier day; the client's two answers then landed under one id and showed under the wrong
+// questions (2026-11-26, Maddie: "My form answers are all messed up and not matching with the
+// correct questions"). Checks the rows on screen and every saved form.
+function _newQId(){
+  const used=new Set();
+  try{document.querySelectorAll('#qlist .qrow').forEach(function(r){const i=r.getAttribute('data-qid');if(i)used.add(i);});}catch(e){}
+  try{Object.keys(formTmpls).forEach(function(k){const t=formTmpls[k];(t&&Array.isArray(t.qs)?t.qs:[]).forEach(function(q){if(q&&q.id!=null)used.add(String(q.id));});});}catch(e){}
+  let id;do{id='q'+(nextQIdLocal++);}while(used.has(id));
+  return id;
+}
+// A form saved before that fix can hold two questions with one id. Give each later copy its own id,
+// derived from the first so every device picks the same one (CLAUDE.md §0.9). Returns true if it
+// changed anything. The questions themselves, their order and their wording are untouched.
+function _uniqQIds(qs){
+  if(!Array.isArray(qs))return false;
+  const seen=new Set();let changed=false;
+  qs.forEach(function(q){if(q&&q.id!=null)seen.add(String(q.id));});
+  const first=new Set();
+  qs.forEach(function(q,i){
+    if(!q||q.id==null)return;const id=String(q.id);
+    if(!first.has(id)){first.add(id);return;}
+    let n=2,nid=id+'_'+n;while(seen.has(nid)){n++;nid=id+'_'+n;}
+    q.id=nid;seen.add(nid);changed=true;
+  });
+  return changed;
+}
 let customForms=[];     // user-created forms, surfaced in their own section
 let customFormSeq=0;
 // An id for a form she just built.
@@ -23864,7 +23893,7 @@ function renderFormBuilder(tid){
 function _sizeQLabels(){try{document.querySelectorAll('#qlist .q-label').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+'px';});}catch(e){}}
 function _changeQType(sel){
   const row=sel.closest&&sel.closest('.qrow');if(!row)return;
-  const id=row.getAttribute('data-qid')||('q'+(nextQIdLocal++));
+  const id=row.getAttribute('data-qid')||_newQId();
   const label=(row.querySelector('.q-label')&&row.querySelector('.q-label').value)||'';
   const required=!!(row.querySelector('.q-req')&&row.querySelector('.q-req').checked);
   const q={id,label,type:sel.value,required};
@@ -23883,7 +23912,7 @@ function _changeQType(sel){
 function addFormQ(type){
   const list=document.getElementById('qlist');if(!list)return;
   const d=document.createElement('div');
-  d.innerHTML=_qRowHTML({id:'q'+(nextQIdLocal++),label:'',type:type||'Short text',required:false});
+  d.innerHTML=_qRowHTML({id:_newQId(),label:'',type:type||'Short text',required:false});
   const row=d.firstElementChild||d.firstChild;
   list.appendChild(row);
   const inp=row.querySelector&&row.querySelector('.q-label');if(inp&&inp.focus)inp.focus();
@@ -23911,7 +23940,7 @@ function _readFormBuilder(tid){
     if(!label){_blankCount++;return null;}
     const type=(row.querySelector('.q-type')&&row.querySelector('.q-type').value)||'Short text';
     const required=!!(row.querySelector('.q-req')&&row.querySelector('.q-req').checked);
-    const q={id:row.getAttribute('data-qid')||('q'+(nextQIdLocal++)),label,type,required};
+    const q={id:row.getAttribute('data-qid')||_newQId(),label,type,required};
     if(type==='Multiple choice'||type==='Single select'){const oi=row.querySelector('.q-options');if(oi){const arr=(oi.value||'').split('\n').map(s=>s.trim()).filter(Boolean);if(arr.length)q.options=arr;}else{try{const o=JSON.parse(row.getAttribute('data-options')||'[]');if(o.length)q.options=o;}catch(e){}}}
     if(type==='Contraindications'){const ti=row.querySelector('.q-items');if(ti){const arr=(ti.value||'').split('\n').map(s=>s.trim()).filter(Boolean);if(arr.length)q.items=arr;}else{try{const it=JSON.parse(row.getAttribute('data-items')||'[]');if(it.length)q.items=it;}catch(e){}}}
     return q;
@@ -23919,6 +23948,7 @@ function _readFormBuilder(tid){
   // A signature always belongs at the very end, clients sign after reviewing
   // everything above. Keep any signature question anchored last regardless of
   // where it sits in the builder.
+  _uniqQIds(qs);
   qs.sort((a,b)=>(a.type==='Signature'?1:0)-(b.type==='Signature'?1:0));
   return {name,qs,blankCount:_blankCount};
 }
@@ -24057,7 +24087,7 @@ function _formHasSignature(fid){const t=formTmpls[fid];return !!(t&&t.qs&&t.qs.s
 // Single source of truth for question order: signatures ALWAYS render last, on every
 // form and for every provider, regardless of how the form was built or stored. Used
 // everywhere questions are displayed or filled so the sign-off is always at the end.
-function _orderedFormQs(qs){return (qs||[]).slice().sort((a,b)=>(a&&a.type==='Signature'?1:0)-(b&&b.type==='Signature'?1:0));}
+function _orderedFormQs(qs){_uniqQIds(qs);return (qs||[]).slice().sort((a,b)=>(a&&a.type==='Signature'?1:0)-(b&&b.type==='Signature'?1:0));}
 // The same client-facing preview, opened ON TOP of a picker so checking a form does not mean
 // backing out, finding it in the library and coming back to send it (provider feedback, 2026-10-22).
 function _formPreviewSheet(tid){
@@ -43046,7 +43076,7 @@ function _fbParseImported(text){
     if(tag!=='Q'||parts.length<4)return;
     const type=_FB_TYPE_CODES[(parts[1]||'').toLowerCase()]||'Short text';
     const label=(parts[3]||'').replace(/\s+/g,' ').trim();if(!label)return;
-    const q={id:'q'+(nextQIdLocal++),label:label.slice(0,1500),type:type,required:parts[2]==='1'};
+    const q={id:_newQId(),label:label.slice(0,1500),type:type,required:parts[2]==='1'};
     if(type==='Multiple choice'||type==='Single select'){
       const opts=(parts.slice(4).join('|')||'').split(';;').map(function(x){return x.trim();}).filter(Boolean);
       if(opts.length<1){q.type='Short text';}else q.options=opts.slice(0,60);

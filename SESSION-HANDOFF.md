@@ -6,6 +6,26 @@ break quietly if nobody touches it.
 
 ---
 
+### 2026-11-26: form answers under the wrong questions (Maddie, MNC Aesthetics), build 2026-11-26b
+
+**What she observed** (in-app feedback, 2026-11-26 10:28am PT, no screenshots): "My form answers are all
+messed up and not matching with the correct questions😭". Device and which form not known yet; Ashley's
+reply draft asks for a screenshot, which form/client, and whether she edited the form after sending.
+
+**Cause found (not yet confirmed against her form):** `nextQIdLocal` started at 20 on every launch and never
+looked at existing ids, so a question added to a form on a later day got `q20`/`q21` again. Answers are stored
+by question id (`answers[q.id]`), so two questions on one id share one answer and show under the wrong
+questions. `scratchpad/test-question-ids-unique.mjs` reproduces it exactly with the fix removed ("Added on
+day one=answer 4").
+
+**Fix:** `_newQId()` picks an id no row on screen and no saved form uses (builder add/type change/save, the
+PDF import). `_uniqQIds()` gives a later duplicate its own id (`q20_2`, derived, same on every device):
+on load (in memory only, no boot write), on save, and in `_orderedFormQs` in BOTH apps, so a form already
+SENT with a shared id is split on the client page before it is filled, and the client returns the fixed
+`qs` snapshot. Past submissions that already collided keep their one answer (it shows under the first
+question only, no longer under both). Test passes in Chromium and WebKit; sweep-all-forms (178 forms),
+sweep-form-mirror, test-contra-ticks, test-form-import, test-ec-client-form, test-client-form-branding green.
+
 ## 2026-11-24 — Health sweep: a per-client map of EMPTY slots cleared is not "data shrank" (server only)
 
 The 11-24 brief's sweep raised an ALERT: tif…'s `sc_client_homecare` went 4767 -> 2 bytes, 231

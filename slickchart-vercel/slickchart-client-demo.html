@@ -4069,7 +4069,22 @@ function _pendingForm(){return (activeProvider().pendingForms||[]).find(pf=>pf.f
 // Signatures always come last on the form the client fills out, for every form and
 // provider. Both the render and the submit read questions through this so the field
 // indices line up.
-function _orderedFormQs(qs){return (qs||[]).slice().sort((a,b)=>(a&&a.type==='Signature'?1:0)-(b&&b.type==='Signature'?1:0));}
+// Two questions sharing one id would put both answers under one key, so each later copy gets its
+// own id first. Same rule and same function as the provider app (2026-11-26).
+function _uniqQIds(qs){
+  if(!Array.isArray(qs))return false;
+  const seen=new Set();let changed=false;
+  qs.forEach(function(q){if(q&&q.id!=null)seen.add(String(q.id));});
+  const first=new Set();
+  qs.forEach(function(q,i){
+    if(!q||q.id==null)return;const id=String(q.id);
+    if(!first.has(id)){first.add(id);return;}
+    let n=2,nid=id+'_'+n;while(seen.has(nid)){n++;nid=id+'_'+n;}
+    q.id=nid;seen.add(nid);changed=true;
+  });
+  return changed;
+}
+function _orderedFormQs(qs){_uniqQIds(qs);return (qs||[]).slice().sort((a,b)=>(a&&a.type==='Signature'?1:0)-(b&&b.type==='Signature'?1:0));}
 function renderFillForm(){
   const pf=_pendingForm();
   if(!pf){ nav('home'); return; }
