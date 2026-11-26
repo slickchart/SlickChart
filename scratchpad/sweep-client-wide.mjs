@@ -38,7 +38,7 @@ await page.goto(BASE + '?c=TOK', { waitUntil: 'load' });
 await page.waitForFunction(() => typeof client !== 'undefined' && client._real, null, { timeout: 15000 }).catch(() => { out.boot = 'client never loaded'; });
 await page.waitForTimeout(1200);
 if (FAIL === 'none') {
-  for (const s of ['home', 'journey', 'shop', 'messages', 'profile', 'rebook', 'fill-form', 'notif-settings', 'help']) {
+  for (const s of ['home', 'journey', 'shop', 'messages', 'profile', 'rebook', 'fill-form', 'notif-settings', 'client-help', 'privacy-data']) {
     await page.evaluate(s => { try { if (s === 'fill-form') _fillFormId = 'intake'; nav(s); } catch (e) {} }, s); await page.waitForTimeout(500);
     // TINY=1: words under 12px, or fainter than 4.5:1 (3:1 for big text) against what is behind them.
     if (process.env.TINY) out['tiny-' + s] = await page.evaluate(() => { const L = c => { const m = (c || '').match(/[\d.]+/g); if (!m) return 1; const [r, g, b] = m.slice(0, 3).map(v => { v = v / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
