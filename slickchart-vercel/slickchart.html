@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-25b';
+const APP_BUILD='2026-11-26a';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -28624,7 +28624,15 @@ async function openClientCleanup(){
   const rep=await _clientsNotInSquare();
   const box=document.getElementById('cleanup-body');if(!box)return;
   if(!rep){
-    box.innerHTML='<div style="padding:22px 0;text-align:center;font-size:16px;color:var(--p-mut);line-height:1.6;">Couldn’t reach your Square directory just now, so there is nothing safe to compare against.<br><br>Nothing has been changed. Try again in a moment.</div>';
+    // "Try again in a moment" is wrong when Square is not connected or its sign-in expired: no
+    // amount of waiting fixes that. Ask which it is and say the one thing that will help.
+    let st=null;try{st=await _sqConnState();}catch(e){st=null;}
+    const box2=document.getElementById('cleanup-body');if(!box2)return;
+    if(st&&typeof st==='object'&&!st.error&&!st.oauth){
+      box2.innerHTML='<div style="padding:22px 0;text-align:center;font-size:16px;color:var(--p-mut);line-height:1.6;">'+(st.expired?'Your Square sign-in expired, so there is nothing to compare against yet.':'Square isn’t connected, so there is nothing to compare against yet.')+'<br><br>Nothing has been changed. '+(st.expired?'Reconnect':'Connect')+' Square, then open this again.</div><button onclick="_closeCleanup();_sqConnect()" class="btnp" style="width:100%;border-radius:12px;padding:11px;justify-content:center;"><i class="ti ti-refresh"></i> '+(st.expired?'Reconnect':'Connect')+' Square</button>';
+      return;
+    }
+    box2.innerHTML='<div style="padding:22px 0;text-align:center;font-size:16px;color:var(--p-mut);line-height:1.6;">Couldn’t reach your Square directory just now, so there is nothing safe to compare against.<br><br>Nothing has been changed. Try again in a moment.</div>';
     return;
   }
   window._cleanupRep=rep;
