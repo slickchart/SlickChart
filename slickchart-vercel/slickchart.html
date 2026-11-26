@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-25a';
+const APP_BUILD='2026-11-25b';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -6889,6 +6889,10 @@ function _handleAuthParams(){
       try{const u=new URL(location.href);u.searchParams.delete('signup');u.searchParams.delete('email');history.replaceState({},'',u);}catch(e){}
       renderLogin();return true;
     }
+    // Back from Stripe's cancel page. The account's copy of the plan only changes when Stripe's
+    // webhook lands, a few seconds later, so say it worked now and let the billing screen show
+    // "Ending" in the meantime instead of "Active" (which reads as "the cancel didn't take").
+    if(p.get('billing')==='canceled'){try{sessionStorage.setItem('sc_just_canceled',String(Date.now()));}catch(e){}setTimeout(()=>{if(typeof proToast==='function')proToast('Your plan is canceled. You keep everything until the end of the time you paid for.',6000);},600);try{const u=new URL(location.href);u.searchParams.delete('billing');history.replaceState({},'',u);}catch(e){}}
     if(p.get('gcal')==='connected'){setTimeout(()=>{if(typeof proToast==='function')proToast('Google Calendar connected \u2713');},500);try{const u=new URL(location.href);u.searchParams.delete('gcal');history.replaceState({},'',u);}catch(e){}}
     const sq=p.get('sq');
     if(sq){const reason=p.get('reason');setTimeout(()=>{if(typeof proToast==='function')if(sq==='connected')proToast('Square connected \u2713');else proToast(_sqConnectFailMsg(reason),6000,'error');},500);
@@ -41437,7 +41441,8 @@ function _billingHTML(sub){
   // Stripe leaves a cancelled subscription 'active' until the paid-up period actually ends. Saying
   // "Active \u2014 next billing date" to someone who has just cancelled is how they end up cancelling
   // twice, or writing in to ask whether it worked.
-  const ending=!!(sub&&sub.cancel_at_period_end&&active);
+  let _jc=false;try{const t=Number(sessionStorage.getItem('sc_just_canceled')||0);if(sub&&sub.cancel_at_period_end)sessionStorage.removeItem('sc_just_canceled');else _jc=t>0&&Date.now()-t<10*60000;}catch(e){}
+  const ending=!!(sub&&(sub.cancel_at_period_end||_jc)&&active);
   const _go=_growOfferNow();
   const paused=!!(_go&&_go.paused&&active&&!ending);
   const pausedDate=paused?_growDay(_go.pausedUntil):'';
