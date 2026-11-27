@@ -665,7 +665,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-27b';
+const APP_BUILD='2026-11-27c';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -2825,8 +2825,19 @@ function _sqChartFor(sqid,email,phone,name){
     const ph=dg(phone);
     const first=v=>String(v||'').trim().toLowerCase().split(/\s+/)[0]||'';
     const fn=first(name);
+    const full=v=>String(v||'').replace(/&amp;/g,'&').trim().toLowerCase().replace(/\s+/g,' ');
+    const fl=full(name);
     const hits=Object.keys(CL).filter(id=>{const c=CL[id];if(!c||c.ownerId||c.isAnimal)return false;
-      if(sqid&&c.squareId&&String(c.squareId)!==sqid&&!_sqDeadLink(id))return false;
+      // SQUARE MAKES A SECOND CUSTOMER RECORD for a regular who books herself online (Kristi, 2026-11-27:
+      // a client since 2021 booked online, Square created a new customer with the SAME name, email and
+      // phone, and SlickChart gave her a second, empty chart that took the booking, so the first-visit
+      // package Ashley sent from her real chart said "Not scheduled"). The SAME FULL NAME plus the same
+      // email or phone is the same person, so that chart is hers even though it carries her older id.
+      // A family sharing an email or phone still never matches: their full names differ.
+      if(sqid&&c.squareId&&String(c.squareId)!==sqid&&!_sqDeadLink(id)){
+        if(!(fl&&full(c.name)===fl))return false;
+        return !!((em&&String(c.email||'').trim().toLowerCase()===em)||(ph.length>=7&&dg(c.phone)===ph));
+      }
       // A dead link is re-matched only to the same first name (a family can share one email).
       if(sqid&&c.squareId&&String(c.squareId)!==sqid&&fn&&first(c.name)!==fn)return false;
       if(em&&String(c.email||'').trim().toLowerCase()===em)return true;
@@ -24922,7 +24933,8 @@ function _apptWhenForMsg(id){
   try{
     if(typeof squareAppts!=='undefined'&&Array.isArray(squareAppts))squareAppts.forEach(a=>{
       if(!a||!a.at)return;
-      const mine=(a.sqcid&&c.squareId)?String(a.sqcid)===String(c.squareId):(!!nm&&String(a.client||'').trim().toLowerCase()===nm);
+      const _s=_sqBookingIs(a,id);
+      const mine=(_s!==null)?_s:(!!nm&&String(a.client||'').trim().toLowerCase()===nm);
       if(mine)take(a.at,true);
     });
   }catch(e){}
@@ -36516,11 +36528,43 @@ function _realSvc(t){
 // client id, then the Square customer id, then the name (exact, then the loose unique match). By
 // exact name alone, a "Jen" whose Square name is "Jennifer" never matched, so her card fell back
 // to the stored label and the placeholder service.
+// WHOSE CHART IS THIS SQUARE BOOKING? (2026-11-27.) The booking's Square customer id decides, resolved
+// the same way the import resolves it (_sqChartFor): the chart carrying that id, the chart it was
+// MERGED into, or the one chart that is plainly the same person under a second Square customer record.
+// Every "is this her appointment" check used to compare the id with the chart's own squareId and
+// nothing else, so a booking under her second Square record, or under a record merged into her chart,
+// was nobody's: no next visit in her app, no check-in nudge, no service on her card. '' when the
+// booking has no Square customer or no chart is that customer (the callers then use their name rule).
+var _sqOwnerMemo={k:-1,m:Object.create(null)};
+function _sqBookingOwner(a){
+  const sq=String((a&&a.sqcid)||'');if(!sq)return '';
+  try{
+    const k=Math.floor(Date.now()/5000);
+    if(_sqOwnerMemo.k!==k){_sqOwnerMemo.k=k;_sqOwnerMemo.m=Object.create(null);}
+    const mk=sq+'|'+String(a.email||'')+'|'+String(a.phone||'');
+    if(mk in _sqOwnerMemo.m)return _sqOwnerMemo.m[mk];
+    const nm=String(a.client||a.name||'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim();
+    let o=Object.keys(CL).find(id=>CL[id]&&String(CL[id].squareId||'')===sq)||'';
+    if(!o&&typeof _sqChartFor==='function')o=_sqChartFor(sq,a.email||'',a.phone||'',nm)||'';
+    if(o&&!CL[o])o='';
+    _sqOwnerMemo.m[mk]=o;return o;
+  }catch(e){return '';}
+}
+// Is a Square booking this chart's? true/false when the Square customer decides it, null when the caller's
+// name rule should (no Square customer on the booking, or the chart has no Square id and no chart owns it).
+function _sqBookingIs(a,id){
+  if(!a||!a.sqcid)return null;
+  const c=CL[id];if(!c)return false;
+  if(c.squareId&&String(a.sqcid)===String(c.squareId))return true;
+  const o=_sqBookingOwner(a);
+  if(o)return o===id;
+  return c.squareId?false:null;
+}
 function _apptIsClients(a,id){
   if(!a||!id)return false;
   const c=CL[id];if(!c)return false;
   if(a.clientId)return a.clientId===id;
-  if(a.sqcid&&c.squareId)return String(a.sqcid)===String(c.squareId);
+  {const s=_sqBookingIs(a,id);if(s!==null)return s;}
   const unesc=t=>String(t||'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim().toLowerCase();
   const nm=unesc(c.name),an=unesc(a.client);
   if(!nm||!an)return false;
@@ -39926,7 +39970,7 @@ function _sqMapAppts(list){
   // tx was hardcoded to 'Appointment', so every Square booking in her calendar read the same and none
   // of them said what it was for. The server now resolves the service variation to its Square name
   // (api/square/appointments.js); fall back to the generic word only when Square could not tell us.
-  return (Array.isArray(list)?list:[]).map((a,i)=>{const d=a&&a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,sqcid:a.customerId||'',client:esc(a.customerName)||'Client',tx:esc(a.serviceName)||'Appointment',dur:a.durationMinutes||60,svid:a.serviceVariationId||'',tmid:a.teamMemberId||'',col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
+  return (Array.isArray(list)?list:[]).map((a,i)=>{const d=a&&a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,sqcid:a.customerId||'',email:a.customerEmail||'',phone:a.customerPhone||'',client:esc(a.customerName)||'Client',tx:esc(a.serviceName)||'Appointment',dur:a.durationMinutes||60,svid:a.serviceVariationId||'',tmid:a.teamMemberId||'',col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
 }
 // HER LAST SQUARE SCHEDULE, KEPT ON THIS DEVICE (2026-11-07). Ashley: "I would rather it not show any
 // false info while loading". Square takes a second or two to answer on every open, and until it did
@@ -40319,7 +40363,7 @@ function _stampClientNextVisit(reconcile){
     if(_acctUnread())return;
     var startToday=new Date();startToday.setHours(0,0,0,0);
     var appts=[];
-    if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts))squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at)&&a.at>=startToday)appts.push({name:a.client,clientId:'',sqcid:a.sqcid||'',when:a.at,tx:a.tx||''});});
+    if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts))squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at)&&a.at>=startToday)appts.push({name:a.client,clientId:'',sqcid:a.sqcid||'',email:a.email||'',phone:a.phone||'',when:a.at,tx:a.tx||''});});
     // A local stand-in for a visit that IS in Square adds nothing, and matched by name only it handed the
     // visit to every client with that name. The Square booking (matched by customer id) decides.
     var _sqK={};appts.forEach(function(a){_sqK[String(a.name||'').trim().toLowerCase()+'@'+a.when.getTime()]=1;});
@@ -40337,7 +40381,7 @@ function _stampClientNextVisit(reconcile){
       var c=CL[cid];if(!c)return;var nm=(c.name||'').trim().toLowerCase();if(!nm)return;
       // Square bookings match by the Square customer first: by name alone, a same-name stranger got the
       // visit and a "Jen" whose Square name is "Jennifer" got none. Name only when the chart has no Square id.
-      var mine=appts.filter(function(a){if(a.clientId)return a.clientId===cid;if(a.sqcid&&c.squareId)return String(a.sqcid)===String(c.squareId);return String(a.name||'').trim().toLowerCase()===nm;}).sort(function(x,y){return x.when-y.when;});
+      var mine=appts.filter(function(a){if(a.clientId)return a.clientId===cid;var _s=_sqBookingIs(a,cid);if(_s!==null)return _s;return String(a.name||'').trim().toLowerCase()===nm;}).sort(function(x,y){return x.when-y.when;});
       if(mine.length){
         var w=mine[0].when;
         var label=w.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+' · '+w.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
@@ -40385,7 +40429,7 @@ function _svcNamesForPicker(){
 function _apptClientIdOf(a){
   const r=(a&&a.raw)||{};
   if(r.clientId&&CL[r.clientId])return r.clientId;
-  if(r.sqcid){const k=Object.keys(CL).find(function(id){return CL[id]&&CL[id].squareId&&String(CL[id].squareId)===String(r.sqcid);});if(k)return k;}
+  if(r.sqcid){const k=_sqBookingOwner(r);if(k)return k;}
   try{return _clientIdByName(a.title)||null;}catch(e){return null;}
 }
 setInterval(function(){try{_svcFormsSweep();}catch(e){}},30*60000);   // a booking moving into the 14-day window
