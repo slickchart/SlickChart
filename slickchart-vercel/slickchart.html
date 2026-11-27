@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-27c';
+const APP_BUILD='2026-11-27d';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -2607,6 +2607,10 @@ function _findDuplicateGroups(){
   return Object.keys(groups).map(k=>groups[k]).filter(g=>g.length>1);
 }
 function _isBlankVal(v){if(v==null)return true;const s=String(v).trim();return s===''||s==='—'||s==='Not scheduled'||s==='New client'||s==='No contact on file';}
+// A starter value every new chart gets ("None noted" allergies) says nothing about the person, so in a
+// merge it never beats, or clashes with, something she actually wrote (Sarah, 2026-11-27: her real
+// allergy note on one copy and the starter "None noted" on the other kept the two copies apart).
+function _isMergeBlank(v){return _isBlankVal(v)||/^none noted$/i.test(String(v==null?'':v).trim());}
 function _mergeArrUnique(a,b,keyFn){
   const out=Array.isArray(a)?a.slice():[];
   const seen={};out.forEach(x=>{seen[keyFn(x)]=1;});
@@ -2697,7 +2701,7 @@ function _mergeClientRecords(keepId,dropId){
   // Re-home the dropped owner's animals onto the survivor before the record goes.
   try{ if(typeof _animalsOf==='function')_animalsOf(dropId).forEach(function(aid){ if(CL[aid])CL[aid].ownerId=keepId; }); }catch(e){}
   const listKeys={submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,sessions:1,seriesTotal:1,summaries:1};
-  Object.keys(drop).forEach(k=>{if(listKeys[k])return;if(!(k in keep)||_isBlankVal(keep[k])){if(!_isBlankVal(drop[k]))keep[k]=drop[k];}});
+  Object.keys(drop).forEach(k=>{if(listKeys[k])return;if(!(k in keep)||_isMergeBlank(keep[k])){if(!_isMergeBlank(drop[k]))keep[k]=drop[k];}});
   keep.submittedForms=_mergeArrUnique(keep.submittedForms,drop.submittedForms,sf=>(sf&&(sf.formId+'|'+(sf.date||'')+'|'+(sf.title||'')))||JSON.stringify(sf));
   keep.signedForms=_mergeArrUnique(keep.signedForms,drop.signedForms,x=>String(x));
   keep.pendingForms=_mergeArrUnique(keep.pendingForms,drop.pendingForms,pf=>(pf&&pf.formId)||JSON.stringify(pf));
@@ -2745,14 +2749,16 @@ function _mergeClientRecords(keepId,dropId){
 // Keeps the record whose id IS that Square customer's id (sq_...): the Square sync, the delete record
 // and the purge are all keyed on it, so dropping it instead would let the purge take the survivor.
 const _AUTO_MERGE_IGNORE={bg:1,tc:1,initials:1,_uAt:1,_ts:1,_nvAuto:1,lastVisit:1,nextVisit:1,nextVisitTx:1,treatmentFor:1,source:1,_token:1,touchUpDate:1,sessions:1,seriesTotal:1,id:1,_demoRestoredAt:1,squareId:1,name:1,
-  submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,summaries:1,withdrawn:1};
+  submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,summaries:1,withdrawn:1,
+  // Flags about her app link and sends, not facts about the person (a copy with no link says false).
+  appJoined:1,appInvited:1,checkinReqAt:1,fvpForms:1};
 function _autoMergeConflict(keep,drop){
   const norm=v=>String(v==null?'':(typeof v==='object'?JSON.stringify(v):v)).trim().toLowerCase().replace(/\s+/g,' ');
   for(const k of Object.keys(drop)){
     if(_AUTO_MERGE_IGNORE[k])continue;
     const dv=drop[k],kv=keep[k];
-    if(typeof _isBlankVal==='function'?_isBlankVal(dv):(dv==null||dv===''))continue;
-    if(typeof _isBlankVal==='function'?_isBlankVal(kv):(kv==null||kv===''))continue;   // keeper is blank: it gets filled
+    if(_isMergeBlank(dv))continue;
+    if(_isMergeBlank(kv))continue;   // keeper is blank (or the starter value): it gets filled
     if(k==='phone'&&String(dv).replace(/\D/g,'').slice(-10)===String(kv).replace(/\D/g,'').slice(-10))continue;
     if(norm(dv)!==norm(kv))return k;
   }
@@ -2820,6 +2826,42 @@ function _autoMergeSquareDuplicates(){
         if(dropId===_open||keepId===_open){skipped.push((CL[keepId].name||keepId)+' (open)');return;}
         // The client opened BOTH links: the server can hand only one of them to the survivor, so the
         // other would stop opening for her client. Hers to decide, not automatic.
+        if(CL[dropId].appJoined&&CL[keepId].appJoined){skipped.push((CL[keepId].name||keepId)+' (both links used)');return;}
+        let clash=_autoMergeConflict(CL[keepId],CL[dropId]);
+        try{if(!clash&&typeof vcSubmissions!=='undefined'&&vcSubmissions[keepId]&&vcSubmissions[dropId]&&JSON.stringify(vcSubmissions[keepId])!==JSON.stringify(vcSubmissions[dropId]))clash='consult';}catch(e){}
+        if(clash){skipped.push((CL[keepId].name||keepId)+' ('+clash+')');return;}
+        _mergeClientRecords(keepId,dropId);merged++;
+      });
+    });
+    // SQUARE'S OWN SECOND RECORD of one person (Ashley, 2026-11-27: "lets fix this so this whole thing
+    // never happens again. this has been a problem in the past already"). A regular who books herself
+    // online can get a NEW Square customer with her same name, email and phone, and that used to become
+    // a second, empty chart that took her bookings (Kristi; Sarah the same). Two Square copies were left
+    // for her on purpose above; she has now said to fold these. Narrow: the same FULL name, the same
+    // email, and no different phone (a family shares an email, never a full name), neither removed,
+    // not both client links used, nothing clashing. The survivor is the one her client uses (link
+    // opened), else the one with history, else by id, so every device picks the same one. The other
+    // Square id points at the survivor afterwards (_mergedInto), so its bookings land there.
+    const byFull={};
+    const _ph=function(v){return String(v||'').replace(/\D/g,'').slice(-10);};
+    Object.keys(CL).forEach(function(id){const c=CL[id];if(!c||!c.squareId||c.isAnimal||c.ownerId||_dl[id])return;
+      try{if(typeof _isAnimal==='function'&&_isAnimal(c))return;}catch(e){}
+      const em=String(c.email||'').trim().toLowerCase(),nm=_mergeNorm(c.name);
+      if(!nm||em.indexOf('@')<1)return;(byFull[em+'|'+nm]=byFull[em+'|'+nm]||[]).push(id);});
+    const _hist=function(id){const c=CL[id]||{};let n=(Number(c.sessions)||0)+(Array.isArray(c.summaries)?c.summaries.length:0)+(Array.isArray(c.submittedForms)?c.submittedForms.length:0)+String(c.notes||'').trim().length;try{if(typeof sessionSummaries!=='undefined'&&sessionSummaries[id])n+=sessionSummaries[id].length;}catch(e){}return n;};
+    Object.keys(byFull).forEach(function(k){
+      const ids=byFull[k].filter(function(id){return CL[id];});if(ids.length<2)return;
+      if(new Set(ids.map(function(id){return String(CL[id].squareId);})).size<2)return;   // same Square id: the first pass
+      const phones=new Set(ids.map(function(id){return _ph(CL[id].phone);}).filter(function(x){return x.length>=7;}));
+      if(phones.size>1){skipped.push((CL[ids[0]].name||ids[0])+' (different phone)');return;}
+      const ranked=ids.slice().sort(function(a,b){
+        const ja=CL[a].appJoined?1:0,jb=CL[b].appJoined?1:0;if(ja!==jb)return jb-ja;
+        const ha=_hist(a),hb=_hist(b);if(ha!==hb)return hb-ha;
+        return a<b?-1:a>b?1:0;});
+      const keepId=ranked[0];
+      ranked.slice(1).forEach(function(dropId){
+        if(!CL[dropId]||!CL[keepId])return;
+        if(dropId===_open||keepId===_open){skipped.push((CL[keepId].name||keepId)+' (open)');return;}
         if(CL[dropId].appJoined&&CL[keepId].appJoined){skipped.push((CL[keepId].name||keepId)+' (both links used)');return;}
         let clash=_autoMergeConflict(CL[keepId],CL[dropId]);
         try{if(!clash&&typeof vcSubmissions!=='undefined'&&vcSubmissions[keepId]&&vcSubmissions[dropId]&&JSON.stringify(vcSubmissions[keepId])!==JSON.stringify(vcSubmissions[dropId]))clash='consult';}catch(e){}

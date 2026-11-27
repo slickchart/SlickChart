@@ -79,6 +79,30 @@ check('E before the merge the second chart holds the visit (the duplicate is her
 await p.evaluate(() => { _mergeClientRecords('c_erin', 'sq_sqe2'); _sqOwnerMemo.k = -1; _stampClientNextVisit(true); });
 const E2 = await p.evaluate(() => ({ gone: !CL.sq_sqe2, real: CL.c_erin.nextVisit, sq: CL.c_erin.squareId }));
 check('E after merging into the real chart, the real chart gets the visit', E2.gone && !/Not scheduled/.test(E2.real || ''), JSON.stringify(E2));
+// F) Copies that already exist fold on their own (Ashley, 2026-11-27: "lets fix this so this whole thing
+//    never happens again"). Two Square copies, same full name + email + phone: one chart, the one her
+//    client's link is on, and a real allergy note beats the starter "None noted".
+// G) a family (same email, different full names) and H) same name + email but different phones stay apart.
+const F = await p.evaluate(() => {
+  CL.sq_sqf1 = { name: 'Fay Lund', squareId: 'SQF1', email: 'fay@example.com', phone: '(925) 555-0707', allergies: 'None noted', appJoined: true, _token: 't1', nextVisit: 'Not scheduled', notes: '' };
+  CL.sq_sqf2 = { name: 'Fay Lund', squareId: 'SQF2', email: 'FAY@example.com', phone: '+19255550707', allergies: 'A few antibiotics.', appJoined: false, source: 'square', nextVisit: 'Not scheduled' };
+  CL.sq_sqg1 = { name: 'Gail Moss', squareId: 'SQG1', email: 'moss@example.com', phone: '(925) 555-0808' };
+  CL.sq_sqg2 = { name: 'Gina Moss', squareId: 'SQG2', email: 'moss@example.com', phone: '(925) 555-0808' };
+  CL.sq_sqh1 = { name: 'Hana Ito', squareId: 'SQH1', email: 'ito@example.com', phone: '(925) 555-0901' };
+  CL.sq_sqh2 = { name: 'Hana Ito', squareId: 'SQH2', email: 'ito@example.com', phone: '(925) 555-0902' };
+  const n = _autoMergeSquareDuplicates();
+  const again = _autoMergeSquareDuplicates();
+  return { n, again, f1: !!CL.sq_sqf1, f2: !!CL.sq_sqf2, allergies: CL.sq_sqf1 && CL.sq_sqf1.allergies, into: _mergedInto.sq_sqf2,
+    g: !!CL.sq_sqg1 && !!CL.sq_sqg2, h: !!CL.sq_sqh1 && !!CL.sq_sqh2 };
+});
+check('F the two Square copies of one person fold into one chart, the one her link is on', F.f1 && !F.f2 && F.into === 'sq_sqf1', JSON.stringify(F));
+check('F her real allergy note survives over the starter "None noted"', F.allergies === 'A few antibiotics.', F.allergies);
+check('F a second run changes nothing', F.again === 0, String(F.again));
+check('G a family sharing an email and phone (different first names) stays two charts', F.g, JSON.stringify(F));
+check('H same name and email but different phones stays two charts', F.h, JSON.stringify(F));
+await p.evaluate((t) => { squareAppts.push(..._sqMapAppts([{ id: 'BK6', startAt: t, customerName: 'Fay Lund', customerId: 'SQF2', customerEmail: 'fay@example.com', durationMinutes: 60, serviceName: 'Facial' }])); _sqOwnerMemo.k = -1; _stampClientNextVisit(true); }, new Date(at.getTime() + 9 * 3600e3).toISOString());
+const F2 = await p.evaluate(() => CL.sq_sqf1 && CL.sq_sqf1.nextVisit);
+check('F a booking under the folded Square record lands on the kept chart', F2 && !/Not scheduled/.test(F2), F2);
 await b.close();
 let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS' : 'FAIL') + '  ' + x.n + '  — ' + x.d); }
 console.log(`\n${results.length - bad}/${results.length} pass`); process.exit(bad ? 1 : 0);
