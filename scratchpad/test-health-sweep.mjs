@@ -40,7 +40,7 @@ CREATE TABLE login_attempts (id bigserial PRIMARY KEY, email text NOT NULL, ts t
 CREATE TABLE app_launch_logs (device_key text PRIMARY KEY, provider_id text, email text, platform text, os text, build text, events jsonb NOT NULL DEFAULT '[]'::jsonb, updated_at timestamptz DEFAULT now());
 CREATE TABLE native_push_log (owner_id text NOT NULL, at timestamptz NOT NULL DEFAULT now(), platform text, ends text, shape text, outcome text, reason text);
 CREATE TABLE clients (id text PRIMARY KEY, provider_id text NOT NULL, token text UNIQUE NOT NULL, name text, email text, phone text, data jsonb DEFAULT '{}'::jsonb, invited_at bigint, opened_at bigint, created_at bigint, updated_at bigint, deleted_at bigint);
-INSERT INTO providers (id,email,created_at) VALUES ('good','healthy@ok.com', now()-interval '60 days'),('bad','trouble@x.com', now()-interval '60 days'),('new1','fresh@new.com', now()-interval '2 days'),('other','other@x.com', now()-interval '60 days');
+INSERT INTO providers (id,email,created_at) VALUES ('good','healthy@ok.com', now()-interval '60 days'),('bad','trouble@x.com', now()-interval '60 days'),('new1','fresh@new.com', now()-interval '2 days'),('other','other@x.com', now()-interval '60 days'),('dupq','dupq@x.com', now()-interval '60 days');
 INSERT INTO sessions (id,provider_id,last_seen_at) VALUES ('s1','good',now()),('s2','bad',now()),('s3','new1',now());
 INSERT INTO kv VALUES ('good','sc_onboarded','1'),('good','sc_clients','${'x'.repeat(5000)}'),('good','sc_bizinfo','{"name":"Glow"}'),
   ('bad','sc_onboarded','1'),('bad','sc_clients','[]'),('bad','sc_availability','null'),('good','sc_availability','{}'),('bad','sc_deleted_clients','{"c_dead":${now}}');
@@ -120,6 +120,13 @@ let fail = 0; const ok = (c, m, d) => { console.log((c ? 'PASS ' : 'FAIL ') + m 
   const nowF = JSON.stringify({ tmpls: { f_long: { t: 'short' } }, guides: {} });
   await db.query("INSERT INTO kv VALUES ('other','sc_forms',$1),('other','sc_hidden_forms',$2)", [nowF, JSON.stringify({ f_del: now })]);
   await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('other','sc_forms',$1,$2,5,'shrink',now()-interval '1 hour')", [oldF, oldF.length]); }
+// 2026-11-27: a form with two questions on one id (Maddie, 2026-11-26) is named with counts only; a clean
+// form, a malformed saved value and an old submission are not.
+{ const bad = { tmpls: { f1: { name: 'Facial intake', qs: [{ id: 'q20', label: 'Allergies' }, { id: 'q21', label: 'Skin' }, { id: 'q20', label: 'Meds' }] }, f2: { qs: [{ id: 'q1' }, { id: 'q2' }] } } };
+  const good = { tmpls: { f1: { qs: [{ id: 'q20' }, { id: 'q21' }] } } };
+  await db.query("INSERT INTO kv VALUES ('dupq','sc_forms',$1),('good','sc_forms',$2),('new1','sc_forms','{not json')", [JSON.stringify(bad), JSON.stringify(good)]);
+  await db.query("INSERT INTO client_events (id,client_id,provider_id,kind,payload,created_at) VALUES ('fq1','c1','dupq','form',$1,$3),('fq2','c1','dupq','form',$1,1),('fq3','c2','good','form',$2,$3)",
+    [JSON.stringify({ qs: bad.tmpls.f1.qs, answers: { q20: 'x' } }), JSON.stringify({ qs: good.tmpls.f1.qs }), now - H]); }
 const { default: handler, runSweep } = await import(pathToFileURL(path.join(dir, 'api/admin/health-sweep.js')));
 // ── Trials: each way a free trial can end, fed through the same calls the Stripe webhook makes.
 const T = await import(pathToFileURL(path.join(dir, 'lib/trial-outcomes.js')));
@@ -184,6 +191,9 @@ const j = res.body; const by = Object.fromEntries(j.checks.map(c => [c.id, c]));
 const NCHECKS = (fs.readFileSync(path.join(SRC, 'api/admin/health-sweep.js'), 'utf8').match(/await check\('/g) || []).length;
 ok(res.code === 200 && j.checks.length === NCHECKS, 'all ' + NCHECKS + ' checks reported', res.code + ' ' + (j.checks || []).length);
 ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every check ran against real SQL', JSON.stringify(j.checks.filter(c => (c.items[0] || '').startsWith('could not run')).map(c => c.id + ': ' + c.items[0])));
+{ const fs2 = by['form-shared-ids'] || { items: [] }; const t = fs2.items.join(' | ');
+  ok(fs2.level === 'warn' && fs2.items.length === 1 && /dup…@x.com: 1 pair\(s\) of questions sharing an id/.test(t) && /1 client submission\(s\) in the last 30 days/.test(t) && !/Allergies|Meds|Facial/.test(t),
+    'a form with two questions on one id is named, counts only (a clean form, a bad value and an old submission are not)', t); }
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
 ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only|mix…|hcr…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only|mix…|hcr…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
 ok(by['first-read'] && by['first-read'].level !== 'alert' && by['first-read'].items.some(i => /whole account is 5\.\d MB/.test(i) && /in pieces/.test(i) && !/cannot open/.test(i)), 'a 5 MB account is not an alert: its first read is streamed', JSON.stringify(by['first-read']));

@@ -4084,6 +4084,21 @@ function _uniqQIds(qs){
   });
   return changed;
 }
+// A form filled before that fix saved one answer for two questions on one id. Show it once with
+// every label that shared it (same as the provider app's _qsSharedOnce). A copy, never saved.
+function _qsSharedOnce(qs){
+  if(!Array.isArray(qs))return qs;
+  const by={};qs.forEach(function(q){if(q&&q.id!=null){const k=String(q.id);(by[k]=by[k]||[]).push(q);}});
+  if(!Object.keys(by).some(function(k){return by[k].length>1;}))return qs;
+  const done={};const out=[];
+  qs.forEach(function(q){
+    if(!q||q.id==null){out.push(q);return;}const k=String(q.id),g=by[k];
+    if(g.length<2){out.push(q);return;}if(done[k])return;done[k]=1;
+    const labels=g.map(function(x){return String((x&&x.label)||'').trim();}).filter(Boolean);
+    out.push(Object.assign({},q,{label:labels.join(' / ')+' (one answer for '+(labels.length===2?'both':'all '+labels.length)+')',type:g.every(function(x){return x.type===q.type;})?q.type:'Short text'}));
+  });
+  return out;
+}
 function _orderedFormQs(qs){_uniqQIds(qs);return (qs||[]).slice().sort((a,b)=>(a&&a.type==='Signature'?1:0)-(b&&b.type==='Signature'?1:0));}
 function renderFillForm(){
   const pf=_pendingForm();
@@ -6729,7 +6744,7 @@ function _buildMyRecordsHTML(){
   if(forms.length){
     formsHTML=forms.map(f=>{
       const qa=[];
-      (f.qs||[]).forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=f.answers&&f.answers[q.id];if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});
+      (_qsSharedOnce(f.qs)||[]).forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=f.answers&&f.answers[q.id];if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});
       const qaHTML=qa.length?`<table class="qa">${qa.map(([l,v])=>`<tr><td class="l">${_myEsc(l)}</td><td class="v">${_myEsc(v)}</td></tr>`).join('')}</table>`:'';
       const flg=(f.flagged&&f.flagged.length)?`<div class="flag"><div class="flag-h">Noted for your provider</div><ul>${f.flagged.map(it=>`<li>${_myEsc(it)}</li>`).join('')}</ul></div>`:'';
       const consent=f.consent?`<div class="consent">\u201c${_myEsc(f.consent)}\u201d</div>`:'';

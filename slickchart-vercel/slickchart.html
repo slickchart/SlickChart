@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-27d';
+const APP_BUILD='2026-11-27e';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -11391,7 +11391,7 @@ function _buildClientFileHTML(id){
       const qa=[];
       // Prefer the at-submission question snapshot so an edited form template can't mislabel or drop a
       // client's answers on this printable summary (matches viewSubmittedForm).
-      const _qsrc=_bizFillQs((Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs));
+      const _qsrc=_qsSharedOnce(_bizFillQs((Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs)));
       if(_qsrc){_qsrc.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoType(q.type)&&Array.isArray(a)){if(a.length)qa.push([q.label,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});}
       else{Object.keys(sf.answers||{}).forEach(k=>{const a=sf.answers[k];if(Array.isArray(a)&&a.length&&typeof a[0]==='string'&&a[0].slice(0,5)==='data:'){qa.push([k,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}qa.push([k,String(a)]);});}
       const qaHTML=qa.length?`<table class="qa">${qa.map(([l,v])=>`<tr><td class="l">${_fileEsc(l)}</td><td class="v">${_fileEsc(v)}</td></tr>`).join('')}</table>`:'<div class="muted">No written answers recorded.</div>';
@@ -12208,6 +12208,23 @@ function _doDismissFlag(id,then){const c=CL[id];
   // can't restore the old flag (which is why "Mark reviewed" wasn't sticking).
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   if(typeof proToast==='function')proToast('Marked as reviewed');if(then==='log'&&typeof renderFlaggedIntakes==='function')renderFlaggedIntakes();else renderClient(id);}
+// A form filled BEFORE the 2026-11-26 id fix can hold two questions on one id, so the client's answer
+// was saved once for both and used to show under each of them ("not matching with the correct
+// questions", Maddie). Which of the two it answered cannot be known, so show it ONCE with every label
+// that shared it. A copy: the saved snapshot itself is never changed.
+function _qsSharedOnce(qs){
+  if(!Array.isArray(qs))return qs;
+  const by={};qs.forEach(function(q){if(q&&q.id!=null){const k=String(q.id);(by[k]=by[k]||[]).push(q);}});
+  if(!Object.keys(by).some(function(k){return by[k].length>1;}))return qs;
+  const done={};const out=[];
+  qs.forEach(function(q){
+    if(!q||q.id==null){out.push(q);return;}const k=String(q.id),g=by[k];
+    if(g.length<2){out.push(q);return;}if(done[k])return;done[k]=1;
+    const labels=g.map(function(x){return String((x&&x.label)||'').trim();}).filter(Boolean);
+    out.push(Object.assign({},q,{label:labels.join(' / ')+' (one answer for '+(labels.length===2?'both':'all '+labels.length)+')',type:g.every(function(x){return x.type===q.type;})?q.type:'Short text'}));
+  });
+  return out;
+}
 function viewSubmittedForm(id,i){
   const c=CL[id];if(!c||!c.submittedForms||!c.submittedForms[i])return;
   const sf=c.submittedForms[i];const tmpl=formTmpls[sf.formId];
@@ -12217,7 +12234,7 @@ function viewSubmittedForm(id,i){
   // form later (renaming/deleting/reordering questions) mislabels a client's answers or drops them from
   // view (e.g. an allergy answer shown under a renamed "Skin concerns" label). Falls back to the current
   // template for older submissions saved before the snapshot was stored.
-  const _qsrc=_bizFillQs((Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs));
+  const _qsrc=_qsSharedOnce(_bizFillQs((Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs)));
   if(_qsrc){_qsrc.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoAns(q,a)){photoGroups.push([q.label,a]);return;}if(a!=null&&String(a).trim())rows.push([q.label,q.type==='Date'?_fmtDOB(String(a)):String(a),q.type||'']);});}
   else{Object.keys(sf.answers||{}).forEach(k=>{const a=sf.answers[k];if(Array.isArray(a)&&a.length&&typeof a[0]==='string'&&a[0].slice(0,5)==='data:'){photoGroups.push([k,a]);return;}rows.push([k,String(a),'']);});}
   const signerName=c.name||'Client';

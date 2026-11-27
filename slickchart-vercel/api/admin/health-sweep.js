@@ -336,6 +336,40 @@ export async function runSweep(q) {
     return { items, level: rows.some(r => Number(r.bytes) > 4300000) ? 'warn' : 'ok' };
   });
 
+  // Two questions in one form on ONE id (2026-11-26, Maddie: "My form answers are all messed up and not
+  // matching with the correct questions"). The client's answers are saved by question id, so the two
+  // share one answer. Build 2026-11-26b stops new ones and splits old ones as each device opens them;
+  // this says which accounts still hold one, and how many recent submissions were filled that way.
+  // Counts only, worked out inside the database one account at a time (§0.9: never every value at once).
+  await check('form-shared-ids', 'No form has two questions on one id', async () => {
+    const owners = await q`SELECT owner FROM kv WHERE k = 'sc_forms' AND left(ltrim(v), 1) = '{' LIMIT 3000`;
+    const forms = {};
+    for (const o of owners) {
+      try {
+        const r = await q`SELECT count(*)::int AS n FROM (
+            SELECT t.key FROM kv, jsonb_each(CASE WHEN jsonb_typeof(kv.v::jsonb->'tmpls') = 'object' THEN kv.v::jsonb->'tmpls' ELSE '{}'::jsonb END) t,
+              jsonb_array_elements(CASE WHEN jsonb_typeof(t.value->'qs') = 'array' THEN t.value->'qs' ELSE '[]'::jsonb END) qq
+            WHERE kv.owner = ${o.owner} AND kv.k = 'sc_forms' AND qq->>'id' IS NOT NULL
+            GROUP BY t.key, qq->>'id' HAVING count(*) > 1) d`;
+        if (r[0] && r[0].n) forms[o.owner] = r[0].n;
+      } catch (e) {}
+    }
+    const since = Date.now() - 30 * 86400000;
+    const subs = {};
+    try {
+      const r = await q`SELECT provider_id, count(*)::int AS n FROM client_events
+        WHERE kind = 'form' AND created_at > ${since} AND jsonb_typeof(payload->'qs') = 'array'
+          AND (SELECT count(*) FROM jsonb_array_elements(payload->'qs') x WHERE x->>'id' IS NOT NULL)
+            > (SELECT count(DISTINCT x->>'id') FROM jsonb_array_elements(payload->'qs') x WHERE x->>'id' IS NOT NULL)
+        GROUP BY provider_id`;
+      r.forEach(x => { subs[x.provider_id] = x.n; });
+    } catch (e) {}
+    const ids = [...new Set(Object.keys(forms).concat(Object.keys(subs)))];
+    const items = ids.map(id => who(id) + ': ' + (forms[id] || 0) + ' pair(s) of questions sharing an id in her saved forms (each device splits them on open; saved for good when she next saves that form), '
+      + (subs[id] || 0) + ' client submission(s) in the last 30 days filled that way (shown as one answer for both questions)');
+    return { items, level: items.length ? 'warn' : 'ok' };
+  });
+
   await check('device-health', 'Every device is saving to the account', async () => {
     const rows = await q`SELECT provider_id, device_key, report, updated_at FROM device_reports WHERE updated_at > now() - interval '3 days'`;
     const items = [];

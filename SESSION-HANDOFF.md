@@ -26,6 +26,18 @@ SENT with a shared id is split on the client page before it is filled, and the c
 question only, no longer under both). Test passes in Chromium and WebKit; sweep-all-forms (178 forms),
 sweep-form-mirror, test-contra-ticks, test-form-import, test-ec-client-form, test-client-form-branding green.
 
+**Follow-up 2026-11-27 (build 2026-11-27e):** the line above was wrong: a past submission filled with a shared
+id still showed its ONE answer under BOTH questions, because the provider's form viewer, the printable
+client summary and the client's own form records read `sf.qs` (the snapshot, which still holds the shared
+id) without splitting it. Which question that answer belongs to cannot be known (the main client path keeps
+the later question's answer, the sign-here and consent paths keep the earlier one), so `_qsSharedOnce()` (both
+apps, a copy, never saved) shows it once, labelled "Question A / Question B (one answer for both)".
+`scratchpad/test-shared-id-answers.mjs` (Chromium; WebKit is not installed in this container). Health sweep
+check `form-shared-ids` names each account still holding a shared id in its saved forms and how many client
+submissions in the last 30 days were filled that way (counts only, one account at a time). Maddie still has
+not replied (Ashley's 11-26 email asked for a screenshot); READ that check on the 11-28 brief to confirm her
+account is the one, before telling her anything.
+
 ## 2026-11-24 — Health sweep: a per-client map of EMPTY slots cleared is not "data shrank" (server only)
 
 The 11-24 brief's sweep raised an ALERT: tif…'s `sc_client_homecare` went 4767 -> 2 bytes, 231
