@@ -101,6 +101,15 @@ INSERT INTO clients (id,provider_id,token,name,email,created_at) VALUES ('c_dead
   await db.query("INSERT INTO providers (id,email,created_at) VALUES ('hcempty','hcempty@x.com', now()-interval '60 days'),('hcreal','hcreal@x.com', now()-interval '60 days')");
   await db.query("INSERT INTO kv VALUES ('hcempty','sc_client_homecare','{}'),('hcreal','sc_client_homecare','{}')");
   await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('hcempty','sc_client_homecare',$1,$2,231,'shrink',now()-interval '1 hour'),('hcreal','sc_client_homecare',$3,$4,40,'shrink',now()-interval '1 hour')", [JSON.stringify(empty), JSON.stringify(empty).length, JSON.stringify(real), JSON.stringify(real).length]); }
+// 2026-11-28 cry… case: sc_workspace.clientHomecare (the compound blob) 518 -> 240 entries where every gone
+// entry was an empty slot is no work lost; one where the gone entries held products still is.
+{ const mk = (n, val) => { const m = {}; for (let i = 0; i < n; i++) m['c' + String(i).padStart(12, '0')] = val; return m; };
+  const wsOld = e => ({ clientHomecare: Object.assign(mk(240, ['Cleanser']), Object.fromEntries(Object.entries(mk(518, e)).slice(240))), clientRecs: { a: ['p1'] }, sessionSummaries: {}, codes: {}, x: 1, y: 2 });
+  const wsNow = { clientHomecare: mk(240, ['Cleanser']), clientRecs: { a: ['p1'] }, sessionSummaries: {}, codes: {}, x: 1, y: 2 };
+  const oe = wsOld([]), orl = wsOld(['SPF daily']);
+  await db.query("INSERT INTO providers (id,email,created_at) VALUES ('wsempty','wsempty@x.com', now()-interval '60 days'),('wsreal','wsreal@x.com', now()-interval '60 days')");
+  await db.query("INSERT INTO kv VALUES ('wsempty','sc_workspace',$1),('wsreal','sc_workspace',$1)", [JSON.stringify(wsNow)]);
+  await db.query("INSERT INTO kv_history (owner,k,v,bytes,items,reason,saved_at) VALUES ('wsempty','sc_workspace',$1,$2,6,'shrink',now()-interval '1 hour'),('wsreal','sc_workspace',$3,$4,6,'shrink',now()-interval '1 hour')", [JSON.stringify(oe), JSON.stringify(oe).length, JSON.stringify(orl), JSON.stringify(orl).length]); }
 // 'dupe' has 26 same-name pairs: 10 old ones she sees twice in her list, 16 made this week where her
 // list holds only one of the two (merged in the app, still a row on the server).
 await db.query("INSERT INTO providers (id,email,created_at) VALUES ('dupe','dupes@x.com', now()-interval '60 days')");
@@ -202,7 +211,7 @@ ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every 
   ok(d.level === 'warn' && d.items.length === 1 && /dup…@x.com: sc_affiliate_links 1 id\(s\) held by two different rows/.test(t) && !/Serum|Cream/.test(t),
     'two different rows on one id are named (ids and counts only); repeats and a bad value are not', t); }
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
-ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only|mix…|hcr…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only|mix…|hcr…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
+ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only|mix…|hcr…|wsr…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && by['data-shrink'].items.some(i => /^tro…@x.com: sc_clients went from 40153 to 2/.test(i)), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
 ok(by['first-read'] && by['first-read'].level !== 'alert' && by['first-read'].items.some(i => /whole account is 5\.\d MB/.test(i) && /in pieces/.test(i) && !/cannot open/.test(i)), 'a 5 MB account is not an alert: its first read is streamed', JSON.stringify(by['first-read']));
 ok(by['settings-empty'].items.length === 1 && /sc_availability/.test(by['settings-empty'].items[0]), 'hours saved as null are flagged; hours never set ({}) are not');
 ok(by['founder-alerts'].level === 'alert' && by['founder-alerts'].items.some(i => /feedback alert/.test(i)) && !by['founder-alerts'].items.some(i => /paid-signup|provider-signup/.test(i)), 'the skipped feedback alert is flagged; a good one and a deliberate de-dup are not', JSON.stringify(by['founder-alerts'].items));
@@ -230,6 +239,9 @@ ok(by['new-setup'].items.length === 1 && /fre…@new.com/.test(by['new-setup'].i
 ok(!by['data-shrink'].items.some(i => /hce…@x.com/.test(i)), 'a homecare map of empty slots cleared to {} is not listed (no work lost)', JSON.stringify(by['data-shrink'].items));
 { const f = by['data-shrink'].items.find(i => /hcr…@x.com: sc_client_homecare/.test(i)) || '';
   ok(/0 of the 40 gone held nothing/.test(f) && !/Cleanser/.test(f), 'a homecare map that held products is still flagged, says none of the gone were empty, and shows no content', f); }
+ok(!by['data-shrink'].items.some(i => /wse…@x.com/.test(i)), 'a workspace whose clientHomecare lost only empty slots is not listed (no work lost)', JSON.stringify(by['data-shrink'].items));
+{ const f = by['data-shrink'].items.find(i => /wsr…@x.com: sc_workspace/.test(i)) || '';
+  ok(/Shrank: clientHomecare 518\u2192240 entries/.test(f) && /0 of the 278 gone held nothing/.test(f) && !/SPF|Cleanser/.test(f), 'a workspace whose gone homecare held products is still flagged, says none were empty, no content', f); }
 { const f = by['data-shrink'].items.find(i => /oth…@x.com: sc_forms/.test(i)) || '';
   ok(/Shrank: tmpls 3\u21921 entries/.test(f) && /Forms: 2 gone \(1 deleted by her\), 1 edited much shorter/.test(f) && !/f_long|f_del|qqq/.test(f), 'a forms shrink says which part shrank and how many forms she deleted, with no ids or content', f); }
 ok(by['duplicates'].items.length === 1 && /tro…@x.com: 6 emails newly on more than one client today \(6 with the same name\)/.test(by['duplicates'].items[0]) && /oth…@x.com 30 \(0 same name/.test(by['duplicates'].note || ''), 'shared emails warn only when new today; the standing family ones are a note, not a warning', JSON.stringify(by['duplicates']));

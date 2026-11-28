@@ -172,12 +172,27 @@ export function explainShrink(k, oldV, nowV, hiddenV) {
   }
   const bb = (b && typeof b === 'object') ? b : {};
   const parts = [];
+  // A per-client map inside the blob (sc_workspace.clientHomecare) holds a slot for clients with
+  // nothing in it, same as the dedicated key above. On 2026-11-28 cry…'s clientHomecare went 518 -> 240
+  // entries at ~22 bytes an entry and raised an ALERT with no way to tell empty slots from homecare.
+  // Count the gone entries that held nothing across every shrunk map, so the caller can tell.
+  const isEmptyV = v => v == null || v === '' || (Array.isArray(v) ? v.length === 0 : (typeof v === 'object' && Object.keys(v).length === 0));
+  let goneAll = 0, goneEmpty = 0;
   for (const p of Object.keys(a)) {
     const ob = JSON.stringify(a[p] || '').length, nb = JSON.stringify(bb[p] == null ? '' : bb[p]).length;
     const oe = entries(a[p]), ne = entries(bb[p]);
-    if (ne < oe || nb < ob * 0.75) parts.push(p + ' ' + oe + '\u2192' + ne + ' entries (' + ob + '\u2192' + nb + ' bytes)');
+    if (ne < oe || nb < ob * 0.75) {
+      parts.push(p + ' ' + oe + '\u2192' + ne + ' entries (' + ob + '\u2192' + nb + ' bytes)');
+      const av = a[p], bv = bb[p];
+      if (av && typeof av === 'object' && !Array.isArray(av)) {
+        const nowK = new Set((bv && typeof bv === 'object' && !Array.isArray(bv)) ? Object.keys(bv) : []);
+        const gone = Object.keys(av).filter(id => !nowK.has(id));
+        goneAll += gone.length; goneEmpty += gone.filter(id => isEmptyV(av[id])).length;
+      } else if (Array.isArray(av)) { goneAll += Math.max(0, av.length - (Array.isArray(bv) ? bv.length : 0)); }
+    }
   }
   let out = parts.length ? '. Shrank: ' + parts.slice(0, 6).join(', ') : '';
+  if (goneAll && k !== 'sc_forms') out += ' (' + goneEmpty + ' of the ' + goneAll + ' gone held nothing)';
   if (k === 'sc_forms' && a.tmpls && typeof a.tmpls === 'object') {
     const now = (bb.tmpls && typeof bb.tmpls === 'object') ? bb.tmpls : {};
     const gone = Object.keys(a.tmpls).filter(id => !(id in now));
