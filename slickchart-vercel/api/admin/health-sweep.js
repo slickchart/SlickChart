@@ -370,6 +370,41 @@ export async function runSweep(q) {
     return { items, level: items.length ? 'warn' : 'ok' };
   });
 
+  // The same fault in ANY saved list (2026-11-27, Ashley: "make sure to permanently fix this and anything
+  // like it"): two DIFFERENT rows under one id. Everything that merges, edits or deletes by id then
+  // treats them as one, so one of them shows in the other's place or quietly drops on the next sync
+  // (custom products made on different days were all "cust1"). Exact repeats are the kv-size check's
+  // business, not this one. Counted inside the database, one saved list at a time, ids only.
+  await check('dup-row-ids', 'No saved list has two different rows on one id', async () => {
+    const by = {};
+    const add = (o, k, n) => { if (n) (by[o] = by[o] || []).push(k + ' ' + n); };
+    try {
+      // One pass inside the database; a value that is not valid JSON is skipped, never fatal.
+      const r = await q`WITH ok AS MATERIALIZED (SELECT owner, k, v::jsonb AS j FROM kv
+          WHERE left(ltrim(v), 1) = '[' AND octet_length(v) BETWEEN 20 AND 4500000
+            AND pg_input_is_valid(v, 'jsonb'))
+        SELECT owner, k, count(*)::int AS n FROM (SELECT owner, k, e->>'id' AS id FROM ok, jsonb_array_elements(ok.j) e
+          WHERE jsonb_typeof(e) = 'object' AND coalesce(e->>'id', '') <> ''
+          GROUP BY owner, k, e->>'id' HAVING count(DISTINCT (e - '_ts' - 'clicks' - 'earnings' - 'inOffice')::text) > 1) d
+        GROUP BY owner, k ORDER BY owner, k LIMIT 500`;
+      r.forEach(x => add(x.owner, x.k, x.n));
+    } catch (e) {
+      // No pg_input_is_valid (Postgres before 16): one saved list at a time, so a bad value loses only itself.
+      const rows = await q`SELECT owner, k FROM kv WHERE left(ltrim(v), 1) = '[' AND octet_length(v) BETWEEN 20 AND 4500000
+        ORDER BY owner, k LIMIT 3000`;
+      for (const x of rows) {
+        try {
+          const c = await q`SELECT count(*)::int AS n FROM (SELECT e->>'id' AS id FROM kv, jsonb_array_elements(kv.v::jsonb) e
+              WHERE kv.owner = ${x.owner} AND kv.k = ${x.k} AND jsonb_typeof(e) = 'object' AND coalesce(e->>'id', '') <> ''
+              GROUP BY e->>'id' HAVING count(DISTINCT (e - '_ts' - 'clicks' - 'earnings' - 'inOffice')::text) > 1) d`;
+          add(x.owner, x.k, c[0] && c[0].n);
+        } catch (e2) {}
+      }
+    }
+    const items = Object.keys(by).map(o => who(o) + ': ' + by[o].join(', ') + ' id(s) held by two different rows');
+    return { items, level: items.length ? 'warn' : 'ok' };
+  });
+
   await check('device-health', 'Every device is saving to the account', async () => {
     const rows = await q`SELECT provider_id, device_key, report, updated_at FROM device_reports WHERE updated_at > now() - interval '3 days'`;
     const items = [];

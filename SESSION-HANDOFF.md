@@ -26,6 +26,21 @@ SENT with a shared id is split on the client page before it is filled, and the c
 question only, no longer under both). Test passes in Chromium and WebKit; sweep-all-forms (178 forms),
 sweep-form-mirror, test-contra-ticks, test-form-import, test-ec-client-form, test-client-form-branding green.
 
+**Ids sweep 2026-11-27 (build 2026-11-27f)**, Ashley: "do a sweep on any issues like this ... permanently fix
+this and anything like it". Searched both apps for ids built from a counter or a list length. One more real
+case: custom products were "cust" plus a counter back at 0 every launch, so every launch's first product was
+`cust1`; the plan showed the older product and loadWorkspace / the merges kept only one of the two (reproduced:
+"Day two cream" showed as "Day one serum"). Now `_newCustProdId()` (time + random, checked), the product is
+also saved to sc_affiliate_links, and `_healCustProdIds()` splits two DIFFERENT products on one old `custN`
+id (later one -> `custN_2`, derived) in loadAffiliateLinks, loadWorkspace, _mergeWorkspace and the
+sc_affiliate_links pull, each side on its own. Cross-device collisions (two devices each made a `cust1`)
+cannot be told apart from an edit and are not split. Guards: CI `scripts/check-unique-ids.cjs` (no id from a
+restarting counter or list length, ALLOW list with reasons; runs the shipped repair helpers), health sweep
+`dup-row-ids` (any saved list with two different rows on one id) beside `form-shared-ids`, and sweep rotation
+area 17 in /mnt/project-files/sweeps/plan.md. Tests: test-custom-product-ids (old code fails 4),
+test-shared-id-answers, test-question-ids-unique (Chromium + WebKit), test-busy-courses-boot 32/32,
+sweep-sync-growth unchanged from baseline, test-health-sweep, form sweeps.
+
 **Follow-up 2026-11-27 (build 2026-11-27e):** the line above was wrong: a past submission filled with a shared
 id still showed its ONE answer under BOTH questions, because the provider's form viewer, the printable
 client summary and the client's own form records read `sf.qs` (the snapshot, which still holds the shared

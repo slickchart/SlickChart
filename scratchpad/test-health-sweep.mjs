@@ -127,6 +127,10 @@ let fail = 0; const ok = (c, m, d) => { console.log((c ? 'PASS ' : 'FAIL ') + m 
   await db.query("INSERT INTO kv VALUES ('dupq','sc_forms',$1),('good','sc_forms',$2),('new1','sc_forms','{not json')", [JSON.stringify(bad), JSON.stringify(good)]);
   await db.query("INSERT INTO client_events (id,client_id,provider_id,kind,payload,created_at) VALUES ('fq1','c1','dupq','form',$1,$3),('fq2','c1','dupq','form',$1,1),('fq3','c2','good','form',$2,$3)",
     [JSON.stringify({ qs: bad.tmpls.f1.qs, answers: { q20: 'x' } }), JSON.stringify({ qs: good.tmpls.f1.qs }), now - H]); }
+// 2026-11-28: two DIFFERENT rows on one id in any saved list is named (custom products were all "cust1");
+// an exact repeat, a row whose only difference is its click count, and a bad value are not.
+{ await db.query("INSERT INTO kv VALUES ('dupq','sc_affiliate_links',$1),('good','sc_affiliate_links',$2),('new1','sc_guides','[{not json')",
+    [JSON.stringify([{ id: 'cust1', name: 'Serum' }, { id: 'cust1', name: 'Cream' }, { id: 'a1', name: 'X' }]), JSON.stringify([{ id: 'cust1', name: 'Serum', clicks: 1 }, { id: 'cust1', name: 'Serum', clicks: 4 }, { id: 'b', name: 'B' }, { id: 'b', name: 'B' }])]); }
 const { default: handler, runSweep } = await import(pathToFileURL(path.join(dir, 'api/admin/health-sweep.js')));
 // ── Trials: each way a free trial can end, fed through the same calls the Stripe webhook makes.
 const T = await import(pathToFileURL(path.join(dir, 'lib/trial-outcomes.js')));
@@ -194,6 +198,9 @@ ok(j.checks.every(c => !(c.items[0] || '').startsWith('could not run')), 'every 
 { const fs2 = by['form-shared-ids'] || { items: [] }; const t = fs2.items.join(' | ');
   ok(fs2.level === 'warn' && fs2.items.length === 1 && /dup…@x.com: 1 pair\(s\) of questions sharing an id/.test(t) && /1 client submission\(s\) in the last 30 days/.test(t) && !/Allergies|Meds|Facial/.test(t),
     'a form with two questions on one id is named, counts only (a clean form, a bad value and an old submission are not)', t); }
+{ const d = by['dup-row-ids'] || { items: [] }; const t = d.items.join(' | ');
+  ok(d.level === 'warn' && d.items.length === 1 && /dup…@x.com: sc_affiliate_links 1 id\(s\) held by two different rows/.test(t) && !/Serum|Cream/.test(t),
+    'two different rows on one id are named (ids and counts only); repeats and a bad value are not', t); }
 ok(by['isolation-square'].level === 'alert' && /2 accounts/.test(by['isolation-square'].items[0]), 'shared Square business is an ALERT');
 ok(by['data-shrink'].level === 'alert' && by['data-shrink'].items.filter(i => !/oth…|…only|mix…|hcr…/.test(i)).length === 2 && /fre…@new.com: sc_courses/.test(by['data-shrink'].items.join()) && /tro…@x.com: sc_clients went from 40153 to 2/.test(by['data-shrink'].items.filter(i => !/oth…|…only|mix…|hcr…/.test(i))[0]), 'the big shrink is flagged (ALERT), a small one listed, the healthy one not', JSON.stringify(by['data-shrink'].items));
 ok(by['first-read'] && by['first-read'].level !== 'alert' && by['first-read'].items.some(i => /whole account is 5\.\d MB/.test(i) && /in pieces/.test(i) && !/cannot open/.test(i)), 'a 5 MB account is not an alert: its first read is streamed', JSON.stringify(by['first-read']));

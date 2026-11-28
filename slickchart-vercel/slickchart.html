@@ -399,7 +399,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-11-27e';
+const APP_BUILD='2026-11-27f';
 // One of the reads the page's first script started (see <head>), if it is still for THIS signed-in pass
 // and the same address, within a minute. Each is handed out once. Anything else: null, ask again.
 function _takeEarly(name,url){
@@ -4343,8 +4343,8 @@ function _mergeWorkspace(serverStr,localStr){
   // though the catalogue itself got it right.
   const goneP=_tombSet(_LIB_TOMB.sc_affiliate_links);
   const seen={},cp=[];
-  (Array.isArray(srv.customProducts)?srv.customProducts:[]).forEach(function(p){if(p&&p.id&&!seen[p.id]&&!goneP[p.id]){seen[p.id]=1;cp.push(p);}});
-  (Array.isArray(loc.customProducts)?loc.customProducts:[]).forEach(function(p){if(p&&p.id&&!seen[p.id]&&!goneP[p.id]){seen[p.id]=1;cp.push(p);changed=true;}});
+  (Array.isArray(srv.customProducts)?_healCustProdIds(srv.customProducts):[]).forEach(function(p){if(p&&p.id&&!seen[p.id]&&!goneP[p.id]){seen[p.id]=1;cp.push(p);}});
+  (Array.isArray(loc.customProducts)?_healCustProdIds(loc.customProducts):[]).forEach(function(p){if(p&&p.id&&!seen[p.id]&&!goneP[p.id]){seen[p.id]=1;cp.push(p);changed=true;}});
   try{if(!changed&&Array.isArray(srv.customProducts)&&cp.length!==srv.customProducts.length)changed=true;}catch(e){}
   out.customProducts=cp;
   // Per-product flags: the account's value stands; a product only this device knows keeps its own.
@@ -4912,7 +4912,11 @@ const Cloud={
       // services she had never offered or had deleted (Jessica, Feedback inbox, Sep 22 and Oct 5).
       // Only untouched seeds are dropped; a seed she edited carries a _ts and is kept.
       if(k==='sc_service_menu'&&data[k]!=null)_loc=_dropStockSvcSeeds(data[k],_loc);
-      const ml=_mergeAuthoredById(data[k],_loc,_LIB_TOMB[k],{keyFn:_libKeyFn(k),keepUnkeyed:true});
+      // Two different products on one old counter id: split them on each side first, or the union
+      // below keeps only one of them.
+      let _srvV=data[k];
+      if(k==='sc_affiliate_links'){_srvV=_healCustProdStr(_srvV);_loc=_healCustProdStr(_loc);}
+      const ml=_mergeAuthoredById(_srvV,_loc,_LIB_TOMB[k],{keyFn:_libKeyFn(k),keepUnkeyed:true});
       if(ml&&ml.str!=null){
         set(k,ml.str);
         if(ml.changed){try{this.push(k,ml.str);}catch(e){}}
@@ -9896,7 +9900,7 @@ function _syncShopCatalog(){
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_shop_catalog',_v);}catch(e){}
   }catch(e){}
 }
-function loadAffiliateLinks(){try{const raw=localStorage.getItem('sc_affiliate_links');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))affiliateLinks=arr;}}catch(e){}}
+function loadAffiliateLinks(){try{const raw=localStorage.getItem('sc_affiliate_links');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))affiliateLinks=_healCustProdIds(arr);}}catch(e){}}
 function persistCustomNoteTemplates(){try{(function(_v){localStorage.setItem('sc_custom_note_templates',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_custom_note_templates',_v);return _v;})(JSON.stringify(customNoteTemplates));}catch(e){}}
 function loadCustomNoteTemplates(){try{const raw=localStorage.getItem('sc_custom_note_templates');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))customNoteTemplates=arr;}}catch(e){}}
 function persistClientHealingStage(){try{(function(_v){localStorage.setItem('sc_healing_stage',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_healing_stage',_v);return _v;})(JSON.stringify(clientHealingStage));}catch(e){}}
@@ -16154,7 +16158,34 @@ function removeSummaryProd(id,aid){
     _aftercareUndoToast('Removed “'+String(_nm)+'”');
   }
 }
-let custProdSeq=0;
+// A custom product's id must be one nothing else has. It used to be "cust" plus a counter that was
+// back at 0 on every launch, so a product made on a later day (or on her other device) was
+// also "cust1": the client's plan showed the OLDER product, and the next load kept only one of the two
+// (the same fault as the form question ids, Maddie 2026-11-26). Time + random, checked against the list.
+function _newCustProdId(){
+  let id;do{id='cust'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}while(affiliateLinks.some(function(a){return a&&a.id===id;}));
+  return id;
+}
+// Lists saved before that fix can hold two DIFFERENT products on one counter id (cust1, cust1). Give
+// each later one its own id, derived so every device picks the same one (CLAUDE.md §0.9). Only the
+// old counter ids, only when the name differs (the same product twice is a repeat, left to the
+// usual de-duplication), and the first one keeps the id the plans point at. A list with no such pair
+// comes back as the very same array.
+function _healCustProdIds(list){
+  if(!Array.isArray(list))return list;
+  const first={},used={};let hit=false;
+  list.forEach(function(p){if(p&&p.id!=null)used[String(p.id)]=1;});
+  const out=list.map(function(p){
+    if(!p||p.id==null||!/^cust\d+$/.test(String(p.id)))return p;
+    const id=String(p.id),nm=String(p.name||'').trim().toLowerCase()+'|'+String(p.brand||'').trim().toLowerCase();
+    if(!(id in first)){first[id]=nm;return p;}
+    if(first[id]===nm)return p;
+    let n=2,nid=id+'_'+n;while(used[nid]){n++;nid=id+'_'+n;}
+    used[nid]=1;hit=true;return Object.assign({},p,{id:nid});
+  });
+  return hit?out:list;
+}
+function _healCustProdStr(str){try{if(str==null)return str;const a=JSON.parse(str);if(!Array.isArray(a))return str;const h=_healCustProdIds(a);return h===a?str:JSON.stringify(h);}catch(e){return str;}}
 function createCustomProd(id){
   const nameEl=document.getElementById('cust-name');
   const name=(nameEl&&nameEl.value||'').trim();
@@ -16167,10 +16198,11 @@ function createCustomProd(id){
   const siteCode=(document.getElementById('cust-site-code')?.value||'').trim();
   const urlCode=(document.getElementById('cust-url-code')?.value||'').trim();
   const inOffice=!!document.getElementById('cust-inoffice')?.checked;
-  const aid='cust'+(++custProdSeq);
-  affiliateLinks.push({id:aid,name,brand,icon,url,site,amazon,siteCode,urlCode,inOffice,clicks:0,earnings:0,commission:'—',active:true,custom:true});
+  const aid=_newCustProdId();
+  affiliateLinks.push({id:aid,name,brand,icon,url,site,amazon,siteCode,urlCode,inOffice,clicks:0,earnings:0,commission:'—',active:true,custom:true,_ts:Date.now()});
   if(!clientRecs[id])clientRecs[id]=[];
   clientRecs[id].push(aid);
+  try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}
   _rerenderRecs(id);
 }
 function toggleProdInOffice(id,aid){const a=affiliateLinks.find(x=>x.id===aid);if(a){a.inOffice=!a.inOffice;a._ts=Date.now();try{persistAffiliateLinks();}catch(e){}}_rerenderRecs(id);}
@@ -22162,7 +22194,7 @@ function loadWorkspace(){
     if(d.clientRecs)clientRecs=d.clientRecs;
     if(d.recReasons)recReasons=d.recReasons;
     if(d.clientHomecare)clientHomecare=d.clientHomecare;
-    if(Array.isArray(d.customProducts))d.customProducts.forEach(p=>{if(!affiliateLinks.some(a=>a.id===p.id))affiliateLinks.push(p);});
+    if(Array.isArray(d.customProducts))_healCustProdIds(d.customProducts).forEach(p=>{if(!affiliateLinks.some(a=>a.id===p.id))affiliateLinks.push(p);});
     if(d.inOffice)affiliateLinks.forEach(a=>{if(a.id in d.inOffice)a.inOffice=d.inOffice[a.id];});
     if(d.codes)affiliateLinks.forEach(a=>{if(a.id in d.codes){const c=d.codes[a.id];if(typeof c==='string'){a.urlCode=c;}else{a.siteCode=c.siteCode||'';a.urlCode=c.urlCode||'';a.amazonCode=c.amazonCode||'';}}});
   }catch(e){}
